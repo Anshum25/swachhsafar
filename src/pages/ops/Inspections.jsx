@@ -48,7 +48,7 @@ function InspectDialog({ target, journey, onClose, onDone }) {
   }
 
   return (
-    <Dialog open title={`Coach ${target.coach} · Day ${target.day} · Round ${target.round} · ${PHASES[target.phase]}`} onClose={onClose}>
+    <Dialog open title={`${target.coach} (${PHASES[target.phase]} Journey) · Day ${target.day} · R${target.round}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <GpsCapture value={gps} onChange={setGps} />
         <PhotoCapture value={photo} onChange={setPhoto} required />
@@ -60,73 +60,90 @@ function InspectDialog({ target, journey, onClose, onDone }) {
   );
 }
 
-// Coach × day × round × phase grid. Round and Before→After order and one record per cell are enforced
-// by the local repository (and its triggers) and by the server.
+// Coach × day × round × phase grid: one card per coach, a column per day, a B (before) and A (after) cell
+// per round. Round and Before→After order and one record per cell are enforced by the local repository
+// (and its triggers) and by the server; only `open` cells can be captured.
+const CELL_STYLE = {
+  taken: 'bg-brand-700 text-white ring-brand-700',
+  pending: 'bg-amber-400 text-slate-900 ring-amber-400',
+  open: 'bg-white text-brand-800 ring-2 ring-brand-600 hover:bg-brand-50 active:scale-95',
+  locked: 'bg-slate-100 text-slate-400 ring-slate-200',
+};
+
 function InspectionGrid({ journey: j, grid }) {
   const { can } = useSession();
-  const [day, setDay] = useState(null);
-  const [round, setRound] = useState(1);
-  const [phase, setPhase] = useState(null);
   const [cls, setCls] = useState('');
   const [target, setTarget] = useState(null);
   const [local, setLocal] = useState({});
 
-  const days = useMemo(() => [...new Set((grid.data ?? []).map((c) => c.day))].sort((a, b) => a - b), [grid.data]);
-  const openDay = (grid.data ?? []).find((c) => c.day_open)?.day;
-  const activeDay = day ?? openDay ?? days[0];
   const phases = [j.before_inspection_enabled && 'B', j.after_inspection_enabled && 'A'].filter(Boolean);
-  const activePhase = phase ?? phases[0];
+  const rounds = Array.from({ length: j.inspection_rounds_per_day }, (_, i) => i + 1);
   const classOf = (code) => j.coaches.find((c) => c.code === code)?.classification;
-  const coaches = (grid.data ?? []).filter((c) => c.day === activeDay && (!cls || classOf(c.coach_code) === cls));
-  const done = coaches.reduce((n, c) => n + c.done, 0);
-  const required = coaches.reduce((n, c) => n + c.required, 0);
+  const rows = useMemo(() => (grid.data ?? []).filter((c) => !cls || j.coaches.find((x) => x.code === c.coach_code)?.classification === cls), [grid.data, cls, j.coaches]);
+  const byCoach = useMemo(() => {
+    const m = new Map();
+    for (const c of rows) m.set(c.coach_code, [...(m.get(c.coach_code) ?? []), c]);
+    return [...m.entries()].map(([coach, days]) => [coach, days.sort((a, b) => a.day - b.day)]);
+  }, [rows]);
+  const done = rows.reduce((n, c) => n + c.done, 0);
+  const required = rows.reduce((n, c) => n + c.required, 0);
+  const openDay = (grid.data ?? []).find((c) => c.day_open)?.day;
 
   return (
     <>
       <StaleNote stale={grid.stale} />
       <Panel className="mb-4">
-        <div className="space-y-3">
-          <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Day</p>
-            <Segmented label="Day" value={activeDay} onChange={setDay} options={days.map((d) => ({ value: d, label: `Day ${d}${d === openDay ? ' •' : ''}` }))} /></div>
-          <div className="flex flex-wrap gap-6">
-            <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Round</p>
-              <Segmented label="Round" value={round} onChange={setRound} options={Array.from({ length: j.inspection_rounds_per_day }, (_, i) => ({ value: i + 1, label: `R${i + 1}` }))} /></div>
-            <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Phase</p>
-              <Segmented label="Phase" value={activePhase} onChange={setPhase} options={phases.map((p) => ({ value: p, label: PHASES[p] }))} /></div>
-            <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Coach class</p>
-              <Segmented label="Coach class" value={cls} onChange={setCls} options={CLASSES} /></div>
-          </div>
-          <div>
-            <div className="flex justify-between text-sm"><span className="font-medium">Day {activeDay} completion{cls ? ` · ${cls === 'AC' ? 'AC' : 'Non-AC'}` : ''}</span><span className="tabular-nums text-slate-600">{done}/{required}</span></div>
-            <div className="mt-1 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-brand-600" style={{ width: `${required ? (done / required) * 100 : 0}%` }} /></div>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Coach class</p>
+            <Segmented label="Coach class" value={cls} onChange={setCls} options={CLASSES} /></div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+            {[['taken', 'Done'], ['open', 'Open'], ['pending', 'Saved on device'], ['locked', 'Locked']].map(([k, t]) => (
+              <span key={k} className="inline-flex items-center gap-1.5"><span className={`h-4 w-4 rounded ring-1 ${CELL_STYLE[k]}`} />{t}</span>
+            ))}
           </div>
         </div>
+        <div className="mt-3">
+          <div className="flex justify-between text-sm"><span className="font-medium">Completion{openDay ? ` · today is day ${openDay}` : ''}</span><span className="tabular-nums text-slate-600">{done}/{required}</span></div>
+          <div className="mt-1 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-brand-600" style={{ width: `${required ? (done / required) * 100 : 0}%` }} /></div>
+        </div>
       </Panel>
-      {coaches.length === 0 ? <Empty title="No coaches to inspect on this day." /> : (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-8">
-          {coaches.map((c) => {
-            const cell = c.cells.find((x) => x.round === round && x.phase === activePhase);
-            const key = `${c.coach_code}:${activeDay}:${round}:${activePhase}`;
-            const status = local[key] ? 'pending' : cell?.status ?? 'locked';
-            const clickable = can('inspections.submit') && status === 'open';
-            const tile = {
-              taken: 'bg-emerald-600 text-white ring-emerald-600',
-              pending: 'bg-amber-400 text-slate-900 ring-amber-400',
-              open: 'bg-white text-brand-800 ring-brand-600 hover:bg-brand-50',
-              locked: 'bg-slate-100 text-slate-400 ring-slate-200',
-            }[status];
-            return (
-              <button key={c.coach_code} type="button" disabled={!clickable}
-                onClick={() => setTarget({ coach: c.coach_code, day: activeDay, round, phase: activePhase, key })}
-                className={`flex aspect-square flex-col items-center justify-center rounded-2xl text-sm font-bold ring-2 transition ${tile}`}
-                aria-label={`Coach ${c.coach_code} ${status}`}>
-                {status === 'taken' && <CheckIcon className="mb-0.5 h-4 w-4" />}
-                {c.coach_code}
-                <span className="text-[10px] font-medium opacity-80">{status === 'pending' ? 'Not synced' : `${c.done}/${c.required}`}</span>
-                <span className="text-[9px] font-medium uppercase opacity-70">{classOf(c.coach_code) === 'AC' ? 'AC' : 'Non-AC'}</span>
-              </button>
-            );
-          })}
+      {byCoach.length === 0 ? <Empty title="No coaches to inspect." /> : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {byCoach.map(([coach, days]) => (
+            <section key={coach} className="rounded-2xl bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-200 sm:p-4" aria-label={`Coach ${coach}`}>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-lg font-extrabold text-brand-900">{coach}</h3>
+                <span className="text-xs text-slate-500">{classOf(coach) === 'AC' ? 'AC' : 'Non-AC'} · {days.reduce((n, d) => n + d.done, 0)}/{days.reduce((n, d) => n + d.required, 0)}</span>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="grid w-max min-w-full gap-x-3 gap-y-1.5" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(4.25rem, 1fr))` }}>
+                  {days.map((d) => (
+                    <p key={d.day} className={`text-center text-xs font-semibold ${d.day_open ? 'text-brand-700' : 'text-slate-500'}`}>Day {d.day}{d.day_open ? ' •' : ''}</p>
+                  ))}
+                  {rounds.map((r) => days.map((d) => (
+                    <div key={`${r}:${d.day}`} className="flex justify-center gap-1.5">
+                      {phases.map((ph) => {
+                        const cell = d.cells.find((x) => x.round === r && x.phase === ph);
+                        const key = `${coach}:${d.day}:${r}:${ph}`;
+                        const status = local[key] ? 'pending' : cell?.status ?? 'locked';
+                        const clickable = can('inspections.submit') && status === 'open';
+                        return (
+                          <button key={ph} type="button" disabled={!clickable}
+                            onClick={() => setTarget({ coach, day: d.day, round: r, phase: ph, key })}
+                            className={`grid h-8 w-8 place-items-center rounded-lg text-sm font-bold ring-1 transition ${CELL_STYLE[status]}`}
+                            aria-label={`Coach ${coach} day ${d.day} round ${r} ${PHASES[ph]} ${status}`}
+                            title={`Day ${d.day} · Round ${r} · ${PHASES[ph]} · ${status === 'pending' ? 'saved on device' : status}`}>
+                            {status === 'taken' ? <CheckIcon className="h-4 w-4" /> : ph}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )))}
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-400">{rounds.length > 1 ? `One row per round (1–${rounds.length}) · ` : ''}B = before, A = after</p>
+            </section>
+          ))}
         </div>
       )}
       {target && (

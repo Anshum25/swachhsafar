@@ -101,13 +101,13 @@ test('operational screens capture and keep records with the network disconnected
   // Coach inspection: B1, day 1, round 1, Before
   await page.goto('/#/inspections');
   await page.getByRole('button', { name: /12951/ }).click();
-  await page.getByRole('button', { name: 'Coach B1 open' }).click();
+  await page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before open' }).click();
   dialog = page.getByRole('dialog');
   await captureEvidence(dialog);
   await dialog.getByLabel('Comments').fill('Floor mopped, dustbin emptied');
   await dialog.getByRole('button', { name: 'Submit inspection' }).click();
   await toast(page, 'Inspection saved on this device');
-  await expect(page.getByRole('button', { name: 'Coach B1 pending' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before pending' })).toBeVisible();
 
   // Passenger feedback (details; PNR/OTP verification stays pending until online)
   await page.goto('/#/feedback');
@@ -192,7 +192,7 @@ test('operational screens capture and keep records with the network disconnected
   await expect(page.getByText('Signed in offline with your cached profile')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toBeVisible();
   await page.goto(`/#/inspections/${IDS.journey}`);
-  await expect(page.getByRole('button', { name: 'Coach B1 pending' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before pending' })).toBeVisible();
   await expect(queueBadge(page)).toHaveText(/7 pending/);
   await page.goto(`/#/inventory/${IDS.journey}`);
   await expect(page.getByRole('row', { name: /Phenyl.*B1/ }).first()).toContainText('6');
@@ -201,13 +201,13 @@ test('operational screens capture and keep records with the network disconnected
 
   // ---- reconnect while the inspection screen stays open: the queue delivers everything, once ----
   await page.goto(`/#/inspections/${IDS.journey}`);
-  await expect(page.getByRole('button', { name: 'Coach B1 pending' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before pending' })).toBeVisible();
   server.connected = true;
   await context.setOffline(false);
   await expect(page.getByText('All records synced')).toBeVisible({ timeout: 60_000 });
   // No reload: the open screen re-reads once the outcome is committed (queue revision), and the record
   // state was committed together with the outbox entry, so "All records synced" implies "taken".
-  await expect(page.getByRole('button', { name: 'Coach B1 taken' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before taken' })).toBeVisible();
   expect(server.batches.map((o) => o.type).sort()).toEqual([
     'attendance.create', 'complaint.create', 'feedback.passenger.start', 'feedback.railway.create', 'inspection.create',
     'inventory.record', 'inventory.record',
@@ -226,7 +226,7 @@ test('operational screens capture and keep records with the network disconnected
     expect(init.sha256).toMatch(/^[0-9a-f]{64}$/);
   }
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Coach B1 taken' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before taken' })).toBeVisible();
   await page.goto(`/#/inventory/${IDS.journey}`);
   await expect(page.getByRole('row', { name: /Return Phenyl/ })).toContainText('On server');
   await expect(page.getByText('Not synced')).toHaveCount(0); // acknowledged, never claimed earlier

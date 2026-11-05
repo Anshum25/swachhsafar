@@ -6,10 +6,9 @@ import MediaPreview from '../../components/MediaPreview.jsx';
 import ReviewPanel from '../../components/ReviewPanel.jsx';
 import { GpsCapture, VoiceRecorder, outcomeToast, savedLocally } from '../../components/Capture.jsx';
 import {
-  Badge, ConfirmDialog, DataState, DetailList, Dialog, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader,
-  Pager, Panel, RatingScale, STATE_TONE, Segmented, Select, SubmitBar, SyncBadge, SyncState, Table, Tabs, fmtDate, fmtDateTime, label,
+  Badge, ConfirmDialog, DataState, DetailList, Dialog, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader, Pager, Panel, RatingScale, STATE_TONE, Segmented, Select, Stepper, SubmitBar, SyncBadge, SyncState, Table, Tabs, fmtDate, fmtDateTime, label,
 } from '../../components/ui.jsx';
-import { ChevronLeftIcon, Spinner } from '../../components/Icons.jsx';
+import { ChevronLeftIcon, Spinner, ThumbUpIcon, TrainIcon } from '../../components/Icons.jsx';
 import { useAction } from '../../hooks/useAction.js';
 import { canAct } from '../../services/authorization.js';
 import { ONLINE_ONLY } from '../../services/operations.js';
@@ -66,6 +65,48 @@ function JourneyCoachFields({ journeys, form, set, coachRequired = true }) {
   );
 }
 
+const PASSENGER_STEPS = ['Personal Details', 'Verification', 'Feedback & Comments'];
+
+// Coaches of the selected journey, with how many passenger feedbacks each day already has. Tapping a day
+// picks that coach and day for the form below.
+function CoachDayPicker({ journey, form, set }) {
+  const res = useResource(journey ? '/feedback/passenger' : null, { journey_id: journey?.id, page_size: 200 });
+  if (!journey) return null;
+  const days = Math.max(1, journey.operational_days ?? journey.duration_days ?? 1);
+  const count = new Map();
+  for (const f of res.data?.items ?? []) {
+    if (f.status === 'void') continue;
+    const k = `${f.coach_code}|${f.journey_day}`;
+    count.set(k, (count.get(k) ?? 0) + 1);
+  }
+  return (
+    <div className="space-y-2" aria-label="Coach and day">
+      {journey.coaches.map((c) => (
+        <div key={c.code} className={`rounded-2xl bg-white p-3 ring-1 ${form.coach_code === c.code ? 'ring-2 ring-brand-600' : 'ring-slate-200'}`}>
+          <p className="mb-2 flex items-center gap-2 text-sm font-extrabold text-brand-900"><TrainIcon className="h-5 w-5 text-brand-600" />{c.code}
+            <span className="text-xs font-medium text-slate-500">{c.classification === 'AC' ? 'AC' : 'Non-AC'}</span></p>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))] gap-1.5">
+            {Array.from({ length: days }, (_, i) => i + 1).map((d) => {
+              const n = count.get(`${c.code}|${d}`) ?? 0;
+              const on = form.coach_code === c.code && Number(form.journey_day) === d;
+              return (
+                <button key={d} type="button" onClick={() => set({ coach_code: c.code, journey_day: d })} aria-pressed={on}
+                  aria-label={`Coach ${c.code} day ${d}, ${n} feedback`}
+                  className={`flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-semibold transition active:scale-95 ${on ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-brand-50'}`}>
+                  <span>Day {d}</span>
+                  <span className={`grid h-7 w-7 place-items-center rounded-full ${on ? 'bg-white/20' : n ? 'bg-rose-500 text-white' : 'bg-rose-50 text-rose-500 ring-1 ring-rose-200'}`}>
+                    {n ? n : <ThumbUpIcon className="h-3.5 w-3.5" />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PassengerStart() {
   const { queue } = useSession();
   const notify = useNotify();
@@ -89,10 +130,13 @@ function PassengerStart() {
     else if (savedLocally(outcome)) setForm((f) => ({ ...f, passenger_name: '', mobile: '', pnr: '', seat_no: '' }));
   }
 
+  const journey = journeys.data?.items.find((x) => x.id === form.journey_id);
   return (
     <Panel title="New passenger feedback">
+      <Stepper steps={PASSENGER_STEPS} current={0} />
       <form onSubmit={submit} className="space-y-3">
         <JourneyCoachFields journeys={journeys} form={form} set={set} />
+        <CoachDayPicker journey={journey} form={form} set={set} />
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Passenger name"><input className="input" required minLength={2} value={form.passenger_name} onChange={(e) => set({ passenger_name: e.target.value })} /></Field>
           <Field label="Mobile" hint="10-digit Indian mobile, used for OTP"><input className="input" required inputMode="numeric" pattern="[6-9][0-9]{9}" value={form.mobile} onChange={(e) => set({ mobile: e.target.value })} /></Field>
@@ -101,7 +145,7 @@ function PassengerStart() {
         </div>
         <GpsCapture value={gps} onChange={setGps} />
         <p className="text-xs text-slate-500">PNR and OTP verification and the ratings need a connection. Details captured offline are saved and can be continued from the list once synced.</p>
-        <SubmitBar busy={busy} disabled={!gps} label="Continue" />
+        <SubmitBar busy={busy} disabled={!gps} label="Save & Continue" />
       </form>
     </Panel>
   );
@@ -153,6 +197,9 @@ function PassengerFlow({ id }) {
         actions={canAct(me, 'feedback.passenger.void', fb) && onServer && (
           <OnlineButton className="btn-secondary text-red-700" onClick={() => setVoiding(true)}>Void</OnlineButton>
         )} />
+      {fb.status !== 'void' && (
+        <Stepper steps={PASSENGER_STEPS} current={fb.status === 'completed' ? PASSENGER_STEPS.length : fb.status === 'verified' ? 2 : 1} />
+      )}
       <div className="mb-4 flex flex-wrap gap-2">
         <Badge tone={STATE_TONE[fb.status]}>{label(fb.status)}</Badge>
         <Badge>PNR: {label(fb.pnr_status)}</Badge>

@@ -28,8 +28,10 @@ export function PhotoCapture({ value, onChange, required }) {
         </div>
       ) : (
         <button type="button" onClick={() => input.current.click()}
-          className="flex h-32 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-brand-200 bg-brand-50/40 text-sm font-medium text-brand-800 hover:bg-brand-50">
-          <CameraIcon className="h-6 w-6" /> Take photo{required ? '' : ' (optional)'}
+          className="flex h-40 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-brand-300 bg-brand-50/50 text-brand-800 transition hover:bg-brand-50 active:scale-[0.99]">
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-white text-brand-700 shadow-sm ring-1 ring-brand-100"><CameraIcon className="h-6 w-6" /></span>
+          <span className="text-sm font-bold">Add Photo{required ? '' : ' (optional)'}</span>
+          <span className="text-xs text-slate-500">Camera or gallery · JPG / PNG</span>
         </button>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}

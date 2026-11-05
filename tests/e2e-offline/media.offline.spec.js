@@ -51,7 +51,7 @@ test('inspection video and photo: validated, persisted offline across restart, u
   server.connected = false;
   await context.setOffline(true);
   await page.goto(`/#/inspections/${IDS.journey}`);
-  await page.getByRole('button', { name: 'Coach B1 open' }).click();
+  await page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before open' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Get GPS' }).click();
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: PNG });

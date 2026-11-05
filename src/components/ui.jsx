@@ -351,10 +351,31 @@ export function Select({ value, onChange, options, placeholder, ...rest }) {
   );
 }
 
+// Numbered steps of a multi-step flow; `current` is the step in progress (steps before it are done).
+export function Stepper({ steps, current }) {
+  return (
+    <ol className="mb-4 flex items-start" aria-label="Progress">
+      {steps.map((s, i) => {
+        const done = i < current;
+        const on = i === current;
+        return (
+          <li key={s} className="relative flex flex-1 flex-col items-center text-center" aria-current={on ? 'step' : undefined}>
+            {i > 0 && <span className={`absolute right-1/2 top-3.5 h-0.5 w-full ${i <= current ? 'bg-brand-600' : 'bg-slate-200'}`} aria-hidden="true" />}
+            <span className={`relative z-10 grid h-7 w-7 place-items-center rounded-full text-xs font-bold ring-2 ${done ? 'bg-brand-600 text-white ring-brand-600' : on ? 'bg-white text-brand-700 ring-brand-600' : 'bg-white text-slate-400 ring-slate-200'}`}>
+              {done ? '✓' : i + 1}
+            </span>
+            <span className={`mt-1.5 px-1 text-[11px] font-semibold leading-tight sm:text-xs ${on || done ? 'text-brand-800' : 'text-slate-400'}`}>{s}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function SubmitBar({ busy, label, onCancel, disabled }) {
   return (
-    <div className="mt-5 flex justify-end gap-2">
-      {onCancel && <button type="button" className="btn-secondary h-12" onClick={onCancel}>Cancel</button>}
+    <div className={`mt-5 grid gap-2 sm:flex sm:justify-end ${onCancel ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      {onCancel && <button type="button" className="btn-secondary h-12 justify-center" onClick={onCancel}>Cancel</button>}
       <button type="submit" className="btn-primary" disabled={busy || disabled}>{busy && <Spinner />} {label}</button>
     </div>
   );
