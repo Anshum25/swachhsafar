@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.errors import AppError, BusinessRuleViolation, Conflict, Forbidden, NotFound
-from app.models import Attendance, AttendanceStage, Journey, MediaKind, StaffAllocation, VerificationStatus
+from app.models import Attendance, AttendanceStage, FaceEnrollment, Journey, MediaKind, StaffAllocation, VerificationStatus
 from app.schemas.common import PageParams
 from app.schemas.operations import AttendanceIn, GroupAttendanceIn, ReviewIn
 from app.security.principal import Principal
@@ -14,6 +14,20 @@ from app.services.common import audit, check_replay, get_or_404, paginate, paylo
 from app.services.journeys import check_capture_window, get_journey, is_allocated
 from app.services.policy import get_policy
 from app.timeutil import utcnow
+
+
+def _check_face(db: Session, policy, body: AttendanceIn) -> None:
+    """Division requires face verification: the employee must have registered faces and the device must have
+    matched the photo against them with the same model, within the division's threshold."""
+    enrollment = db.get(FaceEnrollment, body.employee_id)
+    if enrollment is None:
+        raise BusinessRuleViolation("No registered face for this employee; an administrator must register it first",
+                                    code="face_not_enrolled")
+    if body.face_distance is None or body.face_model != enrollment.model:
+        raise BusinessRuleViolation("Face verification is required for attendance in this division", code="face_not_verified")
+    if body.face_distance > policy.face_match_threshold:
+        raise BusinessRuleViolation("The attendance photo does not match the employee's registered face",
+                                    code="face_mismatch", details={"distance": body.face_distance, "threshold": policy.face_match_threshold})
 
 
 def _may_submit_for(p: Principal, j: Journey, employee_id: uuid.UUID) -> bool:
@@ -45,8 +59,11 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
         raise BusinessRuleViolation(f"Stage {body.stage - 1} must be recorded first", code="stage_order",
                                     details={"recorded_stages": sorted(previous)})
 
-    photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO, j.division_id, p.id,
-                           required=policy.attendance_photo_required, label="Attendance photo")
+    if policy.attendance_face_verification:
+        _check_face(db, policy, body)
+    photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO,
+                           j.division_id, p.id, required=policy.attendance_photo_required or policy.attendance_face_verification,
+                           label="Attendance photo")
     record = Attendance(**body.model_dump(exclude={"photo_media_id"}), photo_media_id=photo_id, division_id=j.division_id,
                         created_by_id=p.id, payload_hash=digest, sync_op_id=sync_op_id)
     db.add(record)
@@ -68,6 +85,7 @@ def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dic
     for m in body.members:
         item = AttendanceIn(id=m.id, journey_id=body.journey_id, employee_id=m.employee_id, stage=body.stage,
                             photo_media_id=m.photo_media_id, group_submission_id=body.group_submission_id,
+                            face_distance=m.face_distance, face_model=m.face_model,
                             device_timestamp=body.device_timestamp, latitude=body.latitude, longitude=body.longitude,
                             gps_accuracy_m=body.gps_accuracy_m)
         savepoint = db.begin_nested()

@@ -20,6 +20,7 @@ from app.models.feedback import (
     RailwayFeedback,
     RailwayFeedbackRating,
 )
+from app.models.faces import FaceEnrollment
 from app.models.inventory import InventoryItem, InventoryTransaction, InventoryTxnType, Unit
 from app.models.journeys import Journey, JourneyCoach, JourneyState, JourneyStatus, StaffAllocation
 from app.models.media import MediaKind, MediaObject, MediaStatus

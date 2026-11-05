@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.schemas.faces import FaceEnrollIn, FaceStatusOut
+from app.services import faces
 from app.db import get_db
 from app.errors import Forbidden
 from app.models import AuditLog, UserStatus
@@ -89,6 +91,22 @@ def update_user(user_id: uuid.UUID, body: UserUpdate, db: Session = Depends(get_
 @users_router.post("/{user_id}/status", response_model=UserOut)
 def set_status(user_id: uuid.UUID, body: UserStatusIn, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return org.set_user_status(db, p, user_id, UserStatus(body.status))
+
+
+@users_router.get("/{user_id}/face", response_model=FaceStatusOut)
+def get_face(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    return faces.status(db, p, user_id)
+
+
+@users_router.put("/{user_id}/face", response_model=FaceStatusOut)
+def put_face(user_id: uuid.UUID, body: FaceEnrollIn, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Register (or replace) the employee's face descriptors. Requires the employee's recorded consent."""
+    return faces.enroll(db, p, user_id, body)
+
+
+@users_router.delete("/{user_id}/face", status_code=status.HTTP_204_NO_CONTENT)
+def delete_face(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    faces.revoke(db, p, user_id)
 
 
 @users_router.get("/{user_id}/kyc", response_model=KycOut)

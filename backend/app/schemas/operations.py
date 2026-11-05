@@ -15,12 +15,17 @@ class AttendanceIn(Captured):
     stage: int = Field(ge=1, le=5, description="1 Source, 2 Enroute 1, 3 Destination, 4 Enroute 2, 5 End")
     photo_media_id: uuid.UUID | None = None
     group_submission_id: uuid.UUID | None = None
+    # Face verification result computed on the device (distance to the closest registered descriptor).
+    face_distance: float | None = Field(default=None, ge=0, le=4)
+    face_model: str | None = Field(default=None, max_length=40)
 
 
 class GroupMember(StrictModel):
     id: uuid.UUID
     employee_id: uuid.UUID
     photo_media_id: uuid.UUID | None = None
+    face_distance: float | None = Field(default=None, ge=0, le=4)
+    face_model: str | None = Field(default=None, max_length=40)
 
 
 class GroupAttendanceIn(StrictModel):
@@ -59,6 +64,8 @@ class AttendanceOut(ReadModel):
     gps_accuracy_m: float | None
     photo_media_id: uuid.UUID | None
     group_submission_id: uuid.UUID | None
+    face_distance: float | None = None
+    face_model: str | None = None
     created_by_id: uuid.UUID
     verification_status: VerificationStatus
     verified_by_id: uuid.UUID | None

@@ -30,7 +30,8 @@ from app.schemas.org import DivisionOut
 from app.schemas.sync import SyncBatchIn
 from app.schemas.trains import TrainOut
 from app.security.principal import Principal
-from app.services import attendance, complaints, feedback, inspections, inventory
+from app.schemas.faces import FaceProfileOut
+from app.services import attendance, complaints, faces, feedback, inspections, inventory
 from app.services import journeys as journey_svc
 from app.services.policy import get_policy
 
@@ -160,11 +161,15 @@ def changes(db: Session, p: Principal, since: datetime | None) -> dict:
         journeys.append(out)
 
     dump = lambda schema, rows: [schema.model_validate(r).model_dump(mode="json") for r in rows]  # noqa: E731
+    # Face descriptors for offline attendance verification: always the complete set this device needs
+    # (the device replaces its copy), so a removed registration disappears at the next pull.
+    face_profiles = dump(FaceProfileOut, faces.profiles_for_device(db, p, divisions))
     return dict(
         cursor=cursor, full=since is None,
         divisions=dump(DivisionOut, div_rows),
         policies={str(d): get_policy(db, d).model_dump() for d in divisions},
         trains=dump(TrainOut, trains), inventory_items=dump(ItemOut, items), question_banks=dump(QuestionBankOut, banks),
         complaint_departments=dump(DepartmentOut, deps), complaint_categories=dump(CategoryOut, cats), journeys=journeys,
+        face_profiles=face_profiles,
     )
 

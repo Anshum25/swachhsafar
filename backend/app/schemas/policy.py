@@ -18,3 +18,7 @@ class PolicySettings(StrictModel):
     attendance_late_grace_days: int = Field(default=1, ge=0, le=7)
     inspection_photo_required: bool = True
     complaint_default_sla_hours: int = Field(default=72, ge=1, le=24 * 60)
+    # Face verification of attendance (off by default). The device compares the attendance photo with the
+    # employee's registered face descriptors; a distance above the threshold blocks the attendance.
+    attendance_face_verification: bool = False
+    face_match_threshold: float = Field(default=0.5, ge=0.3, le=0.7)

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import IntEnum, StrEnum
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, GeoPoint, Timestamps, str_enum, TZDateTime
@@ -60,6 +60,8 @@ class Attendance(CapturedRecord, Base):
     stage: Mapped[int] = mapped_column(Integer, nullable=False)
     photo_media_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("media_objects.id"), unique=True)
     group_submission_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
+    face_distance: Mapped[float | None] = mapped_column(Float)
+    face_model: Mapped[str | None] = mapped_column(String(40))
 
 
 class Inspection(CapturedRecord, Base):
