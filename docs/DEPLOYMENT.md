@@ -22,7 +22,9 @@ change, make sure every device shows *0 pending*. A domain name avoids this prob
 |---|---|---|
 | nginx site | `/etc/nginx/sites-available/swachhsafar` (from `deploy/nginx/swachhsafar.conf`) | Port 8082 only. No other site was modified. |
 | Security headers | `/etc/swachhsafar/nginx/security-headers.conf` (from `deploy/nginx/security-headers.conf`) | The same file drives `vite preview` in e2e tests. |
-| TLS | `/etc/swachhsafar/tls/` | Private CA `ca.crt`/`ca.key` (600), leaf `server.crt` (397 days, SAN `IP:76.13.243.27`). |
+| TLS | `/etc/swachhsafar/tls/active.{crt,key}` → `le/` | **Let's Encrypt IP certificate** (6-day `shortlived` profile, chain to ISRG Root X1). lego v5.5.2 at `/usr/local/bin/lego`, state in `/etc/swachhsafar/lego/` (back it up). Fallback: private IP-constrained CA in the same directory (`server-fullchain.crt`). |
+| Cert renewal | `swachhsafar-cert-renew.timer` (twice a day) → `deploy/scripts/renew-cert.sh` → `cert-deploy-hook.sh` | Renews at ~1/3 of the lifetime left, or when Let's Encrypt's renewal info asks. A certificate goes live only if it covers the IP, matches its key, and passes `nginx -t`. |
+| ACME challenge | SkyPOS site: `location ^~ /.well-known/acme-challenge/` → `/var/www/acme` | Needed because SkyPOS answers `http://76.13.243.27/`. Backup: `/var/backups/swachhsafar/nginx/skypos.20261105-080850.bak`. |
 | Backend env | `/etc/swachhsafar/backend.env` (640 root:swachhsafar) | DB URL, OTP pepper, Firebase settings. Never commit. |
 | Firebase key | `/etc/swachhsafar/firebase-admin.json` (640 root:swachhsafar) | Rotate it: it was shared in a chat on 2026-11-05. |
 | DB credentials | `/etc/swachhsafar/postgres.env` (600 root) | |
@@ -55,8 +57,11 @@ journalctl -u swachhsafar-api -f
 sudo systemctl start swachhsafar-db-backup
 docker exec -i swachhsafar_db pg_restore -U swachh -d <empty_db> < /var/backups/swachhsafar/db/<file>.dump
 
-# Certificate: reissue the leaf before it expires (07 Dec 2027). Phones need no change.
-sudo deploy/scripts/make-ip-cert.sh 76.13.243.27 && sudo nginx -t && sudo systemctl reload nginx
+# Certificate: renews automatically. Check / force a run:
+systemctl list-timers swachhsafar-cert-renew.timer; journalctl -u swachhsafar-cert-renew -n 20
+sudo deploy/scripts/renew-cert.sh                  # no-op unless renewal is due
+# Emergency fallback to the private CA (phones would then need ca.crt installed):
+sudo ln -sfn server-fullchain.crt /etc/swachhsafar/tls/active.crt && sudo ln -sfn server.key /etc/swachhsafar/tls/active.key && sudo nginx -t && sudo systemctl reload nginx
 ```
 
 **Backend rollback:** check out the previous commit, then restart the service. A migration that must be undone
@@ -86,14 +91,17 @@ This is covered by `tests/e2e-offline/update.offline.spec.js`.
 5. `web_ip` was edited and then **restored byte-for-byte** from `/var/backups/swachhsafar/nginx/web_ip.20261105-072652.bak`.
    It turned out not to serve bare-IP port 80: `skypos` declares the same `server_name` and wins. nginx's
    "conflicting server name 76.13.243.27" warning predates this work.
-6. `lego` was installed briefly for a Let's Encrypt IP certificate, then removed when self-signed was chosen.
+6. `lego` v5.5.2 installed (checksum verified). One location added to the **SkyPOS** site by
+   `deploy/scripts/enable-letsencrypt-ip.sh`. SkyPOS still answers as before.
+   `swachhsafar-cert-renew.{service,timer}` enabled.
 7. Pre-existing and unrelated: the `admission.cblu.ac.in` certificate expired on 26 Jul 2026.
 
 ## Verification evidence (2026-11-05)
 
-- `curl --cacert ca.crt`: TLS verifies (HTTP/2). Without the CA it is rejected. `http://…:8082` redirects with 301 to https.
-- `tests/e2e-live/deployment.live.spec.js` (Chromium, Pixel 7 emulation, the CA trusted through NSS, certificate errors
-  **not** ignored): secure context; `Page.getInstallabilityErrors` = []; the manifest name is "Swachh Safar 2.0";
+- Plain `curl` with system trust: TLS verifies (HTTP/2), with the Let's Encrypt chain to ISRG Root X1. `http://…:8082`
+  redirects with 301 to https.
+- `tests/e2e-live/deployment.live.spec.js` (Chromium, Pixel 7 emulation, fresh profile, default trust store,
+  certificate errors **not** ignored): secure context; `Page.getInstallabilityErrors` = []; the manifest name is "Swachh Safar 2.0";
   the service worker controls the page; OPFS SQLite reports "Ready · persistent"; no API response in the cache;
   offline cold start + reload work; no CSP violations. First load to DB ready ≈ 1.1 s; offline cold start ≈ 0.5–1.0 s.
 - Lighthouse 13.5.0, mobile (simulated slow 4G): Performance 98, Accessibility 100, Best Practices 100, SEO 91
@@ -102,4 +110,4 @@ This is covered by `tests/e2e-offline/update.offline.spec.js`.
   (34 tables, 6 roles).
 - Firebase Admin key: valid (Google issued an access token).
 
-Run the live test again: `LIVE_URL=https://76.13.243.27:8082 HOME=<dir whose .pki/nssdb trusts ca.crt> npx playwright test -c playwright.live.config.js`
+Run the live test again: `LIVE_URL=https://76.13.243.27:8082 npx playwright test -c playwright.live.config.js`

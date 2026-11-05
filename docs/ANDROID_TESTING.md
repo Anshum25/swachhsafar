@@ -3,22 +3,12 @@
 None of the results below come from a physical phone yet. The automated evidence comes from desktop Chromium
 with Pixel 7 emulation. Fill in the sheet at the end on real devices.
 
-## 1. One-time phone setup: trust the Swachh Safar certificate
+## 1. No phone setup needed
 
-The server uses a private certificate authority, so a phone must trust it once. Without it, Chrome shows a
-warning, and the app cannot be installed or used offline. The CA is restricted to `76.13.243.27` only: it
-cannot vouch for any other website.
-
-1. In Chrome, open `https://76.13.243.27:8082/swachhsafar-ca.crt`. Accept the warning this one time
-   (*Advanced → Proceed*). The file `swachhsafar-ca.crt` downloads.
-2. Check its fingerprint against the one from IT. SHA-256:
-   `03:AD:43:6E:7B:F9:23:7F:C4:54:35:46:8D:55:06:FD:23:DB:DB:16:D6:72:28:1D:68:DC:79:0A:58:71:C1:48`
-3. Install it. Android needs a screen lock for this step:
-   - **Pixel / stock Android:** Settings → Security & privacy → More security settings → Encryption & credentials →
-     Install a certificate → **CA certificate** → Install anyway → choose `swachhsafar-ca.crt`.
-   - **Samsung:** Settings → Security and privacy → More security settings → Install from device storage →
-     **CA certificate** → Install anyway → choose the file.
-4. Close Chrome completely, reopen `https://76.13.243.27:8082`, and check that the address bar shows no warning.
+Since 2026-11-05 the server has a publicly trusted Let's Encrypt certificate for `76.13.243.27`, which chains
+to ISRG Root X1, trusted from Android 7.1.1 onwards. Share `https://76.13.243.27:8082` (for example on
+WhatsApp). If Chrome ever shows a certificate warning, report it: the certificate renews automatically every
+few days, and a warning means renewal has failed.
 
 ## 2. Install the app
 

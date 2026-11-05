@@ -57,7 +57,14 @@ EOF
 fi
 probe="probe-$RANDOM$RANDOM"
 echo ok > "/var/www/acme/.well-known/acme-challenge/$probe"
-got=$(curl -s "http://$IP/.well-known/acme-challenge/$probe" || true)
+# `systemctl reload nginx` returns before the new workers take over; old workers keep answering for a
+# moment, so retry instead of failing on the first answer.
+got=""
+for _ in $(seq 1 15); do
+  got=$(curl -s "http://$IP/.well-known/acme-challenge/$probe" || true)
+  [[ "$got" == ok ]] && break
+  sleep 1
+done
 rm -f "/var/www/acme/.well-known/acme-challenge/$probe"
 [[ "$got" == ok ]] || { echo "Challenge path not reachable at http://$IP/.well-known/acme-challenge/ (got: ${got:0:80})" >&2; exit 1; }
 echo "   challenge path reachable"
