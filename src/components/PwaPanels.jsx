@@ -19,16 +19,16 @@ export function InstallBanner() {
     const hint = hintDue && installInstructions();
     if (!hint) return null;
     return (
-      <div className="flex flex-wrap items-center gap-3 bg-teal-700 px-4 py-2 text-sm text-white sm:px-6" role="region" aria-label="Install app" data-testid="install-hint">
+      <div className="flex flex-wrap items-center gap-3 bg-brand-700 px-4 py-2 text-sm text-white sm:px-6" role="region" aria-label="Install app" data-testid="install-hint">
         <span className="min-w-0 flex-1"><span className="font-semibold">Install the app.</span> {hint}</span>
         <button type="button" className="text-white/80 underline" onClick={() => { dismissInstall(); setHidden(true); }}>Got it</button>
       </div>
     );
   }
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-teal-700 px-4 py-2 text-sm text-white sm:px-6" role="region" aria-label="Install app" data-testid="install-banner">
+    <div className="flex flex-wrap items-center gap-3 bg-brand-700 px-4 py-2 text-sm text-white sm:px-6" role="region" aria-label="Install app" data-testid="install-banner">
       <span className="min-w-0 flex-1">Install Swachh Safar for full-screen use and offline start.</span>
-      <button type="button" className="rounded-lg bg-white px-3 py-1.5 font-semibold text-teal-800" onClick={promptInstall}>Install</button>
+      <button type="button" className="rounded-lg bg-white px-3 py-1.5 font-semibold text-brand-800" onClick={promptInstall}>Install</button>
       <button type="button" className="text-white/80 underline" onClick={() => { dismissInstall(); setHidden(true); }}>Not now</button>
     </div>
   );

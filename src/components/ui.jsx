@@ -31,8 +31,8 @@ export function Panel({ title, actions, children, className = '' }) {
   );
 }
 
-export function Stat({ label, value, hint, tone = 'teal' }) {
-  const tones = { teal: 'text-teal-700', amber: 'text-amber-600', red: 'text-red-600', slate: 'text-slate-700' };
+export function Stat({ label, value, hint, tone = 'brand' }) {
+  const tones = { brand: 'text-brand-700', amber: 'text-amber-600', red: 'text-red-600', slate: 'text-slate-700' };
   return (
     <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
@@ -47,7 +47,7 @@ const BADGE = {
   amber: 'bg-amber-50 text-amber-800 ring-amber-200',
   red: 'bg-red-50 text-red-700 ring-red-200',
   slate: 'bg-slate-100 text-slate-600 ring-slate-200',
-  teal: 'bg-teal-50 text-teal-800 ring-teal-200',
+  brand: 'bg-brand-50 text-brand-800 ring-brand-200',
 };
 
 export function Badge({ tone = 'slate', children }) {
@@ -55,10 +55,10 @@ export function Badge({ tone = 'slate', children }) {
 }
 
 export const STATE_TONE = {
-  active: 'green', scheduled: 'teal', history: 'slate', cancelled: 'red',
-  created: 'amber', in_process: 'teal', forwarded: 'amber', completed: 'green',
+  active: 'green', scheduled: 'brand', history: 'slate', cancelled: 'red',
+  created: 'amber', in_process: 'brand', forwarded: 'amber', completed: 'green',
   pending: 'amber', verified: 'green', rejected: 'red', draft: 'amber', void: 'red',
-  issue: 'teal', return: 'slate',
+  issue: 'brand', return: 'slate',
 };
 
 export function Loading({ label = 'Loading…' }) {
@@ -145,7 +145,7 @@ export function Segmented({ options, value, onChange, label: aria }) {
     <div className="flex flex-wrap gap-1.5" role="group" aria-label={aria}>
       {options.map((o) => (
         <button key={o.value} type="button" onClick={() => onChange(o.value)} aria-pressed={value === o.value}
-          className={`rounded-xl px-3.5 py-2 text-sm font-medium ring-1 transition ${value === o.value ? 'bg-teal-700 text-white ring-teal-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'}`}>
+          className={`rounded-xl px-3.5 py-2 text-sm font-medium ring-1 transition ${value === o.value ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'}`}>
           {o.label}
         </button>
       ))}
@@ -220,7 +220,7 @@ export function DetailList({ items }) {
 export function Timeline({ items, empty = 'No history recorded.' }) {
   if (!items.length) return <p className="text-sm text-slate-500">{empty}</p>;
   return (
-    <ol className="space-y-3 border-l-2 border-teal-100 pl-4">
+    <ol className="space-y-3 border-l-2 border-brand-100 pl-4">
       {items.map((h) => (
         <li key={h.id} className="text-sm">
           <p className="font-medium">{h.title} <span className="text-xs font-normal text-slate-500">· {fmtDateTime(h.at)}</span></p>
@@ -238,7 +238,7 @@ export function RatingScale({ min, max, value, onChange, label: aria }) {
     <div className="flex flex-wrap gap-1.5" role="group" aria-label={aria}>
       {scale.map((v) => (
         <button key={v} type="button" onClick={() => onChange(v)} aria-pressed={value === v}
-          className={`h-10 w-10 rounded-xl text-sm font-semibold ring-1 ${value === v ? 'bg-teal-700 text-white ring-teal-700' : 'ring-slate-200 hover:bg-slate-50'}`}>{v}</button>
+          className={`h-10 w-10 rounded-xl text-sm font-semibold ring-1 ${value === v ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-200 hover:bg-slate-50'}`}>{v}</button>
       ))}
     </div>
   );
@@ -259,7 +259,7 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
       <div role="rowgroup">
         {rows.map((r) => (
           <div role="row" key={rowKey(r)} onClick={onRowClick ? () => onRowClick(r) : undefined}
-            className={`py-3 ${onRowClick ? 'cursor-pointer active:bg-teal-50/60' : ''}`}>
+            className={`py-3 ${onRowClick ? 'cursor-pointer active:bg-brand-50/60' : ''}`}>
             <div role="cell" className="min-w-0 break-words text-sm font-semibold text-slate-900">{cell(first, r)}</div>
             <div className="mt-1.5 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
               {rest.map((c) => (c.label ? (
@@ -285,7 +285,7 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
         <tbody>
           {rows.map((r) => (
             <tr key={rowKey(r)} onClick={onRowClick ? () => onRowClick(r) : undefined}
-              className={`border-b border-slate-100 last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-teal-50/40' : ''}`}>
+              className={`border-b border-slate-100 last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-brand-50/40' : ''}`}>
               {columns.map((c) => <td key={c.key} className="px-4 py-2.5 align-top sm:px-3">{c.render ? c.render(r) : r[c.key]}</td>)}
             </tr>
           ))}
@@ -298,10 +298,10 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
 
 export function Tabs({ tabs, value, onChange }) {
   return (
-    <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-1 rounded-2xl bg-slate-100 p-1 sm:flex sm:flex-wrap" role="tablist">
+    <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-slate-200 sm:flex sm:flex-wrap sm:rounded-full" role="tablist">
       {tabs.map((t) => (
         <button key={t.value} type="button" role="tab" aria-selected={value === t.value} onClick={() => onChange(t.value)}
-          className={`min-w-0 rounded-xl px-3 py-2 text-center text-sm font-medium leading-snug transition sm:flex-none sm:whitespace-nowrap sm:px-4 ${value === t.value ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+          className={`min-w-0 rounded-full px-3 py-2 text-center text-sm font-semibold leading-snug transition sm:flex-none sm:whitespace-nowrap sm:px-4 ${value === t.value ? 'bg-brand-700 text-white shadow-sm' : 'text-slate-600 hover:bg-brand-50 hover:text-brand-800'}`}>
           {t.label}
         </button>
       ))}

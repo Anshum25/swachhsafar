@@ -88,3 +88,27 @@ export const ChevronLeftIcon = (p) => (
 export const LogoutIcon = (p) => (
   <Icon {...p}><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" /></Icon>
 );
+export const UserIcon = (p) => (
+  <Icon {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" /></Icon>
+);
+export const LockIcon = (p) => (
+  <Icon {...p}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></Icon>
+);
+export const ThumbUpIcon = (p) => (
+  <Icon {...p}><path d="M7 10v11H4V10h3Z" /><path d="M7 10l4-8a2.5 2.5 0 0 1 2.5 2.5V8h5.3a2 2 0 0 1 2 2.3l-1.4 8.4a2 2 0 0 1-2 1.7H7" /></Icon>
+);
+export const CalendarIcon = (p) => (
+  <Icon {...p}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></Icon>
+);
+export const ChevronRightIcon = (p) => (
+  <Icon {...p}><path d="m9 6 6 6-6 6" /></Icon>
+);
+export const MoreIcon = (p) => (
+  <Icon {...p}><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></Icon>
+);
+export const LinkIcon = (p) => (
+  <Icon {...p}><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></Icon>
+);
+export const CheckCircleIcon = (p) => (
+  <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></Icon>
+);

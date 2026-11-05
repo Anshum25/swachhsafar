@@ -28,7 +28,7 @@ export function PhotoCapture({ value, onChange, required }) {
         </div>
       ) : (
         <button type="button" onClick={() => input.current.click()}
-          className="flex h-32 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-teal-200 bg-teal-50/40 text-sm font-medium text-teal-800 hover:bg-teal-50">
+          className="flex h-32 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-brand-200 bg-brand-50/40 text-sm font-medium text-brand-800 hover:bg-brand-50">
           <CameraIcon className="h-6 w-6" /> Take photo{required ? '' : ' (optional)'}
         </button>
       )}

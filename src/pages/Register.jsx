@@ -128,7 +128,7 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-dvh bg-gradient-to-b from-teal-50/70 via-white to-white">
+    <div className="min-h-dvh bg-gradient-to-b from-brand-50/70 via-white to-white">
       <header className="mx-auto flex max-w-md items-center justify-between px-4 pt-6 pb-2">
         <div className="flex items-center gap-3">
           <Logo />

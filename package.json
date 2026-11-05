@@ -1,7 +1,7 @@
 {
   "name": "swachh-safar-pwa",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:offline": "playwright test -c playwright.offline.config.js",
-    "generate-pwa-assets": "pwa-assets-generator --preset minimal-2023 public/logo.svg",
+    "generate-pwa-assets": "pwa-assets-generator",
     "test:live": "cross-env LIVE_FIREBASE=1 vitest run tests/integration"
   },
   "dependencies": {

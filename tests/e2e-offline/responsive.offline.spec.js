@@ -30,6 +30,7 @@ const WIDE = [768, 1024, 1366, 1920];
 const ROUTES = [
   '/', '/journeys', `/journeys/${IDS.journey}`, '/attendance', `/attendance/${IDS.journey}`, '/inspections',
   `/inspections/${IDS.journey}`, '/feedback', '/complaints', '/inventory', `/inventory/${IDS.journey}`, '/masters', '/reports',
+  '/profile', '/profile/password',
 ];
 const SHOTS = 'test-results/responsive';
 
@@ -60,12 +61,17 @@ function measure() {
     if ((r.right > W + 1 || r.left < -1) && !insideScroller(el)) bad.push(el);
   }
   const outermost = bad.filter((el) => !bad.some((o) => o !== el && o.contains(el)));
-  const header = document.querySelector('header');
+  const rowHeight = (id) => {
+    const el = document.querySelector(`[data-testid="${id}"]`);
+    const r = el?.getBoundingClientRect();
+    return r && r.width > 0 ? Math.round(r.height) : 0;
+  };
   const navLinks = [...document.querySelectorAll('nav.fixed a')].map((a) => a.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
   return {
     pageOverflow: document.documentElement.scrollWidth - W,
     offenders: outermost.slice(0, 8).map(describe),
-    headerHeight: header ? Math.round(header.getBoundingClientRect().height - parseFloat(getComputedStyle(header).paddingTop)) : 0,
+    barHeight: rowHeight('topbar-main'),
+    statusHeight: rowHeight('topbar-status'),
     smallTaps: navLinks.filter((r) => r.height < 44 || r.width < 44).length,
   };
 }
@@ -97,7 +103,8 @@ test('every screen fits phone, tablet and desktop widths', async () => {
     const issues = [];
     if (m.pageOverflow > 0) issues.push(`page scrolls sideways by ${m.pageOverflow}px`);
     if (m.offenders.length) issues.push(`sticks out: ${m.offenders.join(' | ')}`);
-    if (m.headerHeight > 64) issues.push(`top bar wraps (${m.headerHeight}px tall)`);
+    if (m.barHeight > 64) issues.push(`top bar wraps (${m.barHeight}px tall)`);
+    if (m.statusHeight > 56) issues.push(`status strip wraps (${m.statusHeight}px tall)`);
     if (m.smallTaps) issues.push(`${m.smallTaps} bottom-nav target(s) under 44px`);
     if (issues.length) problems.push(`${width}px ${name}: ${issues.join('; ')}`);
   };

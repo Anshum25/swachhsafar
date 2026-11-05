@@ -14,6 +14,8 @@ export const MODULES = [
     any: ['trains.manage', 'users.read', 'divisions.manage', 'questions.manage', 'complaints.masters.manage', 'inventory.items.manage', 'policies.manage'],
   },
   { key: 'reports', cp: 'CP-11', path: '/reports', label: 'Reports', any: ['reports.read'] },
+  // Everyone's own profile and password; reached from the menu, not listed with the modules.
+  { key: 'profile', path: '/profile', label: 'User Profile', any: [], menuOnly: true },
 ];
 
 export const visibleModules = (can) => MODULES.filter((m) => !m.any.length || m.any.some(can));

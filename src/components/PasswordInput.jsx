@@ -6,6 +6,7 @@ const METER_COLORS = ['bg-slate-200', 'bg-red-500', 'bg-amber-500', 'bg-lime-500
 
 export default function PasswordInput({
   label = 'Password', value, onChange, error, showStrength = false, autoComplete = 'new-password', autoFocus, disabled,
+  placeholder = 'At least 8 characters',
 }) {
   const id = useId();
   const [visible, setVisible] = useState(false);
@@ -26,12 +27,12 @@ export default function PasswordInput({
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${id}-error` : undefined}
           className={`input pr-12 ${error ? 'input-error' : ''}`}
-          placeholder="At least 8 characters"
+          placeholder={placeholder}
         />
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-2xl text-slate-500 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-teal-600"
+          className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-2xl text-slate-500 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-brand-600"
           aria-label={visible ? 'Hide password' : 'Show password'}
           aria-pressed={visible}
         >

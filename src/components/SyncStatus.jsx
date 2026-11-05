@@ -31,7 +31,7 @@ const Badge = ({ tone, children, ...props }) => (
 function Stat({ icon, label, children, testId }) {
   return (
     <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3">
-      <span className="mt-0.5 text-teal-700">{icon}</span>
+      <span className="mt-0.5 text-brand-700">{icon}</span>
       <div className="min-w-0">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
         <div className="mt-0.5 text-sm font-semibold text-slate-800" data-testid={testId}>{children}</div>

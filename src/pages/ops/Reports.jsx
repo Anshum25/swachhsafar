@@ -126,7 +126,7 @@ function Body({ tab, data, opts, name }) {
     const by = data.items.reduce((m, j) => ({ ...m, [j.state]: (m[j.state] ?? 0) + 1 }), {});
     return (
       <div className="space-y-3">
-        <div className="flex flex-wrap gap-2"><Badge tone="teal">Total {data.total}</Badge>{Object.entries(by).map(([k, v]) => <Badge key={k} tone={STATE_TONE[k]}>{label(k)}: {v}</Badge>)}</div>
+        <div className="flex flex-wrap gap-2"><Badge tone="brand">Total {data.total}</Badge>{Object.entries(by).map(([k, v]) => <Badge key={k} tone={STATE_TONE[k]}>{label(k)}: {v}</Badge>)}</div>
         {data.total > data.items.length && <p className="text-xs text-slate-500">Showing the first {data.items.length} of {data.total} journeys.</p>}
         <ReportTable name={name} rowKey={(j) => j.id} rows={data.items} columns={COLUMNS.journeys} />
       </div>
@@ -135,7 +135,7 @@ function Body({ tab, data, opts, name }) {
   if (tab === 'feedback') {
     return (
       <div className="space-y-3">
-        <div className="flex flex-wrap gap-2"><Badge tone="teal">Total {data.total}</Badge>{Object.entries(data.by_status).map(([k, v]) => <Badge key={k}>{label(k)}: {v}</Badge>)}
+        <div className="flex flex-wrap gap-2"><Badge tone="brand">Total {data.total}</Badge>{Object.entries(data.by_status).map(([k, v]) => <Badge key={k}>{label(k)}: {v}</Badge>)}
           {Object.entries(data.by_coach_class ?? {}).map(([k, v]) => <Badge key={k} tone="slate">{k === 'AC' ? 'AC' : 'Non-AC'}: {v}</Badge>)}</div>
         <ReportTable name={name} rowKey={(r) => r.question_id} rows={data.questions} columns={[
           { key: 'position', label: '#' }, { key: 'text_en', label: 'Question' }, { key: 'responses', label: 'Responses' },

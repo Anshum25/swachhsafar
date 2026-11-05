@@ -8,6 +8,7 @@ import { resolveRoute } from './app/modules.js';
 import { initDatabase } from './database/sqlite.js';
 import { recoverAfterStart } from './database/startupRecovery.js';
 import { ErrorNote, Loading } from './components/ui.jsx';
+import Splash from './components/Splash.jsx';
 
 const Dashboard = lazy(() => import('./pages/ops/Dashboard.jsx'));
 const Journeys = lazy(() => import('./pages/ops/Journeys.jsx'));
@@ -18,11 +19,12 @@ const Complaints = lazy(() => import('./pages/ops/Complaints.jsx'));
 const Masters = lazy(() => import('./pages/ops/Masters.jsx'));
 const Inventory = lazy(() => import('./pages/ops/Inventory.jsx'));
 const Reports = lazy(() => import('./pages/ops/Reports.jsx'));
+const Profile = lazy(() => import('./pages/Profile.jsx'));
 
 // One screen per module key in src/app/modules.js.
 const SCREENS = {
   dashboard: Dashboard, journeys: Journeys, attendance: Attendance, inspections: Inspections,
-  feedback: Feedback, complaints: Complaints, inventory: Inventory, masters: Masters, reports: Reports,
+  feedback: Feedback, complaints: Complaints, inventory: Inventory, masters: Masters, reports: Reports, profile: Profile,
 };
 
 function Shell() {
@@ -42,7 +44,7 @@ function Shell() {
   }, [path]);
 
   if (path === '/register' || registering) return <Register />;
-  if (session.status === 'loading' || registering === null) return <Loading label="Starting Swachh Safar…" />;
+  if (session.status === 'loading' || registering === null) return <Splash />;
   if (session.status === 'signedOut') return <Login />;
   if (session.status === 'error') {
     const notProvisioned = session.meError?.status === 401 || session.meError?.status === 403;
@@ -77,7 +79,7 @@ export default function App() {
     }, (error) => setDb({ status: 'error', error }));
   }, []);
 
-  if (db.status === 'initializing') return <Loading label="Starting Swachh Safar…" />;
+  if (db.status === 'initializing') return <Splash />;
   if (db.status === 'error') return <Register />; // Register reports the database failure itself.
   return (
     <SessionProvider db={db.handle} files={db.files}>

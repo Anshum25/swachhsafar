@@ -5,9 +5,56 @@ import { navigate } from '../../app/router.js';
 import { useNotify } from '../../app/Layout.jsx';
 import {
   Badge, ConfirmDialog, DataState, Dialog, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader, Pager,
-  Panel, STATE_TONE, Select, Stat, SubmitBar, Table, Tabs, Timeline, fmtDate, label,
+  Panel, STATE_TONE, Select, SubmitBar, Tabs, Timeline, fmtDate, label,
 } from '../../components/ui.jsx';
-import { ChevronLeftIcon, PlusIcon } from '../../components/Icons.jsx';
+import {
+  BoxIcon, CalendarIcon, ChevronLeftIcon, ChevronRightIcon, ClipboardIcon, LinkIcon, PlusIcon, ThumbUpIcon, TrainIcon, UserIcon, UsersIcon,
+} from '../../components/Icons.jsx';
+import { TrainArt } from '../../components/Logo.jsx';
+
+// One journey in the list: train icon, name, number and date, as a link to its detail.
+function JourneyCard({ j }) {
+  return (
+    <a href={`#/journeys/${j.id}`} data-testid="journey-card"
+      className="relative flex items-center gap-3 overflow-hidden rounded-2xl bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06),0_6px_16px_rgba(29,78,216,0.06)] ring-1 ring-slate-100 transition hover:ring-brand-200 active:scale-[0.99]">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-700"><TrainIcon className="h-6 w-6" /></span>
+      <div className="relative z-10 min-w-0 flex-1">
+        <p className="truncate text-base font-extrabold uppercase tracking-tight text-brand-900">{j.train_name}</p>
+        <p className="text-sm text-slate-600">Train No.: <span className="font-semibold text-slate-800">{j.train_no}</span></p>
+        <p className="text-sm text-slate-600">Journey Date: <span className="font-medium text-slate-800">{fmtDate(j.journey_date)}</span></p>
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <Badge tone={STATE_TONE[j.state]}>{label(j.state)}</Badge> {j.supervisor_name}
+        </p>
+      </div>
+      <TrainArt className="pointer-events-none absolute -right-8 bottom-2 hidden h-12 w-auto opacity-50 sm:block" />
+    </a>
+  );
+}
+
+// A labelled fact on the journey detail, with its icon.
+function InfoRow({ icon: Icon, label: name, children }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-slate-100 py-2.5 last:border-0">
+      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" />
+      <span className="min-w-0 flex-1 text-sm text-slate-600">{name}</span>
+      <span className="min-w-0 max-w-[60%] text-right text-sm font-medium text-slate-900">{children}</span>
+    </div>
+  );
+}
+
+// A module shortcut on the journey detail: icon, title, counts, chevron.
+function ModuleRow({ href, icon: Icon, title, children }) {
+  return (
+    <a href={href} className="flex items-center gap-3 rounded-2xl bg-brand-50/70 p-3.5 ring-1 ring-brand-100 transition hover:bg-brand-100/70 active:scale-[0.99]">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-brand-700 shadow-sm"><Icon className="h-5 w-5" /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold text-brand-900">{title}</span>
+        <span className="block text-xs text-slate-600">{children}</span>
+      </span>
+      <ChevronRightIcon className="h-5 w-5 shrink-0 text-brand-600" />
+    </a>
+  );
+}
 import { canAct } from '../../services/authorization.js';
 import { ONLINE_ONLY, isVersionConflict } from '../../services/operations.js';
 
@@ -279,8 +326,7 @@ function JourneyDetail({ id }) {
     <>
       <PageHeader
         back={<a href="#/journeys" className="btn-link mb-1 inline-flex items-center"><ChevronLeftIcon /> Journeys</a>}
-        title={`${j.train_no} · ${j.train_name}`}
-        subtitle={`${fmtDate(j.journey_date)} → ${fmtDate(j.end_date)} · Return ${j.linked_train_no ?? ''} ${fmtDate(j.linked_journey_date)}`}
+        title={`Journey Details (${label(j.state)})`}
         actions={manage && (
           <>
             <OnlineButton onClick={() => setDialog('edit')}>Edit</OnlineButton>
@@ -291,33 +337,49 @@ function JourneyDetail({ id }) {
         )}
       />
       {manage && <OfflineActionsNote reason={ONLINE_ONLY.journey} />}
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Badge tone={STATE_TONE[j.state]}>{label(j.state)}</Badge>
-        <Badge>Supervisor: {j.supervisor_name}</Badge>
-        <Badge>{j.coaches.length} coaches</Badge>
-        <Badge>{j.inspection_rounds_per_day} round(s)/day</Badge>
-        <Badge>Version {j.version}</Badge>
-        {j.cancel_reason && <Badge tone="red">Cancelled: {j.cancel_reason}</Badge>}
-      </div>
-      {s && (
-        <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Stat label="Staff fully attended" value={`${s.staff_fully_attended}/${s.staff_allocated}`} />
-          <Stat label="Inspections" value={`${s.inspections_done}/${s.inspections_required}`} hint={s.inspection_completion_pct != null ? `${s.inspection_completion_pct.toFixed(0)}% complete` : undefined} />
-          <Stat label="Passenger feedback" value={s.passenger_feedback_completed} hint={`${s.passenger_feedback_pending} pending`} tone="slate" />
-          <Stat label="Complaints open" value={s.complaints_open} hint={`${s.complaints_overdue} overdue`} tone={s.complaints_overdue ? 'red' : 'teal'} />
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 sm:p-5">
+          <div className="mb-2 flex items-center gap-3 border-b border-slate-100 pb-3">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-700"><TrainIcon className="h-7 w-7" /></span>
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-extrabold uppercase tracking-tight text-brand-900">{j.train_name}</h2>
+              <p className="text-sm text-slate-600">Train No.: <b className="text-slate-800">{j.train_no}</b>{j.linked_train_no ? <> &nbsp;|&nbsp; Linked: <b className="text-slate-800">{j.linked_train_no}</b></> : null}</p>
+            </div>
+          </div>
+          <InfoRow icon={CalendarIcon} label="Journey Date">{fmtDate(j.journey_date)} → {fmtDate(j.end_date)}</InfoRow>
+          <InfoRow icon={LinkIcon} label="Linked Date">{fmtDate(j.linked_journey_date)}</InfoRow>
+          <InfoRow icon={UserIcon} label="Supervisor/EHK">{j.supervisor_name}</InfoRow>
+          <InfoRow icon={UsersIcon} label="No. of Allotted Staff">{s ? s.staff_allocated : '—'}</InfoRow>
+          <InfoRow icon={TrainIcon} label="Coaches">{j.coaches.length} · {j.inspection_rounds_per_day} round(s)/day</InfoRow>
+          {j.cancel_reason && <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">Cancelled: {j.cancel_reason}</p>}
+        </section>
+        <div className="space-y-3">
+          {canIn('attendance.submit', j.division_id) || canIn('attendance.read', j.division_id) ? (
+            <ModuleRow href={`#/attendance/${j.id}`} icon={UsersIcon} title="Attendance">
+              Total Attendance: {s ? s.attendance_records : '—'}{s ? ` · ${s.staff_fully_attended}/${s.staff_allocated} staff complete` : ''}
+            </ModuleRow>
+          ) : null}
+          {canIn('inspections.submit', j.division_id) || canIn('inspections.read', j.division_id) ? (
+            <ModuleRow href={`#/inspections/${j.id}`} icon={ClipboardIcon} title="Inspections">
+              Total Inspections: {s ? `${s.inspections_done}/${s.inspections_required}` : '—'}
+            </ModuleRow>
+          ) : null}
+          {canIn('feedback.collect', j.division_id) || canIn('feedback.railway.submit', j.division_id) || canIn('feedback.read', j.division_id) ? (
+            <ModuleRow href="#/feedback" icon={ThumbUpIcon} title="Feedback">
+              Passenger: {s ? s.passenger_feedback_completed : '—'} &nbsp;|&nbsp; Railway: {s ? s.railway_feedback : '—'}
+            </ModuleRow>
+          ) : null}
+          {canIn('inventory.read', j.division_id) || canIn('inventory.transact', j.division_id) ? (
+            <ModuleRow href={`#/inventory/${j.id}`} icon={BoxIcon} title="Inventory">Issue and return of cleaning material</ModuleRow>
+          ) : null}
+          {summary.stale && <p className="text-xs text-amber-800">Counts are from records stored on this device.</p>}
         </div>
-      )}
-      {summary.stale && <p className="mb-4 text-xs text-amber-800">Counts are from records stored on this device.</p>}
-      <div className="mb-4 flex flex-wrap gap-2">
-        {canIn('attendance.submit', j.division_id) || canIn('attendance.read', j.division_id) ? <a className="btn-secondary" href={`#/attendance/${j.id}`}>Attendance</a> : null}
-        {canIn('inspections.submit', j.division_id) || canIn('inspections.read', j.division_id) ? <a className="btn-secondary" href={`#/inspections/${j.id}`}>Coach inspection</a> : null}
-        {canIn('inventory.read', j.division_id) || canIn('inventory.transact', j.division_id) ? <a className="btn-secondary" href={`#/inventory/${j.id}`}>Inventory</a> : null}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <StaffPanel journey={j} onChanged={refresh} />
         <Panel title="Coaches">
           <div className="flex flex-wrap gap-2">
-            {j.coaches.map((c) => <Badge key={c.code} tone={c.classification === 'AC' ? 'teal' : 'slate'}>{c.code} · {c.classification === 'AC' ? 'AC' : 'Non-AC'}</Badge>)}
+            {j.coaches.map((c) => <Badge key={c.code} tone={c.classification === 'AC' ? 'brand' : 'slate'}>{c.code} · {c.classification === 'AC' ? 'AC' : 'Non-AC'}</Badge>)}
           </div>
         </Panel>
         <JourneyTimeline journey={j} />
@@ -383,13 +445,9 @@ function JourneyList() {
         <DataState res={res} empty={`No ${tab} journeys.`}>
           {(page) => (
             <>
-              <Table rows={page.items.filter(matches)} onRowClick={(j) => navigate(`/journeys/${j.id}`)} columns={[
-                { key: 'train', label: 'Train', render: (j) => <><span className="font-semibold">{j.train_no}</span><span className="block text-xs text-slate-500">{j.train_name}</span></> },
-                { key: 'dates', label: 'Dates', render: (j) => `${fmtDate(j.journey_date)} → ${fmtDate(j.end_date)}` },
-                { key: 'supervisor_name', label: 'Supervisor' },
-                { key: 'coaches', label: 'Coaches', render: (j) => j.coaches.length },
-                { key: 'state', label: 'State', render: (j) => <Badge tone={STATE_TONE[j.state]}>{label(j.state)}</Badge> },
-              ]} />
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {page.items.filter(matches).map((j) => <JourneyCard key={j.id} j={j} />)}
+              </div>
               {term && !page.items.some(matches) && <p className="py-4 text-center text-sm text-slate-500">No journeys on this page match &quot;{search}&quot;.</p>}
               <Pager data={page} onPage={setPageNo} />
             </>

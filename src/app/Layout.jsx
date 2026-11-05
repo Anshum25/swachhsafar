@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import Logo from '../components/Logo.jsx';
+import Logo, { TrainArt } from '../components/Logo.jsx';
 import Toasts, { useToasts } from '../components/Toasts.jsx';
 import {
-  BoxIcon, ChartIcon, ChatIcon, ClipboardIcon, DatabaseGridIcon, FlagIcon, HomeIcon, LogoutIcon, MenuIcon, RefreshIcon,
-  Spinner, TrainIcon, UsersIcon, XIcon,
+  BoxIcon, ChartIcon, ClipboardIcon, DatabaseGridIcon, FlagIcon, HomeIcon, LockIcon, LogoutIcon, MenuIcon, MoreIcon,
+  RefreshIcon, Spinner, ThumbUpIcon, TrainIcon, UserIcon, UsersIcon, XIcon,
 } from '../components/Icons.jsx';
 import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
 import { ROLE_NAMES, useQueueState, useSession } from './session.jsx';
@@ -16,12 +16,16 @@ const ToastContext = createContext(() => {});
 export const useNotify = () => useContext(ToastContext);
 
 const ICONS = {
-  dashboard: HomeIcon, journeys: TrainIcon, attendance: UsersIcon, inspections: ClipboardIcon, feedback: ChatIcon,
-  complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon, reports: ChartIcon,
+  dashboard: HomeIcon, journeys: TrainIcon, attendance: UsersIcon, inspections: ClipboardIcon, feedback: ThumbUpIcon,
+  complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon, reports: ChartIcon, profile: UserIcon,
 };
 
-// Navigation is the module registry (src/app/modules.js) with an icon per module.
-export const NAV = MODULES.map((m) => ({ ...m, Icon: ICONS[m.key] }));
+// Navigation is the module registry (src/app/modules.js) with an icon per module; `menuOnly` entries
+// (the profile) are reached from the account section of the menu instead.
+export const NAV = MODULES.filter((m) => !m.menuOnly).map((m) => ({ ...m, Icon: ICONS[m.key] }));
+export const MODULE_ICONS = ICONS;
+// eslint-disable-next-line no-undef
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 
 export const visibleNav = (can) => NAV.filter((n) => !n.any.length || n.any.some(can));
 
@@ -32,7 +36,7 @@ function NavList({ items, active, onPick }) {
         const on = path === '/' ? active === '/' : active.startsWith(path);
         return (
           <a key={path} href={`#${path}`} onClick={onPick}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${on ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-teal-50 hover:text-teal-800'}`}>
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${on ? 'bg-brand-100 text-brand-800' : 'text-slate-600 hover:bg-brand-50 hover:text-brand-800'}`}>
             <Icon className="h-5 w-5" /> {label}
           </a>
         );
@@ -67,8 +71,8 @@ function QueueIndicator() {
 // worked; a failed pull while the network is up shows as a server problem.
 const SHORT_STATUS = { 'Server unreachable': 'No server', 'Syncing…': 'Syncing' };
 
-// Literal class names so Tailwind generates them.
-const NAV_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4', 5: 'grid-cols-5' };
+// Literal class names so Tailwind generates them (bottom bar: up to 3 screens + More).
+const NAV_COLS = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' };
 
 function ConnectionIndicator({ online }) {
   const q = useQueueState();
@@ -96,44 +100,79 @@ export default function Layout({ path, children }) {
   const { toasts, notify, dismiss } = useToasts();
   const [open, setOpen] = useState(false);
   const items = visibleNav(can);
+  // Bottom bar (phones/tablets): Home + the first two other screens the user has, then More (the menu).
+  const bottom = [items[0], ...items.slice(1, 3)].filter(Boolean);
+  const close = () => setOpen(false);
 
+  const account = [
+    { href: '#/profile', label: 'User Profile', Icon: UserIcon, on: path === '/profile' },
+    { href: '#/profile/password', label: 'Change Password', Icon: LockIcon, on: path === '/profile/password' },
+  ];
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 px-2 pb-6">
-        <Logo className="h-9 w-9" />
+      <div className="flex items-center gap-3 px-2 pb-5">
+        <Logo className="h-10 w-10" />
         <div>
-          <p className="text-sm font-bold text-slate-900">Swachh Safar</p>
-          <p className="text-xs text-slate-500">Inspection management</p>
+          <p className="text-base font-extrabold text-brand-800">Swachh Safar</p>
+          <p className="text-xs text-slate-500">Railway Inspection &amp; Monitoring</p>
         </div>
       </div>
-      <NavList items={items} active={path} onPick={() => setOpen(false)} />
-      <div className="mt-auto rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
-        <p className="truncate text-sm font-semibold">{user.name}</p>
-        <p className="text-xs text-slate-500">{ROLE_NAMES[user.role_id]} · {user.emp_id}</p>
-        <button type="button" className="btn-link mt-2 inline-flex items-center gap-1" onClick={signOut}><LogoutIcon /> Sign out</button>
+      <div className="mb-4 flex items-center gap-3 rounded-2xl bg-brand-50 p-3 ring-1 ring-brand-100">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-700 text-white"><UserIcon className="h-5 w-5" /></span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-900">{user.name}</p>
+          <p className="truncate text-xs text-slate-500">{ROLE_NAMES[user.role_id]} · {user.emp_id}</p>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <NavList items={items} active={path} onPick={close} />
+        <div className="mt-4 space-y-1 border-t border-slate-100 pt-4">
+          {account.map(({ href, label, Icon, on }) => (
+            <a key={href} href={href} onClick={close}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${on ? 'bg-brand-100 text-brand-800' : 'text-slate-600 hover:bg-brand-50 hover:text-brand-800'}`}>
+              <Icon className="h-5 w-5" /> {label}
+            </a>
+          ))}
+          <button type="button" onClick={signOut}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-red-50 hover:text-red-700">
+            <LogoutIcon className="h-5 w-5" /> Logout
+          </button>
+        </div>
+      </div>
+      <div className="pt-3 text-center">
+        <TrainArt className="mx-auto h-14 w-auto opacity-80" />
+        <p className="mt-1 text-xs text-slate-400">App Version {APP_VERSION}</p>
       </div>
     </div>
   );
 
   return (
     <ToastContext.Provider value={notify}>
-      <div className="min-h-dvh bg-slate-50">
+      <div className="min-h-dvh bg-canvas">
         <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white p-4 lg:block">{sidebar}</aside>
         {open && (
-          <div className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={() => setOpen(false)}>
-            <aside className="h-full w-72 bg-white p-4" onClick={(e) => e.stopPropagation()}>
-              <button type="button" className="mb-2 ml-auto block rounded-lg p-1 text-slate-500" onClick={() => setOpen(false)} aria-label="Close menu"><XIcon className="h-5 w-5" /></button>
-              {sidebar}
+          <div className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={close}>
+            <aside className="flex h-full w-72 max-w-[85vw] flex-col bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <button type="button" className="mb-1 ml-auto block rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" onClick={close} aria-label="Close menu"><XIcon className="h-5 w-5" /></button>
+              <div className="min-h-0 flex-1">{sidebar}</div>
             </aside>
           </div>
         )}
         <div className="lg:pl-64">
-          <header className="sticky top-0 z-20 flex min-h-14 items-center pt-[env(safe-area-inset-top)] gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
-            <button type="button" className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
-              <MenuIcon className="h-5 w-5" />
-            </button>
-            <span className="shrink-0 whitespace-nowrap font-semibold text-teal-800 lg:hidden">Swachh Safar</span>
-            <div className="ml-auto flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+            {/* Phones/tablets: menu · centred brand (the sidebar carries the brand on desktop). */}
+            <div className="grid min-h-14 grid-cols-[2.5rem_1fr_2.5rem] items-center px-2 sm:px-4 lg:hidden" data-testid="topbar-main">
+              <button type="button" className="grid h-10 w-10 place-items-center rounded-xl text-brand-800 hover:bg-brand-50" onClick={() => setOpen(true)} aria-label="Open menu">
+                <MenuIcon className="h-6 w-6" />
+              </button>
+              <a href="#/" className="flex min-w-0 items-center justify-center gap-2" aria-label="Swachh Safar home">
+                <Logo className="h-8 w-8 shrink-0" />
+                <span className="truncate text-lg font-extrabold tracking-tight text-brand-800">Swachh Safar</span>
+              </a>
+              <span aria-hidden="true" />
+            </div>
+            {/* Sync status: a slim strip under the bar on phones, the right side of the bar on desktop. */}
+            <div className="flex min-h-8 items-center justify-between gap-3 border-t border-slate-100 bg-brand-50/50 px-4 py-1 sm:px-6 lg:min-h-14 lg:justify-end lg:border-0 lg:bg-transparent" data-testid="topbar-status">
               <QueueIndicator />
               <ConnectionIndicator online={online} />
             </div>
@@ -147,15 +186,18 @@ export default function Layout({ path, children }) {
           <InstallBanner />
           {me.offline && <p className="bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6">Signed in offline with your cached profile. Permissions will refresh when you reconnect.</p>}
           <main className="mx-auto max-w-6xl px-4 py-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:pb-8">{children}</main>
-          <nav className={`fixed inset-x-0 bottom-0 z-20 grid ${NAV_COLS[Math.min(items.length, 5)]} border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden`}>
-            {items.slice(0, 5).map(({ path: p, label, Icon }) => {
+          <nav className={`fixed inset-x-0 bottom-0 z-20 grid ${NAV_COLS[bottom.length + 1]} border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_12px_rgba(15,23,42,0.06)] lg:hidden`}>
+            {bottom.map(({ path: p, label, Icon }) => {
               const on = p === '/' ? path === '/' : path.startsWith(p);
               return (
-                <a key={p} href={`#${p}`} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium ${on ? 'text-teal-700' : 'text-slate-500'}`}>
-                  <Icon className="h-5 w-5" /> <span className="truncate">{label.split(' ')[0]}</span>
+                <a key={p} href={`#${p}`} className={`flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-semibold ${on ? 'text-brand-700' : 'text-slate-500'}`}>
+                  <Icon className="h-5 w-5" /> <span className="truncate">{p === '/' ? 'Home' : label.split(' ')[0]}</span>
                 </a>
               );
             })}
+            <button type="button" onClick={() => setOpen(true)} className="flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-semibold text-slate-500">
+              <MoreIcon className="h-5 w-5" /> <span>More</span>
+            </button>
           </nav>
         </div>
         <Toasts toasts={toasts} onDismiss={dismiss} />

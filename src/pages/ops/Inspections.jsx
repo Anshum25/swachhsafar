@@ -98,7 +98,7 @@ function InspectionGrid({ journey: j, grid }) {
           </div>
           <div>
             <div className="flex justify-between text-sm"><span className="font-medium">Day {activeDay} completion{cls ? ` · ${cls === 'AC' ? 'AC' : 'Non-AC'}` : ''}</span><span className="tabular-nums text-slate-600">{done}/{required}</span></div>
-            <div className="mt-1 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-teal-600" style={{ width: `${required ? (done / required) * 100 : 0}%` }} /></div>
+            <div className="mt-1 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-brand-600" style={{ width: `${required ? (done / required) * 100 : 0}%` }} /></div>
           </div>
         </div>
       </Panel>
@@ -112,7 +112,7 @@ function InspectionGrid({ journey: j, grid }) {
             const tile = {
               taken: 'bg-emerald-600 text-white ring-emerald-600',
               pending: 'bg-amber-400 text-slate-900 ring-amber-400',
-              open: 'bg-white text-teal-800 ring-teal-600 hover:bg-teal-50',
+              open: 'bg-white text-brand-800 ring-brand-600 hover:bg-brand-50',
               locked: 'bg-slate-100 text-slate-400 ring-slate-200',
             }[status];
             return (

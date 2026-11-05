@@ -163,7 +163,7 @@ test('master data: online administration, offline reads, read-only users', async
   server.connected = true;
   await context.setOffline(false);
   await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('button', { name: 'Logout' }).click();
   await signIn(page, VIEWER, 'Vijay');
   await openTab(page, 'Inventory items');
   await expect(page.getByRole('row', { name: /Garbage bags/ })).toBeVisible();

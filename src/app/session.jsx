@@ -158,6 +158,15 @@ export function SessionProvider({ db, files, children }) {
     await authLib.signInWithEmailAndPassword(auth, email, password);
   }, []);
 
+  // Changes the Firebase password after re-checking the current one. Needs a connection.
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    const { authLib, auth } = await loadFirebase();
+    const u = auth.currentUser;
+    if (!u?.email) throw Object.assign(new Error('Sign in again to change your password.'), { code: 'auth/no-current-user' });
+    await authLib.reauthenticateWithCredential(u, authLib.EmailAuthProvider.credential(u.email, currentPassword));
+    await authLib.updatePassword(u, newPassword);
+  }, []);
+
   const signOut = useCallback(async () => {
     if (DEMO_MODE) return;
     const { authLib, auth } = await loadFirebase();
@@ -186,9 +195,10 @@ export function SessionProvider({ db, files, children }) {
       outbox,
       signIn,
       signOut,
+      changePassword,
       reload: loadMe,
     };
-  }, [fbUser, me, meError, configError, api, ops, queue, store, db, outbox, signIn, signOut, loadMe]);
+  }, [fbUser, me, meError, configError, api, ops, queue, store, db, outbox, signIn, signOut, changePassword, loadMe]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

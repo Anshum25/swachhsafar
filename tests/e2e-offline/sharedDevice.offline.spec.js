@@ -45,7 +45,7 @@ async function signIn(page, email, firstName) {
 
 async function signOut(page) {
   await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('button', { name: 'Logout' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 }
 

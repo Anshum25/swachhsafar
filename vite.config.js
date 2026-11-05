@@ -24,7 +24,10 @@ export function readSecurityHeaders(file = 'deploy/nginx/security-headers.conf')
 }
 const previewHeaders = process.env.PREVIEW_SECURITY_HEADERS ? readSecurityHeaders() : undefined;
 
+const APP_VERSION = JSON.parse(readFileSync('package.json', 'utf8')).version;
+
 export default defineConfig(({ isPreview }) => ({
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   plugins: [
     react(),
     tailwindcss(),
@@ -51,8 +54,8 @@ export default defineConfig(({ isPreview }) => ({
         orientation: 'any',
         categories: ['business', 'productivity'],
         prefers_related_applications: false,
-        background_color: '#ffffff',
-        theme_color: '#0f766e',
+        background_color: '#f3f7fe',
+        theme_color: '#1d4ed8',
         icons: [
           { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },

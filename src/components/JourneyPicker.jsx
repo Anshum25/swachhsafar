@@ -14,7 +14,7 @@ export default function JourneyPicker({ base, title = 'Select an active journey'
             {page.items.map((j) => (
               <li key={j.id}>
                 <button type="button" onClick={() => navigate(`${base}/${j.id}`)}
-                  className="w-full rounded-2xl p-4 text-left ring-1 ring-slate-200 transition hover:bg-teal-50/50 hover:ring-teal-300">
+                  className="w-full rounded-2xl p-4 text-left ring-1 ring-slate-200 transition hover:bg-brand-50/50 hover:ring-brand-300">
                   <div className="flex items-center justify-between"><span className="font-semibold">{j.train_no}</span><Badge tone="green">Active</Badge></div>
                   <p className="text-sm text-slate-600">{j.train_name}</p>
                   <p className="mt-1 text-xs text-slate-500">{fmtDate(j.journey_date)} → {fmtDate(j.end_date)} · {j.coaches.length} coaches</p>
