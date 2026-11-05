@@ -174,3 +174,62 @@ def download_link(storage: StorageBackend, media: MediaObject) -> tuple[str, obj
         return f"/api/v1/media/{media.id}/file", None
     ttl = timedelta(seconds=get_settings().media_url_ttl_seconds)
     return storage.signed_url(media.storage_path, ttl), utcnow() + ttl
+
+
+def _journey_of_record(db: Session, media_id: uuid.UUID) -> uuid.UUID | None:
+    """Journey of the record that references this file (attendance, inspection, voice note, complaint)."""
+    from sqlalchemy import or_, select
+
+    from app.models import Attendance, Complaint, ComplaintAttachment, Inspection, PassengerFeedback
+
+    for stmt in (
+        select(Attendance.journey_id).where(Attendance.photo_media_id == media_id),
+        select(Inspection.journey_id).where(or_(Inspection.photo_media_id == media_id, Inspection.video_media_id == media_id)),
+        select(PassengerFeedback.journey_id).where(PassengerFeedback.voice_media_id == media_id),
+        select(Complaint.journey_id).join(ComplaintAttachment, ComplaintAttachment.complaint_id == Complaint.id)
+        .where(ComplaintAttachment.media_id == media_id),
+    ):
+        journey_id = db.scalar(stmt)
+        if journey_id is not None:
+            return journey_id
+    return None
+
+
+def file_by_journey(db: Session, root: str, *, dry_run: bool = False) -> list[tuple[str, str]]:
+    """Moves uploaded files kept under other/ (sent by an app version that did not declare the journey) into
+    their journey folder, taking the journey from the record that uses the file. Local storage only.
+    Crash-safe order: hard-link at the new path, commit the new path, then remove the old name; the database
+    always points at an existing file, and re-running is harmless."""
+    import os
+    from pathlib import Path
+
+    from sqlalchemy import select
+
+    base = Path(root).resolve()
+    moved = []
+    rows = db.scalars(select(MediaObject).where(MediaObject.status == MediaStatus.UPLOADED,
+                                                MediaObject.storage_path.like("other/%"))).all()
+    for media in rows:
+        journey_id = media.journey_id or _journey_of_record(db, media.id)
+        if journey_id is None:
+            continue
+        old = media.storage_path
+        media.journey_id = journey_id
+        new = storage_path(db, media, media.uploaded_at or utcnow(), old.rsplit(".", 1)[-1])
+        if dry_run:
+            db.rollback()
+            moved.append((old, new))
+            continue
+        src, dst = base / old, base / new
+        if base not in dst.resolve().parents or not src.is_file():
+            db.rollback()
+            log.warning("media %s: %s missing or unsafe target, skipped", media.id, old)
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if not dst.exists():
+            os.link(src, dst)
+        media.storage_path = new
+        db.commit()
+        src.unlink(missing_ok=True)
+        moved.append((old, new))
+    return moved

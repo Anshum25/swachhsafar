@@ -124,3 +124,27 @@ cd backend && sudo -u swachhsafar bash -c 'set -a; . /etc/swachhsafar/backend.en
   .venv/bin/python -m app.cli create-superadmin --division-code <CODE> --emp-id <ID> --name "<Name>" --email <email> [--firebase-uid <uid>]'
 ```
 Without `--firebase-uid`, the record links on first sign-in only if the Firebase email is verified.
+
+## Media files (photos, video, voice notes)
+
+Stored on this server since 2026-11-05: Firebase Storage has no bucket for the project.
+
+```
+/var/www/html/swachhsafar2.0/uploads/            (swachhsafar:swachhsafar 750 — NOT served by nginx)
+  journeys/<journey date>_<train no>_<journey id>/<attendance_photo|inspection_photo|inspection_video|feedback_voice|complaint_attachment>/<media id>.<ext>
+  other/<kind>/<yyyy>/<mm>/<media id>.<ext>     (no journey: KYC documents, complaints without a journey)
+```
+
+- Files can only be downloaded through the API (`/api/v1/media/{id}/file`), which checks sign-in and permissions.
+  Do not rename or move files by hand: `media_objects.storage_path` in the database points at them.
+- The phone sends the record's journey with each upload. A phone still on an older app version uploads to `other/`.
+  File those afterwards (dry run first):
+  ```bash
+  cd backend && sudo systemd-run --wait --pipe -p User=swachhsafar -p EnvironmentFile=/etc/swachhsafar/backend.env \
+    -p WorkingDirectory=$PWD -p ProtectSystem=strict -p ReadWritePaths=/var/www/html/swachhsafar2.0/uploads \
+    .venv/bin/python -m app.cli file-media-by-journey --dry-run    # then without --dry-run
+  ```
+- Backup: `backup-db.sh` (nightly) mirrors `uploads/` to `/var/backups/swachhsafar/uploads/`. The mirror never deletes,
+  but it is on the same disk: copy it off the server regularly.
+- Size limits per file: photos 8 MB, voice 10 MB, complaint attachments 15 MB, video 100 MB (nginx accepts up to 30 MB,
+  matching the device's 25 MB video limit).

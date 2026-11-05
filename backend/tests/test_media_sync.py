@@ -211,3 +211,31 @@ def test_storage_failure_is_retryable_not_a_crash(world, db):
     assert db.get(MediaObject, uuid.UUID(media_id)).status == MediaStatus.PENDING
     # Storage back: the same upload succeeds.
     assert world.client.put(f"{API}/media/{media_id}/content", headers=world.h("sup"), content=PNG).status_code == 200
+
+
+def test_file_by_journey_moves_old_uploads_into_their_journey_folder(world, db):
+    """An older app uploaded without journey_id (file under other/); the record that uses it names the journey."""
+    from app.models import MediaObject
+    from app.services.media import file_by_journey
+    from tests.conftest import _MEDIA
+
+    media_id, _ = init(world, PNG)
+    world.client.put(f"{API}/media/{media_id}/content", headers=world.h("sup"), content=PNG)
+    batch(world, [_attendance_op(world, media_id)])
+    db.expire_all()
+    old = db.get(MediaObject, uuid.UUID(media_id)).storage_path
+    assert old.startswith("other/")
+
+    assert file_by_journey(db, str(_MEDIA), dry_run=True)[0][0] == old
+    db.expire_all()
+    assert db.get(MediaObject, uuid.UUID(media_id)).storage_path == old  # dry run changes nothing
+
+    moved = file_by_journey(db, str(_MEDIA))
+    db.expire_all()
+    media = db.get(MediaObject, uuid.UUID(media_id))
+    assert moved == [(old, media.storage_path)] and media.storage_path.startswith("journeys/")
+    assert str(media.journey_id) == world.journey["id"]
+    assert (_MEDIA / media.storage_path).read_bytes() == PNG and not (_MEDIA / old).exists()
+    link = world.client.get(f"{API}/media/{media_id}/download", headers=world.h("manager")).json()
+    assert world.client.get(link["url"], headers=world.h("manager")).content == PNG
+    assert file_by_journey(db, str(_MEDIA)) == []  # idempotent

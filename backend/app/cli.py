@@ -84,7 +84,24 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--name", required=True)
     s.add_argument("--email", required=True)
     s.add_argument("--firebase-uid")
+    f = sub.add_parser("file-media-by-journey", help="move files kept under other/ into their journey folder")
+    f.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.cmd == "file-media-by-journey":
+        from app.config import get_settings
+        from app.services.media import file_by_journey
+
+        settings = get_settings()
+        if settings.storage_backend != "local":
+            print("only for STORAGE_BACKEND=local", file=sys.stderr)
+            return 1
+        with get_sessionmaker()() as db:
+            moved = file_by_journey(db, settings.local_media_dir, dry_run=args.dry_run)
+        for old, new in moved:
+            print(f"{'would move' if args.dry_run else 'moved'} {old} -> {new}")
+        print(f"{len(moved)} file(s)")
+        return 0
 
     # The whole check-then-create runs under the database write lock (SQLite), so two concurrent runs
     # cannot both create the record.
