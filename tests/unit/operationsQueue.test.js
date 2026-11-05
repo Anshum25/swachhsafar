@@ -63,6 +63,8 @@ describe('operationsQueue', () => {
     expect(init.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(init.content_type).toBe('image/jpeg');
     expect(init.division_id).toBe(IDS.division);
+    expect(init.journey_id).toBe(capture.payload.journey_id); // the server files uploads journey-wise
+    expect(init.journey_id).toBeTruthy();
     const uploaded = api.calls.find((c) => c[0] === 'PUT')[2];
     expect(Buffer.from(uploaded).toString()).toBe('fake-jpeg-bytes-for-tests');
     expect(await statuses(db)).toEqual(['completed']);

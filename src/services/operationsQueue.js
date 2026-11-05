@@ -78,7 +78,8 @@ export function createOperationsQueue({
     return { bytes: stored.bytes, contentType: stored.meta.mime_type, sha256: stored.meta.sha256 };
   }
 
-  async function uploadMedia(api, item) {
+  // `journeyId`: the journey of the record this file belongs to; the server files uploads journey-wise.
+  async function uploadMedia(api, item, journeyId) {
     const meta = await local.media.getMeta(item.id);
     if (meta?.upload_status === 'uploaded') return;
     const existing = await api.get(`/media/${item.id}`).catch(() => null);
@@ -87,6 +88,7 @@ export function createOperationsQueue({
       await api.post('/media', {
         id: item.id, division_id: item.division_id, kind: item.kind,
         content_type: contentType, size_bytes: bytes.byteLength, sha256,
+        ...(journeyId ? { journey_id: journeyId } : {}),
       });
       await api.putRaw(`/media/${item.id}/content`, bytes, contentType);
     }
@@ -103,7 +105,7 @@ export function createOperationsQueue({
     const retry = (message) => settle('retry', outbox.retryStatement(entry.id, { error: message, now: now() }), { message });
     const fail = (o, message, extra = {}) => settle(o, outbox.failedStatement(entry.id, { error: message, now: now() }), { message, ...extra });
     try {
-      for (const item of media) await uploadMedia(api, item);
+      for (const item of media) await uploadMedia(api, item, op.payload?.journey_id ?? null);
       const { results } = await api.post('/sync/batch', { device_id: device, operations: [{ op_id: entry.id, ...op }] });
       const result = results[0];
       if (result.outcome === 'acknowledged') {

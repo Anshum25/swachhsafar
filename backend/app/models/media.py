@@ -30,6 +30,8 @@ class MediaObject(UUIDPk, Timestamps, Base):
 
     division_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("divisions.id"), nullable=False, index=True)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    # The journey the file belongs to (declared at init, checked against the division); decides its folder.
+    journey_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("journeys.id"), index=True)
     kind: Mapped[MediaKind] = mapped_column(str_enum(MediaKind, 24), nullable=False)
     declared_content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(100))

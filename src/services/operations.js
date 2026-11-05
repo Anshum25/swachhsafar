@@ -57,11 +57,14 @@ export function createOperations(api) {
     // Direct upload (POST /media + PUT content, the protocol operationsQueue uses) for media that belongs to
     // an online-only step. `value`: a Capture.jsx video/voice value. Returns the media id once uploaded.
     media: {
-      async upload({ value, kind, divisionId }) {
+      async upload({ value, kind, divisionId, journeyId = null }) {
         const id = crypto.randomUUID();
         validateMedia({ kind, mimeType: value.mimeType, size: value.size });
         const bytes = new Uint8Array(await value.blob.arrayBuffer());
-        await api.post('/media', { id, division_id: divisionId, kind, content_type: value.mimeType, size_bytes: bytes.byteLength, sha256: await sha256Hex(bytes) });
+        await api.post('/media', {
+          id, division_id: divisionId, kind, content_type: value.mimeType, size_bytes: bytes.byteLength, sha256: await sha256Hex(bytes),
+          ...(journeyId ? { journey_id: journeyId } : {}),
+        });
         await api.putRaw(`/media/${id}/content`, bytes, value.mimeType);
         return id;
       },

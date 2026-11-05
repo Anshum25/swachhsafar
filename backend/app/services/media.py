@@ -1,4 +1,6 @@
 import hashlib
+import logging
+import re
 import tempfile
 import uuid
 from collections.abc import AsyncIterator
@@ -9,8 +11,8 @@ import filetype
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound
-from app.models import MediaKind, MediaObject, MediaStatus
+from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound, ServiceUnavailable
+from app.models import Journey, MediaKind, MediaObject, MediaStatus, Train
 from app.providers.storage import StorageBackend
 from app.schemas.media import MediaInit
 from app.security.principal import Principal
@@ -18,6 +20,7 @@ from app.services.common import audit
 from app.timeutil import utcnow
 
 MB = 1024 * 1024
+log = logging.getLogger(__name__)
 _IMAGES = {"image/jpeg", "image/png", "image/webp"}
 
 
@@ -51,12 +54,19 @@ def init_upload(db: Session, p: Principal, body: MediaInit) -> MediaObject:
         raise BusinessRuleViolation(f"File exceeds {rule.max_bytes // MB} MB limit for {body.kind.value}", code="file_too_large")
     if body.content_type not in rule.types:
         raise BusinessRuleViolation(f"Content type {body.content_type} not allowed for {body.kind.value}", code="file_type_rejected")
+    if body.journey_id is not None:
+        journey = db.get(Journey, body.journey_id)
+        if journey is None or journey.division_id != body.division_id:
+            raise BusinessRuleViolation("Journey not found in this division", code="journey_mismatch")
     existing = db.get(MediaObject, body.id)
     if existing is not None:
         if (existing.owner_id, existing.sha256, existing.kind, existing.division_id) != (p.id, body.sha256, body.kind, body.division_id):
             raise Conflict("Media id already used for a different file", code="idempotency_mismatch")
+        if existing.journey_id is None and body.journey_id is not None and existing.status != MediaStatus.UPLOADED:
+            existing.journey_id = body.journey_id  # registered by an older client; not stored yet, so it can still be filed
+            db.commit()
         return existing
-    media = MediaObject(id=body.id, division_id=body.division_id, owner_id=p.id, kind=body.kind,
+    media = MediaObject(id=body.id, division_id=body.division_id, owner_id=p.id, kind=body.kind, journey_id=body.journey_id,
                         declared_content_type=body.content_type, declared_size_bytes=body.size_bytes, sha256=body.sha256)
     db.add(media)
     db.commit()
@@ -91,8 +101,12 @@ async def receive_content(db: Session, p: Principal, storage: StorageBackend, me
         if detected not in rule.types or _family(detected) != _family(media.declared_content_type):
             return _reject(db, media, f"File content is not an allowed type (detected {detected or 'unknown'})")
         now = utcnow()
-        path = f"{media.division_id}/{media.kind.value}/{now:%Y/%m}/{media.id}.{kind.extension}"
-        storage.put(path, buf, detected)
+        path = storage_path(db, media, now, kind.extension)
+        try:
+            storage.put(path, buf, detected)
+        except Exception as exc:  # disk full, permissions, bucket missing: the device keeps the file and retries
+            log.exception("storing media %s at %s failed", media.id, path)
+            raise ServiceUnavailable("Media storage is unavailable; the upload will be retried", code="storage_unavailable") from exc
     media.storage_path = path
     media.content_type = detected
     media.size_bytes = size
@@ -101,6 +115,21 @@ async def receive_content(db: Session, p: Principal, storage: StorageBackend, me
     media.uploaded_at = now
     db.commit()
     return media
+
+
+_UNSAFE = re.compile(r"[^A-Za-z0-9-]+")
+
+
+def storage_path(db: Session, media: MediaObject, now, extension: str) -> str:
+    """Journey-wise layout: journeys/<journey date>_<train no>_<journey id>/<kind>/<media id>.<ext>.
+    Files without a journey (KYC, complaints not tied to a journey): other/<kind>/<yyyy>/<mm>/<media id>.<ext>.
+    The ids keep every path unique; the date and train number only make folders readable."""
+    journey = db.get(Journey, media.journey_id) if media.journey_id else None
+    if journey is None:
+        return f"other/{media.kind.value}/{now:%Y/%m}/{media.id}.{extension}"
+    train = db.get(Train, journey.train_id)
+    train_no = _UNSAFE.sub("-", train.train_no).strip("-") if train else "train"
+    return f"journeys/{journey.journey_date:%Y-%m-%d}_{train_no or 'train'}_{journey.id}/{media.kind.value}/{media.id}.{extension}"
 
 
 def _reject(db: Session, media: MediaObject, reason: str) -> MediaObject:

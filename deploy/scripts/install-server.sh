@@ -21,6 +21,9 @@ id swachhsafar >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /
 echo "== PostgreSQL"
 deploy/scripts/postgres-container.sh
 
+echo "== media folder"
+install -d -m 750 -o swachhsafar -g swachhsafar /var/www/html/swachhsafar2.0/uploads
+
 echo "== backend env"
 deploy/scripts/backend-env.sh "https://$IP:$PORT"
 chgrp swachhsafar /etc/swachhsafar/backend.env && chmod 640 /etc/swachhsafar/backend.env

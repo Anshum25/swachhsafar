@@ -23,9 +23,11 @@ DATABASE_URL=postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.
 # Firebase Admin service account (verifies sign-in tokens; signs media URLs). Mode 640 root:swachhsafar.
 FIREBASE_PROJECT_ID=swachh-safar
 FIREBASE_CREDENTIALS_FILE=/etc/swachhsafar/firebase-admin.json
-# Bucket of the registered web app (VITE_FIREBASE_STORAGE_BUCKET). Check it in Firebase console → Storage.
 FIREBASE_STORAGE_BUCKET=swachh-safar.firebasestorage.app
-STORAGE_BACKEND=firebase
+# Media (photos, video, voice) on this server, journey-wise: uploads/journeys/<date>_<train>_<journey id>/<kind>/.
+# Not web-served; downloaded only through the authenticated API. Backed up nightly (backup-db.sh).
+STORAGE_BACKEND=local
+LOCAL_MEDIA_DIR=/var/www/html/swachhsafar2.0/uploads
 
 OTP_PEPPER=$(openssl rand -base64 48 | tr -d '\n')
 

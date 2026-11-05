@@ -20,9 +20,10 @@ ExecStart=/var/www/html/swachhsafar2.0/swachhsafar/backend/.venv/bin/uvicorn app
 Restart=on-failure
 RestartSec=5
 
-# Hardening: read-only filesystem except its own temp; no privilege escalation.
+# Hardening: read-only filesystem except its own temp and the media folder; no privilege escalation.
 NoNewPrivileges=true
 ProtectSystem=strict
+ReadWritePaths=/var/www/html/swachhsafar2.0/uploads
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true

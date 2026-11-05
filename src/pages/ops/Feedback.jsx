@@ -215,7 +215,7 @@ function PassengerFlow({ id }) {
                 e.preventDefault();
                 // Completion is a server step: the voice file is uploaded (and acknowledged) first, then claimed.
                 step('complete', async () => {
-                  const voiceId = voice ? (await ops.media.upload({ value: voice, kind: 'feedback_voice', divisionId: fb.division_id })) : null;
+                  const voiceId = voice ? (await ops.media.upload({ value: voice, kind: 'feedback_voice', divisionId: fb.division_id, journeyId: fb.journey_id })) : null;
                   return ops.passengerFeedback.complete(id, ratings, comments, voiceId);
                 }, 'Feedback completed.');
               }}>

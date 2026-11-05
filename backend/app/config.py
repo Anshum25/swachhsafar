@@ -48,11 +48,13 @@ class Settings(BaseSettings):
             raise ValueError("OTP_PEPPER must be a random secret of at least 32 characters")
         return v
 
-    @field_validator("storage_backend")
+    # Local disk is allowed in production (single-server deployment) only with an explicit absolute
+    # LOCAL_MEDIA_DIR, so files never land in a directory relative to wherever the process started.
+    @field_validator("local_media_dir")
     @classmethod
-    def _no_local_storage_in_prod(cls, v, info):
-        if v == "local" and info.data.get("environment") == "production":
-            raise ValueError("STORAGE_BACKEND=local is not allowed in production")
+    def _absolute_media_dir_in_prod(cls, v, info):
+        if info.data.get("environment") == "production" and info.data.get("storage_backend") == "local" and not v.startswith("/"):
+            raise ValueError("LOCAL_MEDIA_DIR must be an absolute path when STORAGE_BACKEND=local in production")
         return v
 
 

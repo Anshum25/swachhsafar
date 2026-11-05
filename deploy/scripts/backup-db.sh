@@ -11,3 +11,12 @@ mv "$out.part" "$out"
 chmod 600 "$out"
 find "$DIR" -name 'swachh_safar-*.dump' -mtime +$KEEP_DAYS -delete
 echo "Backup: $out ($(du -h "$out" | cut -f1))"
+
+# Media files: mirrored (never --delete, so a file removed from uploads/ is still kept in the backup).
+MEDIA_SRC=/var/www/html/swachhsafar2.0/uploads
+MEDIA_DST=/var/backups/swachhsafar/uploads
+if [[ -d "$MEDIA_SRC" ]]; then
+  install -d -m 700 "$MEDIA_DST"
+  rsync -a "$MEDIA_SRC"/ "$MEDIA_DST"/
+  echo "Media mirror: $MEDIA_DST ($(du -sh "$MEDIA_DST" | cut -f1))"
+fi

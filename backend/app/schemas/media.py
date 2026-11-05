@@ -14,6 +14,7 @@ class MediaInit(StrictModel):
     content_type: str = Field(max_length=100)
     size_bytes: int = Field(gt=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    journey_id: uuid.UUID | None = Field(default=None, description="Journey the file belongs to; files are stored journey-wise")
 
 
 class MediaOut(ReadModel):
