@@ -1,0 +1,3 @@
+# Swachh Safar 2.0 is an internal operations app: nothing here is meant for search engines.
+User-agent: *
+Disallow: /

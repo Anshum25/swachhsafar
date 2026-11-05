@@ -1,0 +1,39 @@
+[Unit]
+Description=Swachh Safar 2.0 API (FastAPI, loopback 127.0.0.1:8010 behind nginx :8082)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=exec
+User=swachhsafar
+Group=swachhsafar
+WorkingDirectory=/var/www/html/swachhsafar2.0/swachhsafar/backend
+EnvironmentFile=/etc/swachhsafar/backend.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Migrations first; a failed migration leaves the database at its previous revision and the API down.
+ExecStartPre=/var/www/html/swachhsafar2.0/swachhsafar/backend/.venv/bin/python -m alembic upgrade head
+ExecStart=/var/www/html/swachhsafar2.0/swachhsafar/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8010 --workers 2 \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1 \
+    --no-server-header --timeout-keep-alive 20
+Restart=on-failure
+RestartSec=5
+
+# Hardening: read-only filesystem except its own temp; no privilege escalation.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

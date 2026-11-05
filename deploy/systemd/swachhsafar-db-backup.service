@@ -1,0 +1,8 @@
+[Unit]
+Description=Swachh Safar 2.0 database backup (pg_dump)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/var/www/html/swachhsafar2.0/swachhsafar/deploy/scripts/backup-db.sh

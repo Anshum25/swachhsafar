@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Swachh Safar 2.0 database backup
+
+[Timer]
+OnCalendar=*-*-* 21:30:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

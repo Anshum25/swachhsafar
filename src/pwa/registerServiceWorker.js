@@ -27,5 +27,17 @@ export function registerServiceWorker() {
       });
     },
   });
-  pwa.setUpdater(update);
+  // Reload as soon as the new version controls the page. vite-plugin-pwa reloads only when workbox-window's
+  // `isUpdate` is true, and that is fixed at page load as "a controller existed then". In the first session
+  // after installation there was none, so "Update now" would activate the new worker (whose precache
+  // cleanup drops this page's lazily-loaded chunks) without ever reloading. Data is in OPFS, so it is safe.
+  pwa.setUpdater(() => {
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
+    return update(true);
+  });
 }
