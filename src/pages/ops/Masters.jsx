@@ -7,8 +7,9 @@ import QuestionBanks from './masters/QuestionBanks.jsx';
 import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
 import DivisionPolicy from './masters/DivisionPolicy.jsx';
+import FaceEnrollDialog from './masters/FaceEnrollment.jsx';
 import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, Select, SubmitBar, Table, Tabs, label } from '../../components/ui.jsx';
-import { PlusIcon } from '../../components/Icons.jsx';
+import { PlusIcon, UserIcon } from '../../components/Icons.jsx';
 
 // "B1 AC, S1, S2" -> [{code:'B1', classification:'AC'}, ...]; coaches default to Non-AC.
 export function parseCoaches(text) {
@@ -119,6 +120,7 @@ function Users({ divisionId }) {
   const [q, setQ] = useState('');
   const res = useResource('/users', { division_id: divisionId, q, page_size: 200 });
   const [creating, setCreating] = useState(false);
+  const [faceFor, setFaceFor] = useState(null);
   async function toggle(u) {
     try {
       await api.post(`/users/${u.id}/status`, { status: u.status === 'active' ? 'inactive' : 'active' });
@@ -139,9 +141,14 @@ function Users({ divisionId }) {
             { key: 'status', label: 'Status', render: (u) => manage
               ? <button type="button" onClick={() => toggle(u)}><Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge></button>
               : <Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge> },
+            ...(manage ? [{ key: 'face', label: '', render: (u) => (
+              <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setFaceFor(u); }}
+                aria-label={`Face registration for ${u.name}`}><UserIcon /> Face</button>
+            ) }] : []),
           ]} />
         )}
       </DataState>
+      {faceFor && <FaceEnrollDialog user={faceFor} onClose={() => setFaceFor(null)} />}
       <Dialog open={creating} title="Add user" onClose={() => setCreating(false)} wide>
         <UserForm divisionId={divisionId} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); res.reload(); }} />
       </Dialog>

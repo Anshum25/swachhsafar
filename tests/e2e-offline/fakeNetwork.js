@@ -26,7 +26,7 @@ const emailOf = (token) => {
 // `users`: { [email]: meResponse }. `today`: business date the fixture journeys are anchored to.
 export function createFakeNetwork({ users, today }) {
   const accounts = Object.fromEntries(Object.keys(users).map((email, i) => [email, { uid: `fb-e2e-${i}`, token: tokenFor(email, `fb-e2e-${i}`) }]));
-  const server = { connected: true, offlineHits: [], batches: [], uploads: new Map(), mediaInit: [], masterWrites: [], cspViolations: [] };
+  const server = { connected: true, offlineHits: [], batches: [], uploads: new Map(), mediaInit: [], masterWrites: [], cspViolations: [], faceProfiles: [] };
   // Master data held by the fake server, seeded like /sync/changes, with backend permission checks.
   const seed = changesFixture(today);
   const masters = {
@@ -83,7 +83,7 @@ export function createFakeNetwork({ users, today }) {
       if (req.method() === 'GET' && path === '/auth/me') return json(users[caller]);
       if (req.method() === 'GET' && path === '/sync/changes') {
         return json({ ...changesFixture(today), complaint_departments: masters.departments, complaint_categories: masters.categories,
-          inventory_items: masters.items, question_banks: masters.banks, policies: masters.policies });
+          inventory_items: masters.items, question_banks: masters.banks, policies: masters.policies, face_profiles: server.faceProfiles });
       }
       if (req.method() === 'GET' && path.startsWith('/media/')) return json({ error: { code: 'not_found', message: 'no' } }, 404);
       if (req.method() === 'POST' && path === '/media') {

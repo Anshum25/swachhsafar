@@ -24,3 +24,6 @@ __pycache__/
 client_secret_*.json
 google-services.json
 *.egg-info/
+
+# Face models are copied from node_modules at build time (vite.config.js)
+public/models/

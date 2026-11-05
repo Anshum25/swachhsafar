@@ -40,7 +40,7 @@ export function attendanceCells(taken, pending) {
   };
 }
 
-export function createAttendanceRepository(db, { journeys }) {
+export function createAttendanceRepository(db, { journeys, masters }) {
   async function liveStages(journeyId, employeeId) {
     return db.query(
       `SELECT id, stage, sync_status FROM attendance_records WHERE journey_id = ? AND employee_id = ? AND ${LIVE}`,
@@ -67,8 +67,19 @@ export function createAttendanceRepository(db, { journeys }) {
       if (actor && !reviewer && actor.id !== p.employee_id && actor.id !== journey.supervisor_id) {
         throw new LocalRuleError('forbidden', 'Only the employee, the journey supervisor or a reviewer may record this attendance.');
       }
-      if (policy.attendance_photo_required && !p.photo_media_id) {
+      if ((policy.attendance_photo_required || policy.attendance_face_verification) && !p.photo_media_id) {
         throw new LocalRuleError('photo_required', 'A photograph is required for attendance.');
+      }
+      // Backend attendance._check_face: registered face, same model, within the division's threshold.
+      if (policy.attendance_face_verification) {
+        const profile = await masters?.getFaceProfile(p.employee_id);
+        if (!profile) throw new LocalRuleError('face_not_enrolled', 'No registered face for this employee. An administrator must register it first.');
+        if (typeof p.face_distance !== 'number' || p.face_model !== profile.model) {
+          throw new LocalRuleError('face_not_verified', 'Face verification is required for attendance in this division.');
+        }
+        if (p.face_distance > policy.face_match_threshold) {
+          throw new LocalRuleError('face_mismatch', "The photo does not match the employee's registered face.");
+        }
       }
       const done = new Set((await liveStages(journey.id, p.employee_id)).map((r) => r.stage));
       if (done.has(stage)) throw new LocalRuleError('duplicate_attendance', 'Attendance is already recorded for this stage.');

@@ -625,4 +625,21 @@ const V8 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8];
+// v9: registered face descriptors for offline attendance verification (/sync/changes face_profiles). Only the
+// staff this device verifies, only for divisions with face verification on; replaced in full on every pull.
+// Descriptors only: face photos are never stored. Additive only.
+const V9 = {
+  version: 9,
+  name: 'face profiles',
+  statements: [
+    `CREATE TABLE face_profiles (
+        user_id TEXT PRIMARY KEY,
+        division_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        descriptors TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9];

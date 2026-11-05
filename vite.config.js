@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 
 // OPFS and Web Crypto only exist in secure contexts, so LAN devices must use HTTPS.
 // Certificate from mkcert (gitignored): mkcert -cert-file .cert/dev-cert.pem -key-file .cert/dev-key.pem <LAN IP> localhost
@@ -26,9 +26,27 @@ const previewHeaders = process.env.PREVIEW_SECURITY_HEADERS ? readSecurityHeader
 
 const APP_VERSION = JSON.parse(readFileSync('package.json', 'utf8')).version;
 
+// Face verification models (MIT, @vladmandic/face-api), copied from the package into public/models/face/ so
+// they are served and precached with the app (offline matching). Not committed: public/models/ is ignored.
+const FACE_MODELS = ['tiny_face_detector_model', 'face_landmark_68_model', 'face_recognition_model'];
+function faceModels() {
+  const copy = () => {
+    const src = 'node_modules/@vladmandic/face-api/model';
+    const dst = 'public/models/face';
+    mkdirSync(dst, { recursive: true });
+    for (const m of FACE_MODELS) {
+      for (const f of [`${m}.bin`, `${m}-weights_manifest.json`]) {
+        if (!existsSync(`${dst}/${f}`)) copyFileSync(`${src}/${f}`, `${dst}/${f}`);
+      }
+    }
+  };
+  return { name: 'swachh-face-models', config: copy };
+}
+
 export default defineConfig(({ isPreview }) => ({
   define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   plugins: [
+    faceModels(),
     react(),
     tailwindcss(),
     VitePWA({
@@ -38,8 +56,9 @@ export default defineConfig(({ isPreview }) => ({
       injectRegister: false,
       manifestFilename: 'manifest.webmanifest',
       injectManifest: {
-        globPatterns: ['**/*.{js,mjs,css,html,svg,png,ico,wasm,json,webmanifest,woff2}'],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,ico,wasm,json,webmanifest,woff2,bin}'],
+        // The face recognition model is 6.4 MB.
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },
       manifest: {
         id: '/',

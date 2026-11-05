@@ -36,7 +36,7 @@ function PolicyForm({ policy, divisionId, onSaved, onCancel }) {
               <Field key={field.key} label={field.label} hint={field.hint ?? (field.type === 'int' ? `${field.min}–${field.max}` : undefined)} error={errors[field.key]}>
                 {field.type === 'bool'
                   ? <Select value={f[field.key] ? 'yes' : 'no'} onChange={(v) => setF({ ...f, [field.key]: v === 'yes' })} options={[{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]} />
-                  : <input className="input" inputMode="numeric" value={f[field.key] ?? ''} onChange={(e) => setF({ ...f, [field.key]: e.target.value })} />}
+                  : <input className="input" inputMode={field.type === 'float' ? 'decimal' : 'numeric'} value={f[field.key] ?? ''} onChange={(e) => setF({ ...f, [field.key]: e.target.value })} />}
               </Field>
             ))}
           </div>

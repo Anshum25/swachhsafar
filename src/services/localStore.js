@@ -47,7 +47,7 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
   const masters = createMasterDataRepository(db);
   const identity = createIdentityRepository(db, { masters });
   const journeys = createJourneyRepository(db, { masters, identity });
-  const attendance = createAttendanceRepository(db, { journeys });
+  const attendance = createAttendanceRepository(db, { journeys, masters });
   const inspections = createInspectionRepository(db, { journeys });
   const feedback = createFeedbackRepository(db, { journeys, masters });
   const complaints = createComplaintRepository(db, { journeys, masters });
@@ -224,6 +224,7 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
         ...(changes.trains ?? []).flatMap((tr) => masters.trainStatements(tr, t.now)),
         ...(changes.question_banks ?? []).flatMap((b) => masters.bankStatements(b, t.now)),
         ...(changes.inventory_items ?? []).flatMap((i) => masters.itemStatements(i, t.now)),
+        ...(Array.isArray(changes.face_profiles) ? masters.faceProfileStatements(changes.face_profiles, t.now) : []),
       ]);
       let journeysStored = 0;
       let failures = masterOk ? 0 : 1;

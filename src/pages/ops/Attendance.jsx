@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useResource, useSession } from '../../app/session.jsx';
 import { useNotify } from '../../app/Layout.jsx';
 import JourneyPicker from '../../components/JourneyPicker.jsx';
@@ -12,6 +12,7 @@ import {
 import { CameraIcon, CheckIcon, ChevronLeftIcon, LockIcon, RefreshIcon, UserIcon } from '../../components/Icons.jsx';
 import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp } from '../../utils/capture.js';
+import { FaceCheckNote, faceFields, useFaceCheck } from '../../face/FaceCheck.jsx';
 
 export const STAGES = ['Source', 'Enroute 1', 'Destination', 'Enroute 2', 'End'];
 const STAGES_SHORT = ['Source', 'Enr. 1', 'Dest.', 'Enr. 2', 'End']; // stage buttons on phones under 400px
@@ -37,6 +38,10 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const [gps, setGps] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
+  const policy = useResource(`/divisions/${journey.division_id}/policy`);
+  const faceOn = policy.data?.attendance_face_verification === true;
+  const face = useFaceCheck({ photo, employeeId: target.staff.employee_id, enabled: faceOn, threshold: policy.data?.face_match_threshold ?? 0.5 });
+  const faceOk = !faceOn || face.status === 'matched';
 
   async function submit(e) {
     e.preventDefault();
@@ -46,7 +51,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
       type: 'attendance.create',
       payload: {
         id: crypto.randomUUID(), journey_id: journey.id, employee_id: target.staff.employee_id, stage: target.stage,
-        device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId,
+        device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId, ...faceFields(face),
       },
       media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
     });
@@ -60,7 +65,8 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
       <form onSubmit={submit} className="space-y-3">
         <GpsCapture value={gps} onChange={setGps} />
         <PhotoCapture value={photo} onChange={setPhoto} required />
-        <SubmitBar busy={busy} disabled={!gps || !photo} label="Mark attendance" onCancel={onClose} />
+        <FaceCheckNote check={face} name={target.staff.name} />
+        <SubmitBar busy={busy} disabled={!gps || !photo || policy.loading || !faceOk} label="Mark attendance" onCancel={onClose} />
       </form>
     </Dialog>
   );
@@ -70,6 +76,12 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
 // (backend attendance.create_group), it is one attendance record per member sharing a
 // group_submission_id, and each member succeeds or fails independently. Each record is an ordinary
 // 'attendance.create' operation, so the whole group works offline and is delivered exactly once.
+function MemberFaceCheck({ photo, member, enabled, threshold, onResult }) {
+  const check = useFaceCheck({ photo, employeeId: member.employee_id, enabled, threshold });
+  useEffect(() => { onResult(member.employee_id, check); }, [check, member.employee_id, onResult]);
+  return <FaceCheckNote check={check} name={member.name} />;
+}
+
 function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const { queue } = useSession();
   const notify = useNotify();
@@ -83,9 +95,15 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [photos, setPhotos] = useState({});
   const [gps, setGps] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [faces, setFaces] = useState({});
+  const faceOn = policy.data?.attendance_face_verification === true;
+  const threshold = policy.data?.face_match_threshold ?? 0.5;
+  const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const members = stage ? eligible(stage) : [];
   const chosen = members.filter((m) => picked[m.employee_id]);
-  const ready = gps && chosen.length && (!photoRequired || chosen.every((m) => photos[m.employee_id]));
+  const ready = gps && chosen.length && !policy.loading
+    && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
+    && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
 
   async function submit(e) {
     e.preventDefault();
@@ -100,7 +118,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         type: 'attendance.create',
         payload: {
           id: crypto.randomUUID(), journey_id: journey.id, employee_id: m.employee_id, stage, device_timestamp: at, ...gps,
-          photo_media_id: mediaId, group_submission_id: group,
+          photo_media_id: mediaId, group_submission_id: group, ...(faceOn ? faceFields(faces[m.employee_id] ?? {}) : {}),
         },
         media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
       });
@@ -136,7 +154,10 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                   <span className="font-medium">{m.name}</span><span className="text-slate-500">· {m.emp_id}</span>
                 </label>
                 {picked[m.employee_id] && (
-                  <div className="mt-2"><PhotoCapture value={photos[m.employee_id]} required={photoRequired} onChange={(v) => setPhotos((p) => ({ ...p, [m.employee_id]: v }))} /></div>
+                  <div className="mt-2 space-y-2">
+                    <PhotoCapture value={photos[m.employee_id]} required={photoRequired || faceOn} onChange={(v) => setPhotos((p) => ({ ...p, [m.employee_id]: v }))} />
+                    <MemberFaceCheck photo={photos[m.employee_id]} member={m} enabled={faceOn} threshold={threshold} onResult={onFace} />
+                  </div>
                 )}
               </li>
             ))}

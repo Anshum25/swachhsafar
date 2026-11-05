@@ -15,6 +15,8 @@ export const DEFAULT_POLICY = Object.freeze({
   attendance_late_grace_days: 1,
   inspection_photo_required: true,
   complaint_default_sla_hours: 72,
+  attendance_face_verification: false,
+  face_match_threshold: 0.5,
 });
 
 const synced = (row, now) => ({ sync_status: 'synced', server_updated_at: row.updated_at ?? null, created_at: now, updated_at: now });
@@ -142,6 +144,22 @@ export function createMasterDataRepository(db) {
     async listDivisions() {
       const rows = await db.query('SELECT * FROM divisions ORDER BY is_placeholder, name');
       return rows.map((d) => ({ id: d.id, code: d.code, name: d.name, is_active: fromBool(d.is_active), updated_at: d.server_updated_at ?? d.updated_at }));
+    },
+
+    // The complete set of face profiles from /sync/changes: replaces what this device held.
+    faceProfileStatements(profiles, now) {
+      return [
+        { sql: 'DELETE FROM face_profiles', params: [] },
+        ...profiles.map((f) => insertStatement('face_profiles', {
+          user_id: f.user_id, division_id: f.division_id, model: f.model, descriptors: JSON.stringify(f.descriptors),
+          updated_at: f.updated_at ?? now,
+        })),
+      ];
+    },
+
+    async getFaceProfile(userId) {
+      const [row] = await db.query('SELECT * FROM face_profiles WHERE user_id = ?', [userId]);
+      return row ? { ...row, descriptors: parseJson(row.descriptors, []) } : null;
     },
 
     async getPolicy(divisionId) {

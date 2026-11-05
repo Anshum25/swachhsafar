@@ -89,13 +89,16 @@ describe('master-data form validation (mirrors the Pydantic schemas)', () => {
   it('validates policies and sends exactly the PolicySettings fields', () => {
     const good = { passenger_pnr_required: true, passenger_otp_required: false, pnr_train_day_mapping: false, pnr_coach_match_required: true,
       passenger_feedback_per_coach_day: '', railway_feedback_limit_per_journey: '2', attendance_photo_required: true, attendance_late_grace_days: 1,
-      inspection_photo_required: true, complaint_default_sla_hours: 72, stray: 'x' };
+      inspection_photo_required: true, complaint_default_sla_hours: 72, attendance_face_verification: false, face_match_threshold: '0.5', stray: 'x' };
     expect(validatePolicy(good)).toEqual({});
     expect(Object.keys(validatePolicy({ ...good, attendance_late_grace_days: 9, complaint_default_sla_hours: '', railway_feedback_limit_per_journey: 1.5 })).sort())
       .toEqual(['attendance_late_grace_days', 'complaint_default_sla_hours', 'railway_feedback_limit_per_journey']);
+    // Face match strictness is a decimal within 0.3–0.7.
+    expect(validatePolicy({ ...good, face_match_threshold: '0.45' })).toEqual({});
+    expect(Object.keys(validatePolicy({ ...good, face_match_threshold: '0.9' }))).toEqual(['face_match_threshold']);
     const body = policyPayload(good);
     expect(Object.keys(body).sort()).toEqual(POLICY_FIELDS.map((f) => f.key).sort());
-    expect(body).toMatchObject({ passenger_feedback_per_coach_day: null, railway_feedback_limit_per_journey: 2 });
+    expect(body).toMatchObject({ passenger_feedback_per_coach_day: null, railway_feedback_limit_per_journey: 2, face_match_threshold: 0.5, attendance_face_verification: false });
   });
 });
 

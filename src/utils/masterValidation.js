@@ -81,6 +81,8 @@ export const POLICY_FIELDS = [
   { key: 'attendance_late_grace_days', type: 'int', min: 0, max: 7, label: 'Late attendance grace (days after journey end)', group: 'Attendance and inspection' },
   { key: 'inspection_photo_required', type: 'bool', label: 'Inspection photo required', group: 'Attendance and inspection' },
   { key: 'complaint_default_sla_hours', type: 'int', min: 1, max: 1440, label: 'Default complaint SLA (hours)', group: 'Complaints' },
+  { key: 'attendance_face_verification', type: 'bool', label: 'Face verification for attendance (blocks attendance when the face does not match)', group: 'Face verification' },
+  { key: 'face_match_threshold', type: 'float', min: 0.3, max: 0.7, label: 'Face match strictness (lower is stricter)', hint: '0.3–0.7 · recommended 0.5', group: 'Face verification' },
 ];
 
 export function validatePolicy(f) {
@@ -91,6 +93,8 @@ export function validatePolicy(f) {
       if (typeof v !== 'boolean') e[field.key] = `${field.label}: choose yes or no.`;
     } else if (v === null || v === '' || v === undefined) {
       if (!field.nullable) e[field.key] = `${field.label} is required.`;
+    } else if (field.type === 'float') {
+      if (!between(Number(v), field.min, field.max)) e[field.key] = `${field.label} must be a number ${field.min}–${field.max}.`;
     } else if (!isInt(Number(v)) || !between(Number(v), field.min, field.max)) {
       e[field.key] = `${field.label} must be a whole number ${field.min}–${field.max}.`;
     }
