@@ -148,3 +148,15 @@ Stored on this server since 2026-11-05: Firebase Storage has no bucket for the p
   but it is on the same disk: copy it off the server regularly.
 - Size limits per file: photos 8 MB, voice 10 MB, complaint attachments 15 MB, video 100 MB (nginx accepts up to 30 MB,
   matching the device's 25 MB video limit).
+
+### Linking staff logins (unverified e-mails)
+
+Staff are created in the app (Masters → Users). They link to their Firebase login automatically on first sign-in **only if
+that Firebase e-mail is verified**. Otherwise they see "Account is not provisioned". After confirming the login really
+belongs to that person, an administrator links it (recorded in the audit log), optionally with a role change:
+
+```bash
+cd backend && sudo -u swachhsafar bash -c 'set -a; . /etc/swachhsafar/backend.env; set +a
+  .venv/bin/python -m app.cli link-user --email <staff e-mail> [--role janitor|supervisor|manager|contractor|admin]'
+```
+Janitor = only the journeys the person is assigned to, plus marking and viewing attendance.

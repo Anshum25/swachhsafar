@@ -72,6 +72,61 @@ def _superadmin(db, args) -> int:
     return 0
 
 
+ROLE_NAMES = {"admin": RoleId.ADMIN, "manager": RoleId.MANAGER, "supervisor": RoleId.SUPERVISOR,
+              "janitor": RoleId.JANITOR, "contractor": RoleId.CONTRACTOR}
+
+
+def link_user(db, *, email: str, firebase_uid: str | None, role: str | None) -> int:
+    """Links an existing employee to their Firebase login (needed when the Firebase email is unverified, which
+    blocks automatic linking) and optionally changes the role. An administrator's explicit decision: whoever
+    holds that Firebase account signs in as this employee. Super Admin is never granted here."""
+    email = email.lower()
+    users = db.scalars(select(User).where(User.status != UserStatus.DELETED, func.lower(User.email) == email)).all()
+    if len(users) != 1:
+        print(f"expected one employee with e-mail {email}, found {len(users)}; nothing changed", file=sys.stderr)
+        return 2
+    user = users[0]
+    changes = {}
+    if firebase_uid:
+        taken = db.scalar(select(User).where(User.firebase_uid == firebase_uid, User.id != user.id))
+        if taken is not None:
+            print(f"Firebase account already linked to employee {taken.emp_id}; nothing changed", file=sys.stderr)
+            return 2
+        if user.firebase_uid not in (None, firebase_uid):
+            print("employee is linked to a different Firebase account; nothing changed", file=sys.stderr)
+            return 2
+        if user.firebase_uid is None:
+            user.firebase_uid = firebase_uid
+            changes["firebase_uid"] = "linked"
+    if role:
+        new_role = ROLE_NAMES[role]
+        if user.role_id == RoleId.SUPER_ADMIN:
+            print("refusing to change a Super Admin's role here", file=sys.stderr)
+            return 2
+        if user.role_id != new_role:
+            changes["role"] = {"from": int(user.role_id), "to": int(new_role)}
+            user.role_id = new_role
+    if changes:
+        audit(db, actor_id=None, action="user.update.cli", entity=user, division_id=user.division_id, changes=changes)
+        db.commit()
+    print(f"{user.emp_id} {user.name}: {changes or 'already up to date'}")
+    return 0
+
+
+def _firebase_uid_for(email: str) -> str | None:
+    import firebase_admin
+    from firebase_admin import auth, credentials
+
+    from app.config import get_settings
+
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(credentials.Certificate(get_settings().firebase_credentials_file))
+    try:
+        return auth.get_user_by_email(email).uid
+    except auth.UserNotFoundError:
+        return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -84,9 +139,23 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--name", required=True)
     s.add_argument("--email", required=True)
     s.add_argument("--firebase-uid")
+    lk = sub.add_parser("link-user", help="link an employee to their Firebase login and/or change their role")
+    lk.add_argument("--email", required=True)
+    lk.add_argument("--role", choices=sorted(ROLE_NAMES))
+    lk.add_argument("--no-link", action="store_true", help="only change the role")
     f = sub.add_parser("file-media-by-journey", help="move files kept under other/ into their journey folder")
     f.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.cmd == "link-user":
+        uid = None
+        if not args.no_link:
+            uid = _firebase_uid_for(args.email.lower())
+            if uid is None:
+                print(f"no Firebase account for {args.email}: the person must register in the app first", file=sys.stderr)
+                return 1
+        with write_intent(), get_sessionmaker()() as db:
+            return link_user(db, email=args.email, firebase_uid=uid, role=args.role)
 
     if args.cmd == "file-media-by-journey":
         from app.config import get_settings

@@ -126,3 +126,22 @@ def test_policy_requires_permission(client, world):
     r = client.put(f"{API}/divisions/{world.a.id}/policy", headers=world.h("admin"), json={"passenger_otp_required": False})
     assert r.status_code == 200 and r.json()["passenger_otp_required"] is False
     assert client.put(f"{API}/divisions/{world.a.id}/policy", headers=world.h("admin"), json={"bogus": 1}).status_code == 422
+
+
+def test_cli_link_user_links_login_and_restricts_role(world, db):
+    """Unverified Firebase e-mail: the admin links it explicitly; role can be lowered; Super Admin untouched."""
+    from app.cli import link_user
+    from app.models import RoleId
+
+    sup, other = world.sup, world.users["jan"]
+    sup.firebase_uid, sup.email = None, "sup.link@example.com"
+    other.email = "jan.link@example.com"
+    db.commit()
+    assert link_user(db, email=sup.email.upper(), firebase_uid="uid-new-login", role="janitor") == 0
+    db.refresh(sup)
+    assert (sup.firebase_uid, sup.role_id) == ("uid-new-login", RoleId.JANITOR)
+    # Re-running is a no-op; a different login or a login already used elsewhere is refused.
+    assert link_user(db, email=sup.email, firebase_uid="uid-new-login", role="janitor") == 0
+    assert link_user(db, email=sup.email, firebase_uid="uid-other", role=None) == 2
+    assert link_user(db, email=other.email, firebase_uid="uid-new-login", role=None) == 2
+    assert link_user(db, email="nobody@example.com", firebase_uid="x", role=None) == 2
