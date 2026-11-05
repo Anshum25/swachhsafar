@@ -63,6 +63,9 @@ test.afterAll(() => {
   } catch { /* Windows can keep the profile locked briefly; it is in the OS temp directory */ }
 });
 
+// Every flow runs under the production Content-Security-Policy; nothing may be blocked by it.
+test.afterAll(() => expect(net.server.cspViolations).toEqual([]));
+
 test('operational screens capture and keep records with the network disconnected', async () => {
   // ---- online: sign in, cache authorization, pull master data and journeys ----
   let context = await launch(profileDir);

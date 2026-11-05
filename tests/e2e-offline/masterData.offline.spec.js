@@ -48,6 +48,9 @@ async function openTab(page, name) {
   await page.getByRole('tab', { name }).click();
 }
 
+// Every flow runs under the production Content-Security-Policy; nothing may be blocked by it.
+test.afterAll(() => expect(net.server.cspViolations).toEqual([]));
+
 test('master data: online administration, offline reads, read-only users', async () => {
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
   const context = await chromium.launchPersistentContext(dir, { ...pixel, baseURL: 'http://localhost:4175/' });

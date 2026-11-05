@@ -12,6 +12,18 @@ const https = existsSync(certFile) && existsSync(keyFile)
   ? { cert: readFileSync(certFile), key: readFileSync(keyFile) }
   : undefined;
 
+// Production security headers (CSP etc.) live in one nginx snippet. With PREVIEW_SECURITY_HEADERS=1 the
+// preview server sends the same headers, so e2e tests exercise the build under the production CSP.
+export function readSecurityHeaders(file = 'deploy/nginx/security-headers.conf') {
+  const headers = {};
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const m = line.match(/^\s*add_header\s+([A-Za-z-]+)\s+"([^"]*)"\s+always;\s*$/);
+    if (m) headers[m[1]] = m[2];
+  }
+  return headers;
+}
+const previewHeaders = process.env.PREVIEW_SECURITY_HEADERS ? readSecurityHeaders() : undefined;
+
 export default defineConfig(({ isPreview }) => ({
   plugins: [
     react(),
@@ -28,7 +40,7 @@ export default defineConfig(({ isPreview }) => ({
       },
       manifest: {
         id: '/',
-        name: 'Swachh Safar',
+        name: 'Swachh Safar 2.0',
         short_name: 'Swachh Safar',
         description: 'Swachh Safar on-board cleanliness operations: attendance, inspections, feedback, complaints and inventory, offline first.',
         lang: 'en-IN',
@@ -54,7 +66,7 @@ export default defineConfig(({ isPreview }) => ({
   // E2E runs preview on plain http://localhost; `npm run preview:lan` serves the build over HTTPS.
   // /api is forwarded to the FastAPI backend (override with API_PROXY_TARGET); production sets VITE_API_BASE_URL.
   server: isPreview ? {} : { host: true, port: 5173, strictPort: true, https, proxy: { '/api': process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:8000' } },
-  preview: { ...(process.env.PREVIEW_HTTPS ? { https } : {}), proxy: { '/api': process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:8000' } },
+  preview: { ...(process.env.PREVIEW_HTTPS ? { https } : {}), headers: previewHeaders, proxy: { '/api': process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:8000' } },
   worker: { format: 'es' },
   // sqlite-wasm loads its .wasm via import.meta.url; pre-bundling would break that path.
   optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },

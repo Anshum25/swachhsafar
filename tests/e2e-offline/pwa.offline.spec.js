@@ -29,7 +29,7 @@ test('manifest is installable: standalone, scoped, with 192/512 and maskable PNG
   const res = await request.get(`${BASE}manifest.webmanifest`);
   expect(res.ok()).toBe(true);
   const m = await res.json();
-  expect(m).toMatchObject({ name: 'Swachh Safar', short_name: 'Swachh Safar', start_url: '/', scope: '/', display: 'standalone', id: '/' });
+  expect(m).toMatchObject({ name: 'Swachh Safar 2.0', short_name: 'Swachh Safar', start_url: '/', scope: '/', display: 'standalone', id: '/' });
   expect(m.theme_color).toMatch(/^#[0-9a-f]{6}$/i);
   expect(m.background_color).toMatch(/^#[0-9a-f]{6}$/i);
   const need = [['192x192', undefined], ['512x512', undefined], ['512x512', 'maskable']];
@@ -84,5 +84,34 @@ test('the app shell starts, deep-links and reloads offline after one online visi
   await expect(page.getByText(/Swachh Safar/).first()).toBeVisible();
   await page.waitForLoadState('networkidle');
   expect(failed).toEqual([]);
+  await context.close();
+});
+
+// Chrome's own installability engine (the check behind "Install app"), via the DevTools protocol, plus the
+// production security headers served with the shell. localhost counts as a secure context like HTTPS.
+test('Chrome reports the app installable, under the production security headers, with no CSP violations', async () => {
+  const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
+  const context = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'swachh-install-')), { ...pixel, baseURL: BASE });
+  await context.route(/\/api\/v1\/|googleapis\.com|firebaseapp\.com/, (route) => route.abort('connectionrefused'));
+  const violations = [];
+  await context.exposeBinding('__cspViolation', (_s, v) => violations.push(v));
+  await context.addInitScript(() => document.addEventListener('securitypolicyviolation', (e) => globalThis.__cspViolation?.({ directive: e.effectiveDirective, blocked: e.blockedURI })));
+  const page = context.pages()[0] ?? (await context.newPage());
+  const res = await page.goto('/');
+  const headers = res.headers();
+  expect(headers['content-security-policy']).toContain("script-src 'self' 'wasm-unsafe-eval'");
+  expect(headers['content-security-policy']).toContain("object-src 'none'");
+  expect(headers['x-content-type-options']).toBe('nosniff');
+  expect(headers['permissions-policy']).toContain('camera=(self)');
+  await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30_000 });
+  // The SQLite WASM database starts under this CSP (WebAssembly compile needs 'wasm-unsafe-eval').
+  await expect(page.getByTestId('db-status')).toContainText('Ready · persistent', { timeout: 30_000 });
+
+  const cdp = await context.newCDPSession(page);
+  const manifest = await cdp.send('Page.getAppManifest');
+  expect(manifest.errors).toEqual([]);
+  const { installabilityErrors } = await cdp.send('Page.getInstallabilityErrors');
+  expect(installabilityErrors).toEqual([]);
+  expect(violations).toEqual([]);
   await context.close();
 });

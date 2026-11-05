@@ -1,16 +1,33 @@
 // Installed-app UI: the install banner, the "new version" banner and the offline readiness panel.
 import { useEffect, useState } from 'react';
 import { useQueueState, useSession } from '../app/session.jsx';
-import { dismissInstall, installDismissed, isAndroid, isStandalone, promptInstall, pwa, requestPersistence, storageStatus, usePwa } from '../pwa/pwaState.js';
+import { dismissInstall, installDismissed, installInstructions, isStandalone, promptInstall, pwa, requestPersistence, storageStatus, usePwa } from '../pwa/pwaState.js';
 import { Badge, Panel, fmtDateTime } from './ui.jsx';
 
 const MB = (n) => (n == null ? '—' : n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${(n / 1024 ** 2).toFixed(1)} MB`);
 
-// Shown at most once per 30 days, only when Chrome offers installation and the app is not installed.
+// Shown at most once per 30 days while the app is not installed: an Install button when the browser
+// offers installation (Chrome / Edge on Android), otherwise how to install from this browser's menu.
+// The written hint waits a few seconds, because Chrome may fire beforeinstallprompt after the first render.
 export function InstallBanner() {
-  const { installEvent } = usePwa();
+  const { installEvent, installed } = usePwa();
   const [hidden, setHidden] = useState(installDismissed);
-  if (!installEvent || hidden || isStandalone()) return null;
+  const [hintDue, setHintDue] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setHintDue(true), 6000);
+    return () => clearTimeout(t);
+  }, []);
+  if (hidden || installed || isStandalone()) return null;
+  if (!installEvent) {
+    const hint = hintDue && installInstructions();
+    if (!hint) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-3 bg-teal-700 px-4 py-2 text-sm text-white sm:px-6" role="region" aria-label="Install app" data-testid="install-hint">
+        <span className="flex-1">Install Swachh Safar for full-screen use and offline start. {hint}</span>
+        <button type="button" className="text-white/80 underline" onClick={() => { dismissInstall(); setHidden(true); }}>Got it</button>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-wrap items-center gap-3 bg-teal-700 px-4 py-2 text-sm text-white sm:px-6" role="region" aria-label="Install app" data-testid="install-banner">
       <span className="flex-1">Install Swachh Safar on this device for full-screen use and offline start.</span>
@@ -96,8 +113,7 @@ export function OfflineReadiness() {
         <Check ok={standalone} warn={!standalone} title="Installed as an app">
           {standalone ? 'Running as an installed app.'
             : installEvent ? <>Not installed. <button type="button" className="btn-link text-xs" onClick={promptInstall}>Install now</button></>
-              : isAndroid() ? 'Not installed. In Chrome, open the ⋮ menu and choose “Install app” (or “Add to Home screen”).'
-                : 'Not installed. Use the browser’s install option (address bar or menu) to install Swachh Safar.'}
+              : `Not installed. ${installInstructions()}`}
         </Check>
       </ul>
     </Panel>

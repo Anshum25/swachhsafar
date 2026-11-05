@@ -49,6 +49,9 @@ async function signOut(page) {
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 }
 
+// Every flow runs under the production Content-Security-Policy; nothing may be blocked by it.
+test.afterAll(() => expect(net.server.cspViolations).toEqual([]));
+
 test("one user's offline records are never synced with another user's session", async () => {
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
   const context = await chromium.launchPersistentContext(dir, {

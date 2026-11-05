@@ -12,6 +12,8 @@ const FAKE_FIREBASE = [
   'VITE_FIREBASE_APP_ID=1:0:web:e2efake',
   'VITE_DEMO_MODE=false',
 ].join(' ');
+// The preview server sends the production security headers (deploy/nginx/security-headers.conf).
+const PREVIEW_ENV = 'PREVIEW_SECURITY_HEADERS=1';
 
 export default defineConfig({
   testDir: 'tests/e2e-offline',
@@ -20,7 +22,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   webServer: {
-    command: `npx cross-env ${FAKE_FIREBASE} vite build --outDir dist-e2e --emptyOutDir && npx vite preview --outDir dist-e2e --port 4175 --strictPort`,
+    command: `npx cross-env ${FAKE_FIREBASE} vite build --outDir dist-e2e --emptyOutDir && npx cross-env ${PREVIEW_ENV} vite preview --outDir dist-e2e --port 4175 --strictPort`,
     url: 'http://localhost:4175',
     reuseExistingServer: false,
     timeout: 240_000,

@@ -11,12 +11,20 @@ export function registerServiceWorker() {
     immediate: true,
     onNeedRefresh: () => pwa.needRefresh(),
     onOfflineReady: () => pwa.offlineReady(),
-    // Installed PWAs can stay open for days: look for a new version hourly while online.
+    // Installed PWAs can stay open for days and are mostly resumed from the background rather than
+    // relaunched: look for a new version hourly, and on resume when the last check is over 15 min old.
     onRegisteredSW(url, registration) {
       if (!registration) return;
-      setInterval(() => {
-        if (navigator.onLine && !registration.installing) registration.update().catch(() => {});
-      }, 60 * 60 * 1000);
+      let lastCheck = Date.now();
+      const check = () => {
+        if (!navigator.onLine || registration.installing) return;
+        lastCheck = Date.now();
+        registration.update().catch(() => {});
+      };
+      setInterval(check, 60 * 60 * 1000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && Date.now() - lastCheck > 15 * 60 * 1000) check();
+      });
     },
   });
   pwa.setUpdater(update);

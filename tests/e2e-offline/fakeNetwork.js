@@ -26,7 +26,7 @@ const emailOf = (token) => {
 // `users`: { [email]: meResponse }. `today`: business date the fixture journeys are anchored to.
 export function createFakeNetwork({ users, today }) {
   const accounts = Object.fromEntries(Object.keys(users).map((email, i) => [email, { uid: `fb-e2e-${i}`, token: tokenFor(email, `fb-e2e-${i}`) }]));
-  const server = { connected: true, offlineHits: [], batches: [], uploads: new Map(), mediaInit: [], masterWrites: [] };
+  const server = { connected: true, offlineHits: [], batches: [], uploads: new Map(), mediaInit: [], masterWrites: [], cspViolations: [] };
   // Master data held by the fake server, seeded like /sync/changes, with backend permission checks.
   const seed = changesFixture(today);
   const masters = {
@@ -37,6 +37,13 @@ export function createFakeNetwork({ users, today }) {
   };
 
   async function install(context) {
+    // The preview server sends the production CSP (deploy/nginx/security-headers.conf); record anything it blocks.
+    await context.exposeBinding('__e2eCspViolation', (_source, v) => server.cspViolations.push(v)).catch(() => {});
+    await context.addInitScript(() => {
+      document.addEventListener('securitypolicyviolation', (e) => {
+        globalThis.__e2eCspViolation?.({ directive: e.effectiveDirective, blocked: e.blockedURI, source: e.sourceFile, line: e.lineNumber });
+      });
+    });
     await context.route(/googleapis\.com|firebaseinstallations|gstatic/, async (route) => {
       const req = route.request();
       const url = req.url();

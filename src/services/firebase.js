@@ -1,7 +1,13 @@
 // Firebase initialisation for the swachh-safar project.
 // Config comes from VITE_FIREBASE_* variables (.env.local); these are public client identifiers.
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  browserSessionPersistence,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 
 export function firebaseConfigFromEnv(env = import.meta.env) {
@@ -23,9 +29,19 @@ export function getFirebaseServices(config = firebaseConfigFromEnv()) {
     throw new Error('Firebase is not configured. Set VITE_FIREBASE_* in .env.local.');
   }
   const app = getApps()[0] ?? initializeApp(config);
-  // getAuth persists the session in IndexedDB in browsers. Firestore uses its default
-  // in-memory cache: SQLite, not Firestore, is this app's offline store.
-  services = { app, auth: getAuth(app), firestore: getFirestore(app) };
+  // Same persistence chain as getAuth() in browsers (IndexedDB first), so existing sessions are kept, but
+  // WITHOUT the popup/redirect resolver: the app signs in with email/password only, and the resolver
+  // eagerly loads an iframe from authDomain plus apis.google.com scripts on every start (blocked by the
+  // production CSP, and wasted bytes on a phone). Firestore uses its default in-memory cache: SQLite,
+  // not Firestore, is this app's offline store.
+  let auth;
+  try {
+    auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence] });
+  } catch (e) {
+    if (e?.code !== 'auth/already-initialized') throw e;
+    auth = getAuth(app);
+  }
+  services = { app, auth, firestore: getFirestore(app) };
   return services;
 }
 

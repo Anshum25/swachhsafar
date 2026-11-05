@@ -44,6 +44,19 @@ export function isStandalone() {
 
 export const isAndroid = () => typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
+// How to install from a browser that does not offer `beforeinstallprompt` (or before Chrome offers it).
+// Returns null where installation is not possible in this browser.
+export function installInstructions(ua = typeof navigator !== 'undefined' ? navigator.userAgent : '') {
+  const android = /Android/i.test(ua);
+  const ios = /iPhone|iPad|iPod/i.test(ua);
+  if (/SamsungBrowser/i.test(ua)) return 'In Samsung Internet, tap the menu (≡), then “Add page to” → “Home screen”.';
+  if (ios) return /CriOS|FxiOS|EdgiOS/i.test(ua) ? 'Tap Share, then “Add to Home Screen”.' : 'In Safari, tap Share, then “Add to Home Screen”.';
+  if (android && /Firefox/i.test(ua)) return 'In Firefox, tap the ⋮ menu, then “Install”.';
+  if (android && /; wv\)/.test(ua)) return 'This in-app browser cannot install apps. Open the link in Chrome.';
+  if (android) return 'In Chrome, tap the ⋮ menu, then “Install app” (or “Add to Home screen”).';
+  return 'Use the install icon in the browser’s address bar, or its menu, to install Swachh Safar.';
+}
+
 // Must run before React renders: Chrome fires beforeinstallprompt early and only once per page load.
 export function captureInstallEvents() {
   if (typeof window === 'undefined') return;

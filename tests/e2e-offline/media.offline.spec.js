@@ -33,6 +33,9 @@ let dir;
 test.beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'swachh-media-')); });
 test.afterAll(() => { try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }); } catch { /* Windows lock */ } });
 
+// Every flow runs under the production Content-Security-Policy; nothing may be blocked by it.
+test.afterAll(() => expect(net.server.cspViolations).toEqual([]));
+
 test('inspection video and photo: validated, persisted offline across restart, uploaded once with matching checksums', async () => {
   const { server } = net;
   let context = await launch(dir);
