@@ -14,6 +14,7 @@ import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp } from '../../utils/capture.js';
 
 export const STAGES = ['Source', 'Enroute 1', 'Destination', 'Enroute 2', 'End'];
+const STAGES_SHORT = ['Source', 'Enr. 1', 'Dest.', 'Enr. 2', 'End']; // stage buttons on phones under 400px
 
 const CELL = {
   taken: 'bg-emerald-600 text-white',
@@ -177,9 +178,10 @@ function StageGrid({ journey: j, status }) {
                       const clickable = submit && c.status === 'next' && !pending && j;
                       return (
                         <button key={c.stage} type="button" disabled={!clickable} onClick={() => setTarget({ staff: s, stage: c.stage })}
-                          className={`rounded-xl px-1 py-2 text-[11px] font-semibold leading-tight transition sm:text-xs ${cls}`}
+                          className={`min-w-0 rounded-xl px-1 py-2 text-[11px] font-semibold leading-tight transition sm:text-xs ${cls}`}
                           aria-label={`${s.name} stage ${c.stage} ${pending ? 'pending sync' : c.status}`}>
-                          {STAGES[c.stage - 1]}
+                          <span className="min-[400px]:hidden">{STAGES_SHORT[c.stage - 1]}</span>
+                          <span className="hidden min-[400px]:inline">{STAGES[c.stage - 1]}</span>
                         </button>
                       );
                     })}

@@ -26,7 +26,7 @@ Device: ______  Android: ______  Browser + version (chrome://version): ______  T
 | 2 | Install the PWA | Icon on the home screen, named "Swachh Safar" | | |
 | 3 | Launch the installed app | Standalone, no browser UI | | |
 | 4 | Sign in online | Dashboard *Welcome, <name>* | | |
-| 5 | Initial download | Dashboard → Offline readiness: all green | | |
+| 5 | Initial download | Journeys list shows your journeys; top bar "All records synced" | | |
 | 6 | Airplane mode, then use the app | *Offline* indicator; screens work | | |
 | 7 | Mark attendance offline (camera + GPS) | "Saved on this device", *pending sync* | | |
 | 8 | Coach inspection photo/video offline | Saved locally; preview shows | | |

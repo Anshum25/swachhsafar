@@ -21,8 +21,8 @@ export function Panel({ title, actions, children, className = '' }) {
   return (
     <section className={`rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 sm:p-5 ${className}`}>
       {(title || actions) && (
-        <div className="mb-3 flex items-center justify-between gap-2">
-          {title && <h2 className="text-sm font-semibold text-slate-800">{title}</h2>}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          {title && <h2 className="min-w-0 text-sm font-semibold text-slate-800">{title}</h2>}
           {actions}
         </div>
       )}
@@ -137,7 +137,7 @@ export function Pager({ data, onPage }) {
 
 // A row of filters above a list.
 export function FilterBar({ children }) {
-  return <div className="mb-4 flex flex-wrap items-end gap-3 [&>*]:min-w-[9rem]">{children}</div>;
+  return <div className="mb-4 flex flex-wrap items-end gap-3 [&>*]:min-w-[9rem] [&>*]:flex-1 [&>*]:basis-[9rem]">{children}</div>;
 }
 
 export function Segmented({ options, value, onChange, label: aria }) {
@@ -244,10 +244,39 @@ export function RatingScale({ min, max, value, onChange, label: aria }) {
   );
 }
 
+// Below 640px every row is a card (first column as its title, the rest as label/value pairs), so phones never
+// scroll a table sideways; from 640px it is a normal table. Both keep table semantics for screen readers.
 export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
+  const [first, ...rest] = columns;
+  const cell = (c, r) => (c.render ? c.render(r) : r[c.key]);
   return (
-    <div className="-mx-4 overflow-x-auto sm:mx-0">
-      <table className="w-full min-w-[560px] text-left text-sm">
+    <>
+    <div role="table" className="divide-y divide-slate-100 sm:hidden">
+      {/* Column headers for screen readers; the visible per-value labels below are decorative. */}
+      <div role="rowgroup" className="sr-only">
+        <div role="row">{columns.map((c) => <span role="columnheader" key={c.key}>{c.label}</span>)}</div>
+      </div>
+      <div role="rowgroup">
+        {rows.map((r) => (
+          <div role="row" key={rowKey(r)} onClick={onRowClick ? () => onRowClick(r) : undefined}
+            className={`py-3 ${onRowClick ? 'cursor-pointer active:bg-teal-50/60' : ''}`}>
+            <div role="cell" className="min-w-0 break-words text-sm font-semibold text-slate-900">{cell(first, r)}</div>
+            <div className="mt-1.5 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+              {rest.map((c) => (c.label ? (
+                <div role="cell" key={c.key} className="contents">
+                  <span aria-hidden="true" className="text-xs font-medium uppercase tracking-wide text-slate-500">{c.label}</span>
+                  <span className="min-w-0 break-words text-slate-800">{cell(c, r)}</span>
+                </div>
+              ) : (
+                <div role="cell" key={c.key} className="col-span-2 min-w-0">{cell(c, r)}</div>
+              )))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div className="hidden overflow-x-auto sm:block">
+      <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
             {columns.map((c) => <th key={c.key} className="px-4 py-2 font-medium sm:px-3">{c.label}</th>)}
@@ -263,15 +292,16 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 
 export function Tabs({ tabs, value, onChange }) {
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto rounded-2xl bg-slate-100 p-1" role="tablist">
+    <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-1 rounded-2xl bg-slate-100 p-1 sm:flex sm:flex-wrap" role="tablist">
       {tabs.map((t) => (
         <button key={t.value} type="button" role="tab" aria-selected={value === t.value} onClick={() => onChange(t.value)}
-          className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${value === t.value ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+          className={`min-w-0 rounded-xl px-3 py-2 text-center text-sm font-medium leading-snug transition sm:flex-none sm:whitespace-nowrap sm:px-4 ${value === t.value ? 'bg-white text-teal-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
           {t.label}
         </button>
       ))}

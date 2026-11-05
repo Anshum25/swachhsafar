@@ -62,7 +62,7 @@ function MovementForm({ journey, type, balance, onClose, onDone }) {
           placeholder={items.loading ? 'Loading…' : (items.data ?? []).length ? 'Select item' : 'No active items in this division'}
           options={(items.data ?? []).map((i) => ({ value: i.id, label: `${i.name} (${i.unit})` }))} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Coach" hint="Leave empty for the whole journey">
           <Select value={form.coach_code} onChange={(v) => set({ coach_code: v })} placeholder="Whole journey"
             options={journey.coaches.map((c) => ({ value: c.code, label: c.code }))} />

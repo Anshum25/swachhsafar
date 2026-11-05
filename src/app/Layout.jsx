@@ -46,10 +46,16 @@ function QueueIndicator() {
   const { queue } = useSession();
   // Records captured by another user of this device sync only when that user signs in again.
   const others = q.othersPending ? <span className="text-xs text-slate-500" data-testid="ops-queue-others"> · {q.othersPending} waiting for another user</span> : null;
-  if (!q.pending && !q.failed.length) return <span className="text-xs text-slate-500">All records synced{others}</span>;
+  if (!q.pending && !q.failed.length) {
+    return (
+      <span className="truncate text-xs text-slate-500" title="All records synced">
+        <span className="min-[400px]:hidden">Synced</span><span className="hidden min-[400px]:inline">All records synced</span>{others}
+      </span>
+    );
+  }
   return (
     <button type="button" onClick={() => (q.failed.length ? queue.retryFailed() : queue.flush())}
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${q.failed.length ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-amber-50 text-amber-800 ring-amber-200'}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${q.failed.length ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-amber-50 text-amber-800 ring-amber-200'}`}
       title={q.lastError ?? 'Tap to sync now'} data-testid="ops-queue">
       {q.running ? <Spinner className="h-3 w-3" /> : <RefreshIcon className="h-3 w-3" />}
       {q.pending ? `${q.pending} pending` : ''}{q.pending && q.failed.length ? ' · ' : ''}{q.failed.length ? `${q.failed.length} failed` : ''}
@@ -59,6 +65,11 @@ function QueueIndicator() {
 
 // Browser connectivity is not server connectivity: "Online" only when the last exchange with the server
 // worked; a failed pull while the network is up shows as a server problem.
+const SHORT_STATUS = { 'Server unreachable': 'No server', 'Syncing…': 'Syncing' };
+
+// Literal class names so Tailwind generates them.
+const NAV_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4', 5: 'grid-cols-5' };
+
 function ConnectionIndicator({ online }) {
   const q = useQueueState();
   const [tone, text, title] = !online ? ['amber', 'Offline', 'No network. Records are saved on this device.']
@@ -68,8 +79,9 @@ function ConnectionIndicator({ online }) {
   const dot = { amber: 'bg-amber-500', sky: 'bg-sky-500', red: 'bg-red-500', emerald: 'bg-emerald-500' }[tone];
   const color = { amber: 'text-amber-700', sky: 'text-sky-700', red: 'text-red-700', emerald: 'text-emerald-700' }[tone];
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${color}`} title={title} role="status" data-testid="connection-status">
-      <span className={`h-2 w-2 rounded-full ${dot}`} /> {text}
+    <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium ${color}`} title={title} role="status" data-testid="connection-status">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+      <span className="min-[400px]:hidden">{SHORT_STATUS[text] ?? text}</span><span className="hidden min-[400px]:inline">{text}</span>
     </span>
   );
 }
@@ -120,8 +132,8 @@ export default function Layout({ path, children }) {
             <button type="button" className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
               <MenuIcon className="h-5 w-5" />
             </button>
-            <span className="font-semibold text-teal-800 lg:hidden">Swachh Safar</span>
-            <div className="ml-auto flex items-center gap-3">
+            <span className="shrink-0 whitespace-nowrap font-semibold text-teal-800 lg:hidden">Swachh Safar</span>
+            <div className="ml-auto flex min-w-0 items-center justify-end gap-2 sm:gap-3">
               <QueueIndicator />
               <ConnectionIndicator online={online} />
             </div>
@@ -135,11 +147,11 @@ export default function Layout({ path, children }) {
           <InstallBanner />
           {me.offline && <p className="bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6">Signed in offline with your cached profile. Permissions will refresh when you reconnect.</p>}
           <main className="mx-auto max-w-6xl px-4 py-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:pb-8">{children}</main>
-          <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden">
+          <nav className={`fixed inset-x-0 bottom-0 z-20 grid ${NAV_COLS[Math.min(items.length, 5)]} border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden`}>
             {items.slice(0, 5).map(({ path: p, label, Icon }) => {
               const on = p === '/' ? path === '/' : path.startsWith(p);
               return (
-                <a key={p} href={`#${p}`} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${on ? 'text-teal-700' : 'text-slate-500'}`}>
+                <a key={p} href={`#${p}`} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium ${on ? 'text-teal-700' : 'text-slate-500'}`}>
                   <Icon className="h-5 w-5" /> <span className="truncate">{label.split(' ')[0]}</span>
                 </a>
               );

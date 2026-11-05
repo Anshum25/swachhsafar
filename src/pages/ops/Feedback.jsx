@@ -55,7 +55,7 @@ function JourneyCoachFields({ journeys, form, set, coachRequired = true }) {
           onChange={(v) => { const nj = journeys.data.items.find((x) => x.id === v); set({ journey_id: v, coach_code: '', journey_day: nj ? journeyDay(nj) : 1 }); }}
           options={(journeys.data?.items ?? []).map((x) => ({ value: x.id, label: `${x.train_no} · ${x.train_name}` }))} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Coach">
           <Select value={form.coach_code} required={coachRequired} placeholder="Select coach" onChange={(v) => set({ coach_code: v })}
             options={(j?.coaches ?? []).map((c) => ({ value: c.code, label: `${c.code} (${c.classification === 'AC' ? 'AC' : 'Non-AC'})` }))} />

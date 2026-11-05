@@ -220,7 +220,7 @@ export default function Reports() {
     <>
       <PageHeader title="Reports" subtitle={division.current?.name} actions={<DivisionPicker division={division} />} />
       <Panel className="mb-4">
-        <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+        <div className="grid gap-3 sm:max-w-md sm:grid-cols-2">
           <Field label="From"><input type="date" className="input" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></Field>
           <Field label="To"><input type="date" className="input" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></Field>
         </div>

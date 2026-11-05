@@ -58,7 +58,7 @@ function NewComplaint({ divisionId, onClose, onSaved }) {
           onChange={(v) => set({ category_id: v, subcategory_id: '' })} options={cats.filter((c) => !c.parent_id).map((c) => ({ value: c.id, label: c.name }))} />
       </Field>
       {subs.length > 0 && <Field label="Sub-category"><Select value={form.subcategory_id} placeholder="—" onChange={(v) => set({ subcategory_id: v })} options={subs.map((c) => ({ value: c.id, label: c.name }))} /></Field>}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Journey (optional)">
           <Select value={form.journey_id} placeholder="None" onChange={(v) => set({ journey_id: v, coach_code: '' })} options={(journeys.data?.items ?? []).map((j) => ({ value: j.id, label: j.train_no }))} />
         </Field>
