@@ -101,10 +101,10 @@ def test_create_journey_failure_rolls_back(world, db):
 
 
 def test_migrations_downgrade_and_upgrade(pg):
-    server, base = pg
+    server, url_for = pg
     server.psql("DROP DATABASE IF EXISTS swachh_migrate WITH (FORCE);")
     server.psql("CREATE DATABASE swachh_migrate;")
-    url = f"{base}/swachh_migrate"
+    url = url_for("swachh_migrate")
     run_migrations(url)
     engine = create_engine(url)
     assert "inspections" in inspect(engine).get_table_names()

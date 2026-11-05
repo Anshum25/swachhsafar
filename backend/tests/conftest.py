@@ -23,8 +23,12 @@ def _start_postgres():
     server = pgserver.get_server(str(_PGDATA), cleanup_mode="stop")
     server.psql("DROP DATABASE IF EXISTS swachh_test WITH (FORCE);")
     server.psql("CREATE DATABASE swachh_test;")
-    base = server.get_uri().rsplit("/", 1)[0].replace("postgresql://", "postgresql+psycopg://")
-    return server, base
+    # get_uri(dbname) is a TCP URI on Windows and a Unix-socket URI ("...?host=/path") on Linux, so the
+    # database name must never be spliced into the string by hand.
+    def url_for(dbname: str) -> str:
+        return server.get_uri(dbname).replace("postgresql://", "postgresql+psycopg://", 1)
+
+    return server, url_for
 
 
 SQLITE = os.environ.get("TEST_DB") == "sqlite"
@@ -32,11 +36,11 @@ _SQLITE_DB = _ROOT / "sqlite" / "swachh_test.db"
 _SQLITE_TEMPLATE = _ROOT / "sqlite" / "template.db"
 
 if SQLITE:
-    _SERVER, _BASE_URI = None, None
+    _SERVER, _URL_FOR = None, None
     _DATABASE_URL = f"sqlite:///{_SQLITE_DB.as_posix()}"
 else:
-    _SERVER, _BASE_URI = _start_postgres()
-    _DATABASE_URL = f"{_BASE_URI}/swachh_test"
+    _SERVER, _URL_FOR = _start_postgres()
+    _DATABASE_URL = _URL_FOR("swachh_test")
 os.environ.update(
     DATABASE_URL=_DATABASE_URL,
     ENVIRONMENT="test",
@@ -61,7 +65,7 @@ def run_migrations(url: str, target: str = "head", direction: str = "upgrade") -
 def pg():
     if SQLITE:
         pytest.skip("PostgreSQL-specific test (TEST_DB=sqlite)")
-    return _SERVER, _BASE_URI
+    return _SERVER, _URL_FOR
 
 
 def _sqlite_files(path: Path) -> list[Path]:

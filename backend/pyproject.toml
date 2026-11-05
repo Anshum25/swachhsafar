@@ -22,6 +22,14 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8", "pgserver>=0.1.4"]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Only `app` is the Python package; `alembic/` holds migration scripts, not an importable package.
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
