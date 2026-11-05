@@ -9,6 +9,7 @@ import { initDatabase } from './database/sqlite.js';
 import { recoverAfterStart } from './database/startupRecovery.js';
 import { ErrorNote, Loading } from './components/ui.jsx';
 import Splash from './components/Splash.jsx';
+import Install from './pages/Install.jsx';
 
 const Dashboard = lazy(() => import('./pages/ops/Dashboard.jsx'));
 const Journeys = lazy(() => import('./pages/ops/Journeys.jsx'));
@@ -68,7 +69,14 @@ function Shell() {
   );
 }
 
+// The share link https://<host>/install (or #/install) opens the install page, before any sign-in.
+const isInstallPage = () => typeof location !== 'undefined' && (location.pathname.replace(/\/+$/, '') === '/install' || location.hash === '#/install');
+
 export default function App() {
+  return isInstallPage() ? <Install /> : <OperationsApp />;
+}
+
+function OperationsApp() {
   const [db, setDb] = useState({ status: 'initializing' });
   useEffect(() => {
     initDatabase().then(async ({ db: handle, files }) => {

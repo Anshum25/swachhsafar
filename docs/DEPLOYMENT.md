@@ -1,6 +1,15 @@
-# Swachh Safar 2.0 — Production deployment (IP + port)
+# Swachh Safar 2.0 — Production deployment
 
-**URL:** `https://76.13.243.27:8082` · deployed 2026-11-05 · server `srv1403435` (shared with other sites)
+**URL:** **`https://ehk.itfarmer.in`** (share link: `https://ehk.itfarmer.in/install`) · also `https://76.13.243.27:8082`
+(kept for phones that installed from the IP; their unsynced data lives there) · server `srv1403435` (shared with other sites)
+
+`ehk.itfarmer.in` is proxied by **Cloudflare**: phones see Cloudflare's certificate; Cloudflare connects to nginx on :443
+with a Let's Encrypt certificate (certbot, webroot `/var/www/acme`, renewed by `certbot.timer`, deploy hook reloads nginx).
+nginx takes the visitor address from `CF-Connecting-IP` (Cloudflare ranges listed in the site file — refresh them from
+https://www.cloudflare.com/ips when Cloudflare changes them). HTML is sent with `no-transform` so Cloudflare does not
+inject scripts (its Web Analytics beacon would be blocked by the CSP). Cloudflare's zone has a 4-hour "Browser Cache TTL"
+that rewrites `serviceWorker.js`'s header; update checks bypass the browser cache for that file, so updates are not delayed,
+but "Respect Existing Headers" in Cloudflare → Caching is the cleaner setting.
 
 ```
 Phone (Chrome) ──HTTPS :8082──► nginx ──/──────────► /var/www/html/swachhsafar2.0/current → releases/<time>-<sha>/
@@ -20,7 +29,9 @@ change, make sure every device shows *0 pending*. A domain name avoids this prob
 
 | Item | Location | Notes |
 |---|---|---|
-| nginx site | `/etc/nginx/sites-available/swachhsafar` (from `deploy/nginx/swachhsafar.conf`) | Port 8082 only. No other site was modified. |
+| nginx site | `/etc/nginx/sites-available/swachhsafar` (from `deploy/nginx/swachhsafar.conf`) | `ehk.itfarmer.in` on :80 (ACME + redirect) and :443, plus `76.13.243.27:8082`. |
+| App locations | `/etc/swachhsafar/nginx/app.conf` (from `deploy/nginx/swachhsafar-app.conf`) | Shared by both hosts: caching rules, /api proxy, headers. |
+| Domain certificate | `/etc/letsencrypt/live/ehk.itfarmer.in/` | certbot webroot; `certbot renew --dry-run` to check. |
 | Security headers | `/etc/swachhsafar/nginx/security-headers.conf` (from `deploy/nginx/security-headers.conf`) | The same file drives `vite preview` in e2e tests. |
 | TLS | `/etc/swachhsafar/tls/active.{crt,key}` → `le/` | **Let's Encrypt IP certificate** (6-day `shortlived` profile, chain to ISRG Root X1). lego v5.5.2 at `/usr/local/bin/lego`, state in `/etc/swachhsafar/lego/` (back it up). Fallback: private IP-constrained CA in the same directory (`server-fullchain.crt`). |
 | Cert renewal | `swachhsafar-cert-renew.timer` (twice a day) → `deploy/scripts/renew-cert.sh` → `cert-deploy-hook.sh` | Renews at ~1/3 of the lifetime left, or when Let's Encrypt's renewal info asks. A certificate goes live only if it covers the IP, matches its key, and passes `nginx -t`. |

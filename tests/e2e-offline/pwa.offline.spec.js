@@ -119,3 +119,27 @@ test('Chrome reports the app installable, under the production security headers,
   expect(violations).toEqual([]);
   await context.close();
 });
+
+// The share link: /install works without signing in, offers installation (Chrome's prompt where available,
+// otherwise this browser's steps), keeps working offline from the stored app, and leads to sign-in.
+test('install page (share link) needs no sign-in, offers install, works offline', async () => {
+  const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
+  const profile = mkdtempSync(join(tmpdir(), 'swachh-installpage-'));
+  let context = await chromium.launchPersistentContext(profile, { ...pixel, baseURL: BASE });
+  await context.route(/\/api\/v1\/|googleapis\.com|firebaseapp\.com/, (route) => route.abort('connectionrefused'));
+  let page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('/install');
+  await expect(page.getByRole('heading', { name: 'Swachh Safar' })).toBeVisible();
+  await expect(page.getByTestId('install-app').or(page.getByText('How to install'))).toBeVisible({ timeout: 15_000 });
+  await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30_000 });
+  await context.close();
+
+  context = await chromium.launchPersistentContext(profile, { ...pixel, baseURL: BASE, offline: true });
+  page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('/install');
+  await expect(page.getByRole('heading', { name: 'Swachh Safar' })).toBeVisible();
+  await page.getByRole('link', { name: 'Continue in the browser instead' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await context.close();
+  rmSync(profile, { recursive: true, force: true });
+});
