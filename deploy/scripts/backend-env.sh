@@ -30,7 +30,7 @@ STORAGE_BACKEND=firebase
 OTP_PEPPER=$(openssl rand -base64 48 | tr -d '\n')
 
 # Same-origin PWA: the browser does not need CORS, this only allows the public origin explicitly.
-CORS_ORIGINS=["${ORIGIN}"]
+CORS_ORIGINS='["${ORIGIN}"]'
 
 SMS_PROVIDER=disabled
 PNR_PROVIDER=disabled

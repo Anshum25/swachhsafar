@@ -111,3 +111,16 @@ This is covered by `tests/e2e-offline/update.offline.spec.js`.
 - Firebase Admin key: valid (Google issued an access token).
 
 Run the live test again: `LIVE_URL=https://76.13.243.27:8082 npx playwright test -c playwright.live.config.js`
+
+## Accounts
+
+First Super Admin (2026-11-05): `SA001` "DK Parmar", `dkparmar1412@gmail.com`, home division `HQ` "Headquarters",
+linked by Firebase UID because the email is unverified. Employee ID and division **code** cannot be changed later.
+Name, email and the division **name** can. Further staff are added in the app. Provision from the shell:
+
+```bash
+cd backend && sudo -u swachhsafar bash -c 'set -a; . /etc/swachhsafar/backend.env; set +a
+  .venv/bin/python -m app.cli create-division --code <CODE> --name "<Name>"
+  .venv/bin/python -m app.cli create-superadmin --division-code <CODE> --emp-id <ID> --name "<Name>" --email <email> [--firebase-uid <uid>]'
+```
+Without `--firebase-uid`, the record links on first sign-in only if the Firebase email is verified.
