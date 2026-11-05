@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew the Swachh Safar 2.0 Let's Encrypt IP certificate (lego)
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/var/www/html/swachhsafar2.0/swachhsafar/deploy/scripts/renew-cert.sh
