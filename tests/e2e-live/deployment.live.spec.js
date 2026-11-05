@@ -24,6 +24,8 @@ test('deployed PWA: trusted HTTPS, installable, works offline after one visit', 
     expect(res.status()).toBe(200);
     expect(page.url()).toMatch(/^https:/);
     expect(await page.evaluate(() => window.isSecureContext)).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible(); // signed-out start screen
+    await page.goto('/#/register'); // shows the local database status
     await expect(page.getByTestId('db-status')).toContainText('Ready · persistent');
     timings.firstLoadToDbReadyMs = Date.now() - t0;
     await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 60_000 });
@@ -50,7 +52,7 @@ test('deployed PWA: trusted HTTPS, installable, works offline after one visit', 
     context = await chromium.launchPersistentContext(dir, { ...pixel, baseURL: BASE, offline: true });
     page = context.pages()[0] ?? (await context.newPage());
     const t1 = Date.now();
-    await page.goto('/');
+    await page.goto('/#/register');
     await expect(page.getByTestId('db-status')).toContainText('Ready · persistent');
     timings.offlineColdStartToDbReadyMs = Date.now() - t1;
     expect(await page.evaluate(() => navigator.onLine)).toBe(false);

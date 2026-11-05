@@ -104,6 +104,10 @@ test('Chrome reports the app installable, under the production security headers,
   expect(headers['x-content-type-options']).toBe('nosniff');
   expect(headers['permissions-policy']).toContain('camera=(self)');
   await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30_000 });
+  // A signed-out start (what the installed app opens at start_url "/") is Sign in, with Register one tap away.
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Create your account' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Register' }).click();
   // The SQLite WASM database starts under this CSP (WebAssembly compile needs 'wasm-unsafe-eval').
   await expect(page.getByTestId('db-status')).toContainText('Ready · persistent', { timeout: 30_000 });
 

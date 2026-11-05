@@ -32,7 +32,7 @@ function newProfileDir() {
 
 async function openApp(context) {
   const page = context.pages()[0] ?? (await context.newPage());
-  await page.goto('/');
+  await page.goto('/#/register');
   await expect(page.getByTestId('db-status')).toHaveText('Ready · persistent');
   return page;
 }

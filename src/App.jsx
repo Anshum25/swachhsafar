@@ -28,12 +28,13 @@ const SCREENS = {
 function Shell() {
   const session = useSession();
   const { path, parts } = useRoute();
-  // Registration (Phase 1) is the entry screen for a signed-out device. It stays on screen even after its
-  // sync signs the new account in to Firebase, until the user navigates away.
+  // A signed-out device starts on Sign in: staff accounts are provisioned by an administrator, and the
+  // installed app opens at "/". Registration (Phase 1) is opened from the "Register" link (#/register) and
+  // stays on screen even after its sync signs the new account in to Firebase, until the user navigates away.
   const [registering, setRegistering] = useState(null);
 
   useEffect(() => {
-    if (registering === null && session.status !== 'loading') setRegistering(session.status === 'signedOut' && path !== '/login');
+    if (registering === null && session.status !== 'loading') setRegistering(path === '/register');
   }, [registering, session.status, path]);
   useEffect(() => {
     if (path === '/register') setRegistering(true);
