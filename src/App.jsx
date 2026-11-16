@@ -87,8 +87,13 @@ const isInstallPage = () => typeof location !== 'undefined' && (location.pathnam
 const isDownloadPage = () => typeof location !== 'undefined' && (location.pathname.replace(/\/+$/, '') === '/download' || location.hash === '#/download');
 
 export default function App() {
-  if (isDownloadPage()) return <Download />;
-  return isInstallPage() ? <Install /> : <DeveloperModeGate><OperationsApp /></DeveloperModeGate>;
+  // The Developer-options gate covers every page, so no route of the Android app opens while the setting is
+  // on. In a browser it cannot read the setting and renders its children straight away.
+  return (
+    <DeveloperModeGate>
+      {isDownloadPage() ? <Download /> : isInstallPage() ? <Install /> : <OperationsApp />}
+    </DeveloperModeGate>
+  );
 }
 
 function OperationsApp() {

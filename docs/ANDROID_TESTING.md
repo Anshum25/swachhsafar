@@ -63,3 +63,40 @@ on a PC.
   origin**, because a WebAuthn relying-party ID must be a domain name. It needs a domain. External USB fingerprint
   scanners and Android `BiometricPrompt` need a native wrapper, such as a Trusted Web Activity with a native
   module or Capacitor, which is separate work.
+
+## 5. Android app (APK) test sheet
+
+The APK packages the same build but runs it from `https://localhost`, so everything that crosses to the server
+is new ground. **None of this can be checked on a desktop:** browser emulation cannot provide the Capacitor
+bridge, Developer options, Android's permission prompts or a real camera, microphone and GPS. The automated
+tests fake the bridge and prove only the JavaScript side of each decision.
+
+Before testing, the server changes in `docs/DEPLOYMENT.md` ("Server changes the Android app needs") must be
+applied, or sign-in will fail with a CORS error and nothing else will work.
+
+Device: ______  Android: ______  APK version (Settings → Apps): ______  Tester/date: ______
+
+| # | Test | Expected | Result | Notes |
+|---|---|---|---|---|
+| 1 | Install the APK from `/download` | Installs; icon "Swachh Safar" | | |
+| 2 | First launch | Splash, then **Sign in** — not a blank screen | | |
+| 3 | Sign in online | Dashboard *Welcome, <name>*. Proves the cross-origin API and CORS work | | |
+| 4 | **Developer options ON**, resume the app | Only *Please turn off Developer mode*; no app screen behind it | | |
+| 5 | Tap *Open Developer options* | Android's Developer options screen opens | | |
+| 6 | Turn Developer options OFF, return to the app | It opens by itself on resume, without a restart | | |
+| 7 | Developer options ON while signed in, press Home and back | Blocked again; still blocked after force-close and reopen | | |
+| 8 | No "Install app" banner anywhere | Never shown inside the APK | | |
+| 9 | Camera permission on first face verification | Android asks once; verification then works | | |
+| 10 | Microphone permission on first voice note | Android asks once; records and plays back | | |
+| 11 | Location on attendance | Records a position; a mock-location app is reported as mocked | | |
+| 12 | Airplane mode: capture attendance, inspection, voice | Saved on the device, marked pending | | |
+| 13 | Reconnect | Syncs; each record appears once in reports | | |
+| 14 | Open a record whose photo is only on the server | Photo loads (cross-origin media with the user's token) | | |
+| 15 | Force-close, reopen offline | Pending records still listed | | |
+| 16 | Publish a newer release, then open the app online | *New version available → Download*; tapping it leaves the app and downloads the APK in the phone's browser | | |
+| 17 | Install that newer APK over this one | Installs; pending records and sign-in are kept | | |
+| 18 | Back button | Goes back through screens, then leaves the app | | |
+
+Error messages: copy them exactly. For the WebView console, connect USB and open `chrome://inspect` on a PC
+(Developer options are needed for that, which the app itself blocks — test with a debug build, or read the
+message on screen).

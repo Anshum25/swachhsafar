@@ -27,7 +27,3 @@ export function serverUrl(path, { base = API_BASE, origin = pageOrigin() } = {})
   if (!target || target === origin) return path;
   return new URL(path, target).toString();
 }
-
-// True when the app is not served by the server it talks to, i.e. inside the APK. Used to decide whether
-// cross-origin rules apply (the service worker, CORS, APK update checks).
-export const isCrossOrigin = (opts) => serverUrl('/', opts) !== '/';

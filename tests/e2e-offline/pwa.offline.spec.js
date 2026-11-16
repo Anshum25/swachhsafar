@@ -222,6 +222,12 @@ test('developer mode keeps the Android app closed until it is turned off', async
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Please turn off Developer mode' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCount(0);
+  // No route of the app is a way around it, not even the public pages.
+  for (const path of ['/download', '/install', '/#/reports']) {
+    await page.goto(path);
+    await expect(page.getByTestId('developer-mode-gate')).toBeVisible();
+  }
+  await page.goto('/');
   await page.evaluate(() => { window.__devMode = false; });
   await page.getByRole('button', { name: 'Check again' }).click();
   await expect(page.getByTestId('developer-mode-gate')).toHaveCount(0);

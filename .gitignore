@@ -3,6 +3,7 @@ dist/
 dist-demo/
 dist-e2e/
 dev-dist/
+.env
 .env.local
 .env.*.local
 test-results/

@@ -4,7 +4,7 @@
 // always built them. In the APK the page is https://localhost while the API base is the site's full URL, so
 // anything that must reach the server has to be rewritten to that host.
 import { describe, expect, it } from 'vitest';
-import { isCrossOrigin, serverOrigin, serverUrl } from '../../src/services/serverOrigin.js';
+import { serverOrigin, serverUrl } from '../../src/services/serverOrigin.js';
 
 const PWA = { base: '/api/v1', origin: 'https://ehk.itfarmer.in' };
 const APK = { base: 'https://ehk.itfarmer.in/api/v1', origin: 'https://localhost' };
@@ -12,12 +12,10 @@ const APK = { base: 'https://ehk.itfarmer.in/api/v1', origin: 'https://localhost
 describe('server origin', () => {
   it('is the page itself when the API base is relative (PWA)', () => {
     expect(serverOrigin(PWA)).toBe('https://ehk.itfarmer.in');
-    expect(isCrossOrigin(PWA)).toBe(false);
   });
 
   it('is the API host when the base is absolute (APK, page served from https://localhost)', () => {
     expect(serverOrigin(APK)).toBe('https://ehk.itfarmer.in');
-    expect(isCrossOrigin(APK)).toBe(true);
   });
 
   it('falls back to the page origin for an unusable base', () => {

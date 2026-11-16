@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import Logo from '../components/Logo.jsx';
 import { installInstructions } from '../pwa/pwaState.js';
+import { DOWNLOAD_URL, LATEST_URL } from '../pwa/appUpdate.js';
 import { serverUrl } from '../services/serverOrigin.js';
 
 const ANDROID_VERSIONS = { 24: '7.0', 26: '8.0', 28: '9', 29: '10', 30: '11', 31: '12', 33: '13', 34: '14' };
@@ -26,7 +27,7 @@ export default function Download() {
   useEffect(() => {
     // serverUrl keeps this relative in the browser and points it at the site inside the Android app, where
     // the page itself is served from https://localhost.
-    fetch(serverUrl('/downloads/latest.json'), { cache: 'no-store', headers: { Accept: 'application/json' } })
+    fetch(serverUrl(LATEST_URL), { cache: 'no-store', headers: { Accept: 'application/json' } })
       .then(async (r) => {
         const type = r.headers.get('content-type') ?? '';
         if (!r.ok || !type.includes('json')) return setRelease({ status: 'none' });
@@ -53,7 +54,9 @@ export default function Download() {
             <p className="text-sm text-slate-500">Checking the latest release…</p>
           ) : release.status === 'ready' ? (
             <>
-              <a href={serverUrl(release.latest_url ?? release.url)} className="btn-primary flex h-12 w-full items-center justify-center text-base font-bold" data-testid="download-apk">
+              {/* A release that names no file still has a working link: swachh-safar-latest.apk always
+                  points at the newest published APK. */}
+              <a href={serverUrl(release.latest_url ?? release.url ?? DOWNLOAD_URL)} className="btn-primary flex h-12 w-full items-center justify-center text-base font-bold" data-testid="download-apk">
                 Download Android APK
               </a>
               {/* Only what the published release actually states: a field the publisher did not write is

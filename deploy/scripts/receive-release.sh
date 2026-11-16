@@ -72,14 +72,16 @@ if [[ -s "$work/app.apk" ]]; then
   install -m 644 "$work/app.apk" "$DOWNLOADS/$name"
   ln -sfn "$name" "$DOWNLOADS/swachh-safar-latest.apk"
   SHA="$SHA" NAME="$name" META="$work/apk.json" python3 - > "$DOWNLOADS/latest.json.new" <<'PY'
-import datetime, json, os, pathlib
+import datetime, json, os, pathlib, sys
 meta = {}
 path = pathlib.Path(os.environ["META"])          # written by the build-apk job (scripts/describe-apk.py)
-if path.is_file():
+if not path.is_file():
+    print("WARNING: no apk.json in the bundle: /download will show the file but not its version or checksum", file=sys.stderr)
+else:
     try:
-        meta = json.loads(path.read_text())
-    except ValueError:
-        meta = {}
+        meta = json.loads(path.read_text(encoding="utf-8-sig"))
+    except ValueError as exc:
+        print(f"WARNING: apk.json is not readable JSON ({exc}): publishing without the release details", file=sys.stderr)
 name = os.environ["NAME"]
 meta.update({
     "sha": os.environ["SHA"], "file": name,
