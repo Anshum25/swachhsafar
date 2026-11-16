@@ -64,13 +64,32 @@ ls -1dt "$BASE"/releases/*/ | tail -n +$((KEEP + 1)) | while read -r old; do
 done
 log "frontend live: $rel"
 
-# 5. Android app, when the pipeline built one.
+# 5. Android app, when the pipeline built one. latest.json describes the published release: the /download
+# page shows it, and the installed app compares its `sha` with its own build to offer an update.
 if [[ -s "$work/app.apk" ]]; then
   install -d -m 755 "$DOWNLOADS"
   name="swachh-safar-${SHA:0:7}.apk"
   install -m 644 "$work/app.apk" "$DOWNLOADS/$name"
   ln -sfn "$name" "$DOWNLOADS/swachh-safar-latest.apk"
-  printf '{"sha":"%s","file":"%s","published_at":"%s"}\n' "$SHA" "$name" "$(date -u +%FT%TZ)" > "$DOWNLOADS/latest.json"
+  SHA="$SHA" NAME="$name" META="$work/apk.json" python3 - > "$DOWNLOADS/latest.json.new" <<'PY'
+import datetime, json, os, pathlib
+meta = {}
+path = pathlib.Path(os.environ["META"])          # written by the build-apk job (scripts/describe-apk.py)
+if path.is_file():
+    try:
+        meta = json.loads(path.read_text())
+    except ValueError:
+        meta = {}
+name = os.environ["NAME"]
+meta.update({
+    "sha": os.environ["SHA"], "file": name,
+    "url": f"/downloads/{name}", "latest_url": "/downloads/swachh-safar-latest.apk",
+    "released_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+})
+print(json.dumps(meta, indent=2))
+PY
+  mv -f "$DOWNLOADS/latest.json.new" "$DOWNLOADS/latest.json"
+  chmod 644 "$DOWNLOADS/latest.json"
   log "APK published: $name"
 fi
 log "done"

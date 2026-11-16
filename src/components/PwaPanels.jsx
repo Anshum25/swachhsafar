@@ -1,7 +1,9 @@
-// Installed-app UI: the install banner and the "new version" banner.
+// Installed-app UI: the install banner, the "new version" banner, and the Android app's own update notice.
 import { useEffect, useState } from 'react';
 import { useQueueState } from '../app/session.jsx';
 import { dismissInstall, installDismissed, installInstructions, isStandalone, promptInstall, pwa, usePwa } from '../pwa/pwaState.js';
+import { checkAppUpdate } from '../pwa/appUpdate.js';
+import { isNativeApp } from '../security/native.js';
 
 // Shown at most once per 30 days while the app is not installed: an Install button when the browser
 // offers installation (Chrome / Edge on Android), otherwise how to install from this browser's menu.
@@ -14,7 +16,8 @@ export function InstallBanner() {
     const t = setTimeout(() => setHintDue(true), 6000);
     return () => clearTimeout(t);
   }, []);
-  if (hidden || installed || isStandalone()) return null;
+  // Inside the Android app there is nothing to install: it is already the installed app.
+  if (hidden || installed || isStandalone() || isNativeApp()) return null;
   if (!installEvent) {
     const hint = hintDue && installInstructions();
     if (!hint) return null;
@@ -48,10 +51,57 @@ export function UpdateBanner() {
   );
 }
 
+// Android app only: is a newer APK published? Asked on start and again whenever the device comes back
+// online. Offline, or in the browser, there is nothing to ask and nothing is shown.
+function useAppUpdate() {
+  const [update, setUpdate] = useState(null);
+  useEffect(() => {
+    if (!isNativeApp()) return undefined;
+    let cancelled = false;
+    const look = () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      checkAppUpdate().then((u) => !cancelled && u.available && setUpdate(u));
+    };
+    look();
+    window.addEventListener('online', look);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', look);
+    };
+  }, []);
+  return update;
+}
+
+// "Download" opens the server's download link, which installs over this app. Records live in the app's own
+// storage and are kept across the update.
+const updateText = (update) => `New version available${update.version ? ` (${update.version})` : ''}. Records stored on this phone are kept.`;
+
+export function AppUpdateBanner() {
+  const update = useAppUpdate();
+  if (!update) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-3 bg-sky-700 px-4 py-2 text-sm text-white sm:px-6" role="status" data-testid="apk-update-banner">
+      <span className="flex-1">{updateText(update)}</span>
+      <a href={update.url} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800">Download</a>
+    </div>
+  );
+}
+
 // Signed-out variant (login screen): no queue context is needed, and there is no open form to lose.
 // Without it, a device holding an older cached login screen is never told that a newer one is ready.
 export function LoginUpdateBanner() {
   const { updateReady } = usePwa();
+  const appUpdate = useAppUpdate();
+  // The Android app is updated by installing a newer APK, not by the service worker: before sign-in is
+  // where a phone that has been offline for a while first sees it.
+  if (appUpdate) {
+    return (
+      <div className="relative z-20 mb-3 flex w-full max-w-md items-center gap-3 rounded-2xl bg-sky-700 px-4 py-2.5 text-sm text-white shadow" role="status" data-testid="apk-update-banner">
+        <span className="flex-1">{updateText(appUpdate)}</span>
+        <a href={appUpdate.url} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800">Download</a>
+      </div>
+    );
+  }
   if (!updateReady) return null;
   return (
     <div className="relative z-20 mb-3 flex w-full max-w-md items-center gap-3 rounded-2xl bg-sky-700 px-4 py-2.5 text-sm text-white shadow" role="status" data-testid="update-banner">

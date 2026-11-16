@@ -26,6 +26,10 @@ const previewHeaders = process.env.PREVIEW_SECURITY_HEADERS ? readSecurityHeader
 
 const APP_VERSION = JSON.parse(readFileSync('package.json', 'utf8')).version;
 
+// The commit this bundle is built from. CI passes it (VITE_BUILD_SHA = github.sha); the Android app compares
+// it with the published release to offer a newer APK (src/pwa/appUpdate.js). Empty in a local build.
+const BUILD_SHA = process.env.VITE_BUILD_SHA ?? '';
+
 // Face verification models (MIT, @vladmandic/face-api), copied from the package into public/models/face/ so
 // they are served and precached with the app (offline matching). Not committed: public/models/ is ignored.
 const FACE_MODELS = ['tiny_face_detector_model', 'face_landmark_68_model', 'face_recognition_model'];
@@ -44,7 +48,7 @@ function faceModels() {
 }
 
 export default defineConfig(({ isPreview }) => ({
-  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION), __BUILD_SHA__: JSON.stringify(BUILD_SHA) },
   plugins: [
     faceModels(),
     react(),

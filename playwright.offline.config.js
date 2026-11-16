@@ -11,6 +11,8 @@ const FAKE_FIREBASE = [
   'VITE_FIREBASE_MESSAGING_SENDER_ID=0',
   'VITE_FIREBASE_APP_ID=1:0:web:e2efake',
   'VITE_DEMO_MODE=false',
+  // The commit the build claims to be made from; the Android app compares it with the published release.
+  `VITE_BUILD_SHA=${'e2e'.padEnd(40, '0')}`,
 ].join(' ');
 // The preview server sends the production security headers (deploy/nginx/security-headers.conf).
 const PREVIEW_ENV = 'PREVIEW_SECURITY_HEADERS=1';

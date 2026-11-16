@@ -144,6 +144,63 @@ test('install page (share link) needs no sign-in, offers install, works offline'
   rmSync(profile, { recursive: true, force: true });
 });
 
+// Everything the page does differently when it runs inside the APK rather than in a browser: no service
+// worker (the build is packaged in the app), no "install the web app" banner, and the APK's own update
+// notice when the server publishes a release built from a different commit.
+// Browser emulation with the Capacitor bridge faked; a real APK can only be checked on a phone.
+test('inside the Android app: no service worker, no install banner, an APK update offer instead', async () => {
+  const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
+  const profile = mkdtempSync(join(tmpdir(), 'swachh-native-'));
+  const context = await chromium.launchPersistentContext(profile, { ...pixel, baseURL: BASE });
+  await context.route(/\/api\/v1\/|googleapis\.com|firebaseapp\.com/, (route) => route.abort('connectionrefused'));
+  await context.route('**/downloads/latest.json', (r) => r.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ sha: 'f'.repeat(40), version_name: '2.1.0', file: 'swachh-safar-ffffff.apk' }),
+  }));
+  await context.addInitScript(() => {
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { SwachhSecurity: {
+        getDeviceIntegrity: async () => ({ developerMode: false, usbDebugging: false }),
+        addListener: () => ({ remove() {} }),
+      } },
+    };
+  });
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  const banner = page.getByTestId('apk-update-banner');
+  await expect(banner).toBeVisible();
+  await expect(banner.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/downloads/swachh-safar-latest.apk');
+  // No service worker is registered, and the PWA's install banner never appears in an installed app.
+  await page.waitForTimeout(7000); // the written install hint waits 6s before it would appear
+  expect(await page.evaluate(() => navigator.serviceWorker.controller)).toBeNull();
+  expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length)).toBe(0);
+  await expect(page.getByTestId('install-hint')).toHaveCount(0);
+  await expect(page.getByTestId('install-banner')).toHaveCount(0);
+  await context.close();
+  rmSync(profile, { recursive: true, force: true });
+});
+
+// The same page in a browser: the published release is a different commit, but no APK notice is shown,
+// because the web app updates itself through the service worker.
+test('in a browser the APK update notice never appears', async () => {
+  const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
+  const profile = mkdtempSync(join(tmpdir(), 'swachh-web-noapk-'));
+  const context = await chromium.launchPersistentContext(profile, { ...pixel, baseURL: BASE });
+  await context.route(/\/api\/v1\/|googleapis\.com|firebaseapp\.com/, (route) => route.abort('connectionrefused'));
+  await context.route('**/downloads/latest.json', (r) => r.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ sha: 'f'.repeat(40), version_name: '2.1.0' }),
+  }));
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30_000 });
+  await expect(page.getByTestId('apk-update-banner')).toHaveCount(0);
+  await context.close();
+  rmSync(profile, { recursive: true, force: true });
+});
+
 // Android app with Developer options on: nothing but the "turn off Developer mode" screen; it opens once off.
 test('developer mode keeps the Android app closed until it is turned off', async () => {
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
