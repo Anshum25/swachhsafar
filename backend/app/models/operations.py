@@ -7,6 +7,7 @@ from enum import IntEnum, StrEnum
 from sqlalchemy import CheckConstraint, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models.org import JSONType
 from app.models.base import Base, GeoPoint, Timestamps, str_enum, TZDateTime
 
 
@@ -47,6 +48,11 @@ class CapturedRecord(GeoPoint, Timestamps):
     review_remarks: Mapped[str | None] = mapped_column(String(500))
     sync_op_id: Mapped[uuid.UUID | None] = mapped_column()
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Capture evidence (device claims) and the server's own findings. device_id comes from the sync batch.
+    device_id: Mapped[str | None] = mapped_column(String(64))
+    gps_timestamp: Mapped[datetime | None] = mapped_column(TZDateTime())
+    security: Mapped[dict | None] = mapped_column(JSONType)     # as reported by the device
+    risk_flags: Mapped[list | None] = mapped_column(JSONType)   # derived by the server
 
 
 class Attendance(CapturedRecord, Base):

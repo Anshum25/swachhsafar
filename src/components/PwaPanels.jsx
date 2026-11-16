@@ -47,3 +47,16 @@ export function UpdateBanner() {
     </div>
   );
 }
+
+// Signed-out variant (login screen): no queue context is needed, and there is no open form to lose.
+// Without it, a device holding an older cached login screen is never told that a newer one is ready.
+export function LoginUpdateBanner() {
+  const { updateReady } = usePwa();
+  if (!updateReady) return null;
+  return (
+    <div className="relative z-20 mb-3 flex w-full max-w-md items-center gap-3 rounded-2xl bg-sky-700 px-4 py-2.5 text-sm text-white shadow" role="status" data-testid="update-banner">
+      <span className="flex-1">A new version of Swachh Safar is ready.</span>
+      <button type="button" className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800" onClick={pwa.update}>Update now</button>
+    </div>
+  );
+}

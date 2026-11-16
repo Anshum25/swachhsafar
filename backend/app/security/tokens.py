@@ -1,3 +1,4 @@
+import threading
 from functools import lru_cache
 from typing import Protocol
 
@@ -6,6 +7,9 @@ from app.errors import ServiceUnavailable, Unauthenticated
 
 NOT_CONFIGURED = ("Sign-in cannot be checked: the server's Firebase Admin credentials are not configured "
                   "(FIREBASE_CREDENTIALS_FILE).")
+
+
+_INIT_LOCK = threading.Lock()
 
 
 class TokenVerifier(Protocol):
@@ -20,6 +24,11 @@ class FirebaseTokenVerifier:
         from firebase_admin import credentials
 
         settings = get_settings()
+        with _INIT_LOCK:  # concurrent first requests must not both initialise the default app
+            self._init(firebase_admin, credentials, settings)
+
+    @staticmethod
+    def _init(firebase_admin, credentials, settings) -> None:
         if not firebase_admin._apps:
             try:
                 cred = (
@@ -32,7 +41,10 @@ class FirebaseTokenVerifier:
             options = {"projectId": settings.firebase_project_id}
             if settings.firebase_storage_bucket:
                 options["storageBucket"] = settings.firebase_storage_bucket
-            firebase_admin.initialize_app(cred, options)
+            try:
+                firebase_admin.initialize_app(cred, options)
+            except ValueError:  # already initialised elsewhere (e.g. the CLI): use that app
+                pass
 
     def verify(self, token: str) -> dict:
         from firebase_admin import auth

@@ -21,6 +21,9 @@ class Principal:
     division_ids: frozenset[uuid.UUID]
     _db: Session
     _perm_cache: dict[uuid.UUID, frozenset[str]] = field(default_factory=dict)
+    # Backend sign-in session and its device (None for tokens minted before backend sign-in existed).
+    session_id: uuid.UUID | None = None
+    device_id: str | None = None
 
     @property
     def id(self) -> uuid.UUID:
@@ -121,4 +124,10 @@ def get_principal(
     if not authorization or not authorization.lower().startswith("bearer "):
         raise Unauthenticated("Missing bearer token")
     claims = verifier.verify(authorization.split(" ", 1)[1].strip())
-    return resolve_principal(db, claims)
+    principal = resolve_principal(db, claims)
+    from app.services.auth import validate_session  # late import: services depend on this module
+
+    session = validate_session(db, claims, principal.user)
+    if session is not None:
+        principal.session_id, principal.device_id = session.id, session.device_id
+    return principal

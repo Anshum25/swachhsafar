@@ -642,4 +642,29 @@ const V9 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9];
+// v10: security events recorded on this device (GPS, VPN, liveness, sign-in), delivered via the outbox
+// ('security.event'). Never biometric data. Additive only.
+const V10 = {
+  version: 10,
+  name: 'security events',
+  statements: [
+    `CREATE TABLE security_events (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        division_id TEXT,
+        type TEXT NOT NULL,
+        severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+        details TEXT NOT NULL CHECK (json_valid(details)),
+        occurred_at TEXT NOT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'pending',
+        last_sync_error TEXT,
+        synced_at TEXT,
+        server_timestamp TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+    'CREATE INDEX idx_security_events_occurred ON security_events (occurred_at)',
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10];

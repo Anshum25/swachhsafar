@@ -21,6 +21,7 @@ export const CAPTURE_RULES = {
   'feedback.railway.create': { permission: 'feedback.railway.submit', participantOverride: 'feedback.review' },
   'complaint.create': { permission: 'complaints.create' },
   'inventory.record': { permission: 'inventory.transact', participantOverride: 'journeys.manage' }, // inventory.py record
+  'security.event': { permission: null }, // any signed-in user reports what their device observed
 };
 
 export function isParticipant(journey, userId) {
@@ -32,6 +33,7 @@ export function authorizeCapture(type, { actor, divisionId, journey }) {
   if (!actor?.id) throw new LocalRuleError('unauthenticated', 'Sign in to record operational data.');
   const rule = CAPTURE_RULES[type];
   if (!rule) throw new LocalRuleError('unsupported_operation', `Operation ${type} cannot be captured offline.`);
+  if (rule.permission === null) return;
   if (!divisionId) return; // the record's own validation reports the missing journey/division
   if (!actor.permissions?.[divisionId]) throw new LocalRuleError('division_forbidden', 'Outside your authorized divisions.');
   if (!hasPermission(actor.permissions, rule.permission, divisionId)) {

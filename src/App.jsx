@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import Register from './pages/Register.jsx';
 import Login from './pages/Login.jsx';
+import Download from './pages/Download.jsx';
+import DeveloperModeGate from './security/DeveloperModeGate.jsx';
 import Layout from './app/Layout.jsx';
 import { SessionProvider, useSession } from './app/session.jsx';
 import { useRoute } from './app/router.js';
@@ -10,6 +12,8 @@ import { recoverAfterStart } from './database/startupRecovery.js';
 import { ErrorNote, Loading } from './components/ui.jsx';
 import Splash from './components/Splash.jsx';
 import Install from './pages/Install.jsx';
+import { SecurityBlockScreen, SecurityProvider } from './security/SecurityProvider.jsx';
+import { BLOCKS } from './security/messages.js';
 
 const Dashboard = lazy(() => import('./pages/ops/Dashboard.jsx'));
 const Journeys = lazy(() => import('./pages/ops/Journeys.jsx'));
@@ -21,11 +25,12 @@ const Masters = lazy(() => import('./pages/ops/Masters.jsx'));
 const Inventory = lazy(() => import('./pages/ops/Inventory.jsx'));
 const Reports = lazy(() => import('./pages/ops/Reports.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
+const SecurityStatus = lazy(() => import('./pages/SecurityStatus.jsx'));
 
 // One screen per module key in src/app/modules.js.
 const SCREENS = {
   dashboard: Dashboard, journeys: Journeys, attendance: Attendance, inspections: Inspections,
-  feedback: Feedback, complaints: Complaints, inventory: Inventory, masters: Masters, reports: Reports, profile: Profile,
+  feedback: Feedback, complaints: Complaints, inventory: Inventory, masters: Masters, reports: Reports, profile: Profile, security: SecurityStatus,
 };
 
 function Shell() {
@@ -47,6 +52,10 @@ function Shell() {
   if (path === '/register' || registering) return <Register />;
   if (session.status === 'loading' || registering === null) return <Splash />;
   if (session.status === 'signedOut') return <Login />;
+  if (session.status === 'error' && BLOCKS[session.meError?.code]) {
+    // Session ended, device blocked, or this sign-in predates backend sign-in: explain, then sign in again.
+    return <SecurityBlockScreen code={session.meError.code} onSignIn={session.signOut} />;
+  }
   if (session.status === 'error') {
     const notProvisioned = session.meError?.status === 401 || session.meError?.status === 403;
     return (
@@ -61,19 +70,25 @@ function Shell() {
   const route = resolveRoute(parts, session.can);
   const Screen = route.allowed ? SCREENS[route.module.key] : null;
   return (
-    <Layout path={path}>
-      <Suspense fallback={<Loading />}>
-        {Screen ? <Screen parts={route.rest} /> : <ErrorNote error={{ message: route.module ? 'This screen is not available for your role.' : 'This page does not exist.' }} />}
-      </Suspense>
-    </Layout>
+    <SecurityProvider>
+      <Layout path={path}>
+        <Suspense fallback={<Loading />}>
+          {Screen ? <Screen parts={route.rest} /> : <ErrorNote error={{ message: route.module ? 'This screen is not available for your role.' : 'This page does not exist.' }} />}
+        </Suspense>
+      </Layout>
+    </SecurityProvider>
   );
 }
 
 // The share link https://<host>/install (or #/install) opens the install page, before any sign-in.
 const isInstallPage = () => typeof location !== 'undefined' && (location.pathname.replace(/\/+$/, '') === '/install' || location.hash === '#/install');
 
+// https://<host>/download (or #/download): public Android APK / web app download page.
+const isDownloadPage = () => typeof location !== 'undefined' && (location.pathname.replace(/\/+$/, '') === '/download' || location.hash === '#/download');
+
 export default function App() {
-  return isInstallPage() ? <Install /> : <OperationsApp />;
+  if (isDownloadPage()) return <Download />;
+  return isInstallPage() ? <Install /> : <DeveloperModeGate><OperationsApp /></DeveloperModeGate>;
 }
 
 function OperationsApp() {

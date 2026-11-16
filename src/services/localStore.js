@@ -21,6 +21,7 @@ import { createComplaintRepository } from '../database/complaintRepository.js';
 import { createInventoryRepository } from '../database/inventoryRepository.js';
 import { createMediaStore, dataUrlToBytes } from '../database/mediaStore.js';
 import { createSyncStateRepository } from '../database/syncStateRepository.js';
+import { createSecurityRepository } from '../database/securityRepository.js';
 import { authorizeCapture } from './authorization.js';
 
 export const OUTBOX_ENTITY = 'operation';
@@ -34,11 +35,12 @@ export const OPERATIONS = {
   'feedback.railway.create': { table: 'railway_feedback', entity: 'railway_feedback', repo: 'feedback', prepare: 'prepareRailway' },
   'complaint.create': { table: 'complaints', entity: 'complaint', repo: 'complaints', prepare: 'prepareCreate' },
   'inventory.record': { table: 'inventory_transactions', entity: 'inventory_transaction', repo: 'inventory', prepare: 'prepareRecord' },
+  'security.event': { table: 'security_events', entity: 'security_event', repo: 'security', prepare: 'prepareEvent' },
 };
 
 // Records that may be removed from the device after the server rejected them. Complaints and
 // inventory transactions are immutable history and are kept.
-const DISCARDABLE = new Set(['attendance.create', 'inspection.create', 'feedback.passenger.start', 'feedback.railway.create']);
+const DISCARDABLE = new Set(['attendance.create', 'inspection.create', 'feedback.passenger.start', 'feedback.railway.create', 'security.event']);
 
 const mediaIdsOf = (p) => [p.photo_media_id, p.video_media_id, p.voice_media_id, ...(p.attachment_ids ?? [])].filter(Boolean);
 
@@ -54,7 +56,8 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
   const inventory = createInventoryRepository(db, { journeys, masters });
   const media = createMediaStore(db, { files });
   const syncState = createSyncStateRepository(db);
-  const repos = { attendance, inspections, feedback, complaints, inventory };
+  const security = createSecurityRepository(db);
+  const repos = { attendance, inspections, feedback, complaints, inventory, security };
 
   const clock = () => {
     const d = now();
@@ -86,7 +89,7 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
   }
 
   const store = {
-    db, outbox, masters, identity, journeys, attendance, inspections, feedback, complaints, inventory, media, syncState,
+    db, outbox, masters, identity, journeys, attendance, inspections, feedback, complaints, inventory, media, syncState, security,
     clock,
 
     // Saves an operational record locally. `media`: [{ id, kind, dataUrl } | { id, kind, bytes, mimeType }].

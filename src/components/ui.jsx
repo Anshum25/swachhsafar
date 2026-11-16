@@ -1,28 +1,46 @@
 // Reusable building blocks for the operational screens: page headers, cards, tables, dialogs,
 // form fields and the loading / empty / error / offline / sync states every data view needs.
-import { useEffect } from 'react';
-import { AlertIcon, Spinner, XIcon } from './Icons.jsx';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AlertIcon, ArrowLeftIcon, InfoIcon, MoreIcon, Spinner, XIcon } from './Icons.jsx';
 import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
 
-export function PageHeader({ title, subtitle, actions, back }) {
-  return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
-        {back}
-        <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
-      </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+// The layout's top bar has a slot (see Layout) into which each screen's PageHeader renders its bar:
+// back arrow on the left, the title centred. Without the slot (outside the layout) it renders in place.
+export const BarSlotContext = createContext(null);
+
+// `back`: where the arrow goes (a '#/…' href; default home). false hides it. `subtitle` and `actions`
+// render under the bar, in the page.
+export function PageHeader({ title, subtitle, actions, back = '#/', barAction }) {
+  const slot = useContext(BarSlotContext);
+  const bar = (
+    <div className="grid min-h-14 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center px-1.5 sm:px-3" data-testid="topbar-main">
+      {back ? (
+        <a href={back} className="icon-btn" aria-label="Back"><ArrowLeftIcon className="h-6 w-6" /></a>
+      ) : <span aria-hidden="true" />}
+      <h1 className="truncate text-center text-[19px] font-bold tracking-tight text-ink">{title}</h1>
+      <span className="flex justify-end">{barAction}</span>
     </div>
+  );
+  return (
+    <>
+      {slot ? createPortal(bar, slot) : bar}
+      {(subtitle || actions) && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          {subtitle ? <p className="min-w-0 text-sm font-medium text-muted">{subtitle}</p> : <span />}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        </div>
+      )}
+    </>
   );
 }
 
 export function Panel({ title, actions, children, className = '' }) {
   return (
-    <section className={`rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 sm:p-5 ${className}`}>
+    <section className={`card sm:p-5 ${className}`}>
       {(title || actions) && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          {title && <h2 className="min-w-0 text-sm font-semibold text-slate-800">{title}</h2>}
+          {title && <h2 className="min-w-0 text-[15px] font-bold text-ink">{title}</h2>}
           {actions}
         </div>
       )}
@@ -34,8 +52,8 @@ export function Panel({ title, actions, children, className = '' }) {
 export function Stat({ label, value, hint, tone = 'brand' }) {
   const tones = { brand: 'text-brand-700', amber: 'text-amber-600', red: 'text-red-600', slate: 'text-slate-700' };
   return (
-    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+    <div className="card">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
       <p className={`mt-1 text-2xl font-bold tabular-nums ${tones[tone]}`}>{value ?? '—'}</p>
       {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
     </div>
@@ -63,17 +81,18 @@ export const STATE_TONE = {
 
 export function Loading({ label = 'Loading…' }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500" role="status">
-      <Spinner /> {label}
+    <div className="flex items-center justify-center gap-2 py-12 text-sm font-medium text-muted" role="status">
+      <Spinner className="h-5 w-5 text-brand-600" /> {label}
     </div>
   );
 }
 
 export function Empty({ title, children }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-      <p className="text-sm font-medium text-slate-700">{title}</p>
-      {children && <div className="mt-1 text-sm text-slate-500">{children}</div>}
+    <div className="rounded-2xl border border-dashed border-brand-200 bg-white/60 px-4 py-10 text-center">
+      <span className="mx-auto mb-2 grid h-11 w-11 place-items-center rounded-full bg-brand-100 text-brand-700"><InfoIcon className="h-5 w-5" /></span>
+      <p className="text-sm font-semibold text-ink">{title}</p>
+      {children && <div className="mt-1 text-sm text-muted">{children}</div>}
     </div>
   );
 }
@@ -145,7 +164,7 @@ export function Segmented({ options, value, onChange, label: aria }) {
     <div className="flex flex-wrap gap-1.5" role="group" aria-label={aria}>
       {options.map((o) => (
         <button key={o.value} type="button" onClick={() => onChange(o.value)} aria-pressed={value === o.value}
-          className={`rounded-xl px-3.5 py-2 text-sm font-medium ring-1 transition ${value === o.value ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'}`}>
+          className={`h-9 rounded-full px-3.5 text-[13px] font-semibold ring-1 transition duration-150 active:scale-95 ${value === o.value ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-brand-900 ring-line hover:bg-brand-50'}`}>
           {o.label}
         </button>
       ))}
@@ -192,9 +211,9 @@ export function ConfirmDialog({ open, title, children, confirmLabel = 'Confirm',
   return (
     <Dialog open={open} title={title} onClose={onClose}>
       <div className="space-y-3 text-sm text-slate-700">{children}</div>
-      <div className="mt-5 flex justify-end gap-2">
+      <div className="mt-5 grid grid-cols-2 gap-3">
         <button type="button" className="btn-secondary h-12" onClick={onClose}>Back</button>
-        <button type="button" className={danger ? 'btn-primary bg-red-700 hover:bg-red-800' : 'btn-primary'} disabled={busy || disabled} onClick={onConfirm}>
+        <button type="button" className={danger ? 'btn-primary bg-red-600 shadow-none hover:bg-red-700' : 'btn-primary'} disabled={busy || disabled} onClick={onConfirm}>
           {busy && <Spinner />} {confirmLabel}
         </button>
       </div>
@@ -207,9 +226,9 @@ export function DetailList({ items }) {
   return (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
       {items.filter(Boolean).map(([k, v]) => (
-        <div key={k} className="flex justify-between gap-3 border-b border-slate-100 py-1.5 sm:block sm:border-0 sm:py-0">
-          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{k}</dt>
-          <dd className="text-right text-slate-800 sm:text-left">{v === null || v === undefined || v === '' ? '—' : v}</dd>
+        <div key={k} className="flex justify-between gap-3 border-b border-line/70 py-2 last:border-0 sm:block sm:border-0 sm:py-0">
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted">{k}</dt>
+          <dd className="min-w-0 break-words text-right font-medium text-ink sm:text-left">{v === null || v === undefined || v === '' ? '—' : v}</dd>
         </div>
       ))}
     </dl>
@@ -238,7 +257,7 @@ export function RatingScale({ min, max, value, onChange, label: aria }) {
     <div className="flex flex-wrap gap-1.5" role="group" aria-label={aria}>
       {scale.map((v) => (
         <button key={v} type="button" onClick={() => onChange(v)} aria-pressed={value === v}
-          className={`h-10 w-10 rounded-xl text-sm font-semibold ring-1 ${value === v ? 'bg-brand-700 text-white ring-brand-700' : 'ring-slate-200 hover:bg-slate-50'}`}>{v}</button>
+          className={`h-11 min-w-11 flex-1 rounded-xl text-[15px] font-bold ring-1 transition duration-150 active:scale-95 sm:flex-none ${value === v ? 'bg-brand-700 text-white shadow-[0_4px_10px_rgba(7,89,214,0.25)] ring-brand-700' : 'bg-white text-brand-900 ring-line hover:bg-brand-50'}`}>{v}</button>
       ))}
     </div>
   );
@@ -251,7 +270,7 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
   const cell = (c, r) => (c.render ? c.render(r) : r[c.key]);
   return (
     <>
-    <div role="table" className="divide-y divide-slate-100 sm:hidden">
+    <div role="table" className="divide-y divide-line/70 sm:hidden">
       {/* Column headers for screen readers; the visible per-value labels below are decorative. */}
       <div role="rowgroup" className="sr-only">
         <div role="row">{columns.map((c) => <span role="columnheader" key={c.key}>{c.label}</span>)}</div>
@@ -260,7 +279,7 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
         {rows.map((r) => (
           <div role="row" key={rowKey(r)} onClick={onRowClick ? () => onRowClick(r) : undefined}
             className={`py-3 ${onRowClick ? 'cursor-pointer active:bg-brand-50/60' : ''}`}>
-            <div role="cell" className="min-w-0 break-words text-sm font-semibold text-slate-900">{cell(first, r)}</div>
+            <div role="cell" className="min-w-0 break-words text-sm font-semibold text-ink">{cell(first, r)}</div>
             <div className="mt-1.5 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
               {rest.map((c) => (c.label ? (
                 <div role="cell" key={c.key} className="contents">
@@ -278,14 +297,14 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
     <div className="hidden overflow-x-auto sm:block">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+          <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
             {columns.map((c) => <th key={c.key} className="px-4 py-2 font-medium sm:px-3">{c.label}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={rowKey(r)} onClick={onRowClick ? () => onRowClick(r) : undefined}
-              className={`border-b border-slate-100 last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-brand-50/40' : ''}`}>
+              className={`border-b border-line/60 last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-brand-50/40' : ''}`}>
               {columns.map((c) => <td key={c.key} className="px-4 py-2.5 align-top sm:px-3">{c.render ? c.render(r) : r[c.key]}</td>)}
             </tr>
           ))}
@@ -296,12 +315,13 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
   );
 }
 
+// Equal-width pill tabs (reference: Active · Schedule · History).
 export function Tabs({ tabs, value, onChange }) {
   return (
-    <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-slate-200 sm:flex sm:flex-wrap sm:rounded-full" role="tablist">
+    <div className="mb-4 grid auto-cols-fr grid-flow-col gap-1 rounded-full bg-white p-1 shadow-card ring-1 ring-line/70" role="tablist">
       {tabs.map((t) => (
         <button key={t.value} type="button" role="tab" aria-selected={value === t.value} onClick={() => onChange(t.value)}
-          className={`min-w-0 rounded-full px-3 py-2 text-center text-sm font-semibold leading-snug transition sm:flex-none sm:whitespace-nowrap sm:px-4 ${value === t.value ? 'bg-brand-700 text-white shadow-sm' : 'text-slate-600 hover:bg-brand-50 hover:text-brand-800'}`}>
+          className={`min-w-0 truncate rounded-full px-1 py-2 text-center text-[13px] font-semibold transition duration-200 ${value === t.value ? 'bg-brand-700 text-white shadow-[0_3px_10px_rgba(7,89,214,0.3)]' : 'text-brand-900 hover:bg-brand-50'}`}>
           {t.label}
         </button>
       ))}
@@ -309,35 +329,58 @@ export function Tabs({ tabs, value, onChange }) {
   );
 }
 
-export function Dialog({ open, title, onClose, children, wide }) {
+// Centred modal (reference: inspection photo dialog): title centred over a divider, close X top-right, a body
+// that scrolls on short screens and, with `footer`, an action row that always stays inside the card. With
+// `onSubmit` the body and footer are one <form>, so the footer's submit button submits it.
+export function Dialog({ open, title, onClose, children, wide, footer, onSubmit }) {
+  const card = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const html = document.documentElement;
+    const prev = html.style.overflow;
+    html.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); html.style.overflow = prev; };
   }, [open, onClose]);
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-slate-900/40 sm:items-center sm:p-4" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
-        className={`max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl sm:rounded-3xl ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'}`}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close"><XIcon className="h-5 w-5" /></button>
+  const Body = onSubmit ? 'form' : 'div';
+  // Portalled to <body>: an animated ancestor (the page's entrance animation) would otherwise become the
+  // containing block of this fixed overlay and the bars would show above it.
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-brand-950/45 p-3 backdrop-blur-[1px] sm:p-6" onClick={onClose}>
+      <div ref={card} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
+        className={`flex max-h-[min(92dvh,52rem)] w-full animate-modal-in flex-col overflow-hidden rounded-[20px] bg-white shadow-[0_24px_60px_rgba(6,29,66,0.28)] ${wide ? 'max-w-2xl' : 'max-w-md'}`}>
+        <div className="grid shrink-0 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center border-b border-line px-2 py-2.5">
+          <span aria-hidden="true" />
+          <h2 className="truncate text-center text-[17px] font-bold text-ink">{title}</h2>
+          <button type="button" onClick={onClose} className="icon-btn h-9 w-9 text-ink" aria-label="Close"><XIcon className="h-5 w-5" /></button>
         </div>
-        {children}
+        <Body className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">{children}</div>
+          {footer && <div className="shrink-0 border-t border-line/70 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">{footer}</div>}
+        </Body>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
-export function Field({ label, hint, error, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+// A labelled input. `icon`: a line icon left of the label and input (reference: feedback form).
+export function Field({ label, hint, error, icon: Icon, children }) {
+  const body = (
+    <>
+      <span className="mb-1.5 block text-[13px] font-medium text-slate-600">{label}</span>
       {children}
-      {hint && !error && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
-      {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
+      {hint && !error && <span className="mt-1 block text-xs text-muted">{hint}</span>}
+      {error && <span className="mt-1 block text-xs font-medium text-red-600">{error}</span>}
+    </>
+  );
+  if (!Icon) return <label className="block min-w-0">{body}</label>;
+  return (
+    <label className="flex min-w-0 items-start gap-3">
+      <Icon className="mt-0 h-5 w-5 shrink-0 text-slate-500" />
+      <span className="block min-w-0 flex-1">{body}</span>
     </label>
   );
 }
@@ -351,20 +394,21 @@ export function Select({ value, onChange, options, placeholder, ...rest }) {
   );
 }
 
-// Numbered steps of a multi-step flow; `current` is the step in progress (steps before it are done).
+// Steps of a multi-step flow (reference: feedback form): small circles on a grey line, labels underneath.
+// `current` is the step in progress; steps before it are done.
 export function Stepper({ steps, current }) {
   return (
-    <ol className="mb-4 flex items-start" aria-label="Progress">
+    <ol className="relative mb-5 flex items-start" aria-label="Progress">
       {steps.map((s, i) => {
         const done = i < current;
         const on = i === current;
         return (
           <li key={s} className="relative flex flex-1 flex-col items-center text-center" aria-current={on ? 'step' : undefined}>
-            {i > 0 && <span className={`absolute right-1/2 top-3.5 h-0.5 w-full ${i <= current ? 'bg-brand-600' : 'bg-slate-200'}`} aria-hidden="true" />}
-            <span className={`relative z-10 grid h-7 w-7 place-items-center rounded-full text-xs font-bold ring-2 ${done ? 'bg-brand-600 text-white ring-brand-600' : on ? 'bg-white text-brand-700 ring-brand-600' : 'bg-white text-slate-400 ring-slate-200'}`}>
-              {done ? '✓' : i + 1}
+            {i > 0 && <span className={`absolute right-1/2 top-[9px] h-[2px] w-full transition-colors duration-300 ${i <= current ? 'bg-brand-600' : 'bg-line'}`} aria-hidden="true" />}
+            <span className={`relative z-10 grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold transition-all duration-300 ${done || on ? 'bg-brand-600 text-white' : 'bg-white text-slate-400 ring-2 ring-line'} ${on ? 'shadow-[0_0_0_4px_rgba(8,102,232,0.16)]' : ''}`}>
+              {done ? <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg> : i + 1}
             </span>
-            <span className={`mt-1.5 px-1 text-[11px] font-semibold leading-tight sm:text-xs ${on || done ? 'text-brand-800' : 'text-slate-400'}`}>{s}</span>
+            <span className={`mt-1.5 px-1 text-[11px] font-semibold leading-tight sm:text-xs ${on ? 'text-brand-700' : done ? 'text-ink' : 'text-slate-400'}`}>{s}</span>
           </li>
         );
       })}
@@ -372,11 +416,12 @@ export function Stepper({ steps, current }) {
   );
 }
 
-export function SubmitBar({ busy, label, onCancel, disabled }) {
+// `flush`: inside a Dialog footer (no top margin). `icon`: shown before the label when not busy.
+export function SubmitBar({ busy, label, onCancel, disabled, flush, icon }) {
   return (
-    <div className={`mt-5 grid gap-2 sm:flex sm:justify-end ${onCancel ? 'grid-cols-2' : 'grid-cols-1'}`}>
-      {onCancel && <button type="button" className="btn-secondary h-12 justify-center" onClick={onCancel}>Cancel</button>}
-      <button type="submit" className="btn-primary" disabled={busy || disabled}>{busy && <Spinner />} {label}</button>
+    <div className={`${flush ? '' : 'mt-5'} grid gap-3 ${onCancel ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      {onCancel && <button type="button" className="btn-secondary h-12" onClick={onCancel}>Cancel</button>}
+      <button type="submit" className="btn-primary min-w-0 px-3" disabled={busy || disabled}>{busy ? <Spinner /> : icon} <span className="truncate">{label}</span></button>
     </div>
   );
 }
@@ -384,3 +429,34 @@ export function SubmitBar({ busy, label, onCancel, disabled }) {
 export const fmtDate = (d) => (d ? new Date(d.length === 10 ? `${d}T00:00:00` : d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 export const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 export const label = (s) => (s ? s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) : '—');
+
+// Overflow menu for a screen's secondary actions (top-bar ⋯). `items`: [{ label, onClick, disabled, danger, hint }].
+export function ActionMenu({ items, label: aria = 'More actions' }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (!box.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+  const shown = items.filter(Boolean);
+  if (!shown.length) return null;
+  return (
+    <div className="relative" ref={box}>
+      <button type="button" className="icon-btn" aria-label={aria} aria-expanded={open} onClick={() => setOpen((v) => !v)}><MoreIcon className="h-6 w-6" /></button>
+      {open && (
+        <div className="absolute right-0 top-11 z-30 w-60 animate-modal-in overflow-hidden rounded-2xl bg-white py-1.5 shadow-raised ring-1 ring-line" role="menu">
+          {shown.map((it) => (
+            <button key={it.label} type="button" role="menuitem" disabled={it.disabled} title={it.hint}
+              onClick={() => { setOpen(false); it.onClick(); }}
+              className={`block w-full px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 ${it.danger ? 'text-red-600' : 'text-ink'}`}>
+              {it.label}
+              {it.disabled && it.hint && <span className="block text-xs font-normal text-amber-800">{it.hint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

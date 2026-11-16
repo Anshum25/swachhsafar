@@ -44,7 +44,7 @@ async function signIn(page, email, firstName) {
 }
 
 async function signOut(page) {
-  await page.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click(); // bottom bar: the menu from any screen
   await page.getByRole('button', { name: 'Logout' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 }
@@ -55,7 +55,7 @@ test.afterAll(() => expect(net.server.cspViolations).toEqual([]));
 test("one user's offline records are never synced with another user's session", async () => {
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
   const context = await chromium.launchPersistentContext(dir, {
-    ...pixel, baseURL: 'http://localhost:4175/', geolocation: { latitude: 28.6139, longitude: 77.209, accuracy: 15 }, permissions: ['geolocation'],
+    ...pixel, baseURL: `http://localhost:${process.env.E2E_PORT || '4175'}/`, geolocation: { latitude: 28.6139, longitude: 77.209, accuracy: 15 }, permissions: ['geolocation'],
   });
   await net.install(context);
   const page = context.pages()[0] ?? (await context.newPage());

@@ -39,6 +39,7 @@ from app.models.org import (
     User,
     UserStatus,
 )
+from app.models.security import AuthSession, CaptchaUse, Device, DeviceStatus, LoginAttempt, LoginOtp, SecurityEvent
 from app.models.sync import SyncOperation
 from app.models.trains import CoachClass, Train, TrainCoach
 

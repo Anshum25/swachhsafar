@@ -6,7 +6,7 @@
 // fall back to SQLite when the server is unreachable). Demo mode uses sample GET data only and never
 // writes demo records into the operational database.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { createApiClient } from '../services/apiClient.js';
+import { createApiClient, API_BASE } from '../services/apiClient.js';
 import { createOperationsQueue } from '../services/operationsQueue.js';
 import { createLocalStore } from '../services/localStore.js';
 import { createLocalApi } from '../services/localApi.js';
@@ -15,6 +15,9 @@ import { createOperations } from '../services/operations.js';
 import { DEMO_ME, DEMO_MODE, createDemoApi } from '../services/demoApi.js';
 import { createOutboxRepository } from '../database/outboxRepository.js';
 import { isOnline, subscribeConnectivity, subscribeForeground } from '../services/connectivityService.js';
+import { solveCaptcha } from '../security/captcha.js';
+import { getDevice } from '../security/device.js';
+import { getCachedLease, saveCachedLease, validateOfflineLease } from '../security/lease.js';
 
 const SessionContext = createContext(null);
 const LEGACY_ME_CACHE_KEY = 'session_me'; // Phase 1 cache; migrated into authorization_snapshots (v3)
@@ -99,14 +102,33 @@ export function SessionProvider({ db, files, children }) {
     setMeError(null);
     try {
       const profile = await remote.get('/auth/me');
+      if (profile.offline_lease) {
+        saveCachedLease(profile.offline_lease);
+      }
       setMe(profile);
       await store.identity.saveAuthorization(profile, { firebaseUid: fbUser?.uid ?? null, now: new Date().toISOString() })
         .catch((e) => console.warn('[session] could not cache authorization', e));
     } catch (e) {
       // Offline: sign in with the authorization cached at the last successful sign-in on this device.
       const cached = e.status === 0 ? await cachedAuthorization(fbUser?.email) : null;
-      if (cached) setMe({ ...cached, offline: true });
-      else setMeError(e);
+      if (cached) {
+        const dev = await getDevice().catch(() => null);
+        const lease = getCachedLease();
+        const leaseCheck = validateOfflineLease({
+          lease,
+          deviceId: dev?.id,
+          userId: cached.user?.id,
+          empId: cached.user?.emp_id,
+        });
+        if (!leaseCheck.valid) {
+          console.warn('[session] offline lease validation failed:', leaseCheck.code);
+          setMe({ ...cached, offline: true, offlineExpired: true, leaseError: leaseCheck.code });
+        } else {
+          setMe({ ...cached, offline: true, offlineExpired: false, offlineLease: leaseCheck.lease, leaseHoursLeft: leaseCheck.remainingHours });
+        }
+      } else {
+        setMeError(e);
+      }
     }
   }, [remote, store, fbUser, cachedAuthorization]);
 
@@ -153,9 +175,74 @@ export function SessionProvider({ db, files, children }) {
     };
   }, [me, queue, store]);
 
-  const signIn = useCallback(async (email, password) => {
+  const signIn = useCallback(async (username, password, opts = {}) => {
+    if (DEMO_MODE) return;
     const { authLib, auth } = await loadFirebase();
-    await authLib.signInWithEmailAndPassword(auth, email, password);
+    const { solution } = opts.captchaSolution ? { solution: opts.captchaSolution } : await solveCaptcha();
+    const device = await getDevice();
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        username,
+        password,
+        captcha: solution,
+        device: { id: device.id, platform: device.platform, label: device.label },
+      }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const code = errData?.error?.code || 'auth/invalid-login-credentials';
+      const msg = errData?.error?.message || 'Employee ID or password is incorrect.';
+      throw Object.assign(new Error(msg), { code, status: res.status });
+    }
+    const loginData = await res.json();
+    await authLib.signInWithCustomToken(auth, loginData.custom_token);
+  }, []);
+
+  const requestOtp = useCallback(async (mobile, opts = {}) => {
+    if (DEMO_MODE) return { expires_in_seconds: 300, resend_after_seconds: 60 };
+    const { solution } = opts.captchaSolution ? { solution: opts.captchaSolution } : await solveCaptcha();
+    const device = await getDevice();
+    const res = await fetch(`${API_BASE}/auth/otp/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        mobile,
+        captcha: solution,
+        device: { id: device.id, platform: device.platform, label: device.label },
+      }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const code = errData?.error?.code || 'otp_failed';
+      const msg = errData?.error?.message || 'Could not send sign-in code.';
+      throw Object.assign(new Error(msg), { code, status: res.status });
+    }
+    return res.json();
+  }, []);
+
+  const verifyOtp = useCallback(async (mobile, code) => {
+    if (DEMO_MODE) return;
+    const device = await getDevice();
+    const res = await fetch(`${API_BASE}/auth/otp/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        mobile,
+        code,
+        device: { id: device.id, platform: device.platform, label: device.label },
+      }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const errCode = errData?.error?.code || 'otp_invalid';
+      const msg = errData?.error?.message || 'The code is incorrect or has expired.';
+      throw Object.assign(new Error(msg), { code: errCode, status: res.status });
+    }
+    const loginData = await res.json();
+    const { authLib, auth } = await loadFirebase();
+    await authLib.signInWithCustomToken(auth, loginData.custom_token);
   }, []);
 
   // Changes the Firebase password after re-checking the current one. Needs a connection.
@@ -169,9 +256,21 @@ export function SessionProvider({ db, files, children }) {
 
   const signOut = useCallback(async () => {
     if (DEMO_MODE) return;
+    try {
+      const token = await getToken();
+      if (token) {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {});
+      }
+    } catch { /* offline */ }
+    saveCachedLease(null);
     const { authLib, auth } = await loadFirebase();
     await authLib.signOut(auth);
-  }, []);
+    setFbUser(null);
+    setMe(null);
+  }, [getToken]);
 
   const value = useMemo(() => {
     const divisions = me ? Object.keys(me.divisions) : [];
@@ -195,10 +294,14 @@ export function SessionProvider({ db, files, children }) {
       outbox,
       signIn,
       signOut,
+      requestOtp,
+      verifyOtp,
+      offlineLease: me?.offlineLease || null,
+      offlineExpired: !!me?.offlineExpired,
       changePassword,
       reload: loadMe,
     };
-  }, [fbUser, me, meError, configError, api, ops, queue, store, db, outbox, signIn, signOut, changePassword, loadMe]);
+  }, [fbUser, me, meError, configError, api, ops, queue, store, db, outbox, signIn, signOut, requestOtp, verifyOtp, changePassword, loadMe]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

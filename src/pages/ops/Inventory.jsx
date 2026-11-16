@@ -13,7 +13,6 @@ import {
   Badge, ConfirmDialog, DataState, Dialog, Empty, ErrorNote, Field, Loading, PageHeader, Pager, Panel, STATE_TONE, Segmented, Select,
   SubmitBar, SyncState, Table, fmtDateTime, label,
 } from '../../components/ui.jsx';
-import { ChevronLeftIcon } from '../../components/Icons.jsx';
 import { canAct } from '../../services/authorization.js';
 
 const qty = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
@@ -110,7 +109,7 @@ function JourneyInventory({ id }) {
 
   return (
     <>
-      <PageHeader back={<a href="#/inventory" className="btn-link mb-1 inline-flex items-center"><ChevronLeftIcon /> Journeys</a>}
+      <PageHeader back="#/inventory"
         title="Inventory" subtitle={`${j.train_no} · ${j.train_name}`}
         actions={canRecord && (
           <>

@@ -9,7 +9,7 @@ import {
   Badge, DataState, DetailList, Dialog, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader, Pager, Panel,
   STATE_TONE, Select, SubmitBar, SyncBadge, Table, Tabs, Timeline, fmtDateTime, label,
 } from '../../components/ui.jsx';
-import { ChevronLeftIcon, PlusIcon } from '../../components/Icons.jsx';
+import { PlusIcon } from '../../components/Icons.jsx';
 import { NEXT_STATUS } from '../../database/complaintRepository.js';
 import { canAct } from '../../services/authorization.js';
 import { ONLINE_ONLY } from '../../services/operations.js';
@@ -122,7 +122,7 @@ function ComplaintDetail({ id }) {
 
   return (
     <>
-      <PageHeader back={<a href="#/complaints" className="btn-link mb-1 inline-flex items-center"><ChevronLeftIcon /> Complaints</a>}
+      <PageHeader back="#/complaints"
         title={c.complaint_no ? `Complaint ${c.complaint_no}` : 'Complaint (number pending)'}
         subtitle={`Raised ${fmtDateTime(c.server_timestamp)} · due ${fmtDateTime(c.due_at)}${c.due_at_provisional ? ' (provisional)' : ''}`} />
       {c.sync_status === 'pending' && (
@@ -137,7 +137,7 @@ function ComplaintDetail({ id }) {
         <Badge>SLA {c.sla_hours} h</Badge>
         <SyncBadge status={c.sync_status} error={c.last_sync_error} />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
         <Panel title="Details">
           <DetailList items={[
             ['Category', nameOf(categories, c.category_id)],

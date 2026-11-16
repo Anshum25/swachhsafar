@@ -9,25 +9,29 @@ import {
   Badge, DataState, DetailList, Dialog, Empty, Field, FilterBar, Loading, PageHeader, Pager, Panel, STATE_TONE, Segmented, Select, SubmitBar, SyncBadge,
   SyncState, Table, Tabs, fmtDateTime, label,
 } from '../../components/ui.jsx';
-import { CameraIcon, CheckIcon, ChevronLeftIcon, LockIcon, RefreshIcon, UserIcon } from '../../components/Icons.jsx';
+import { CameraSolidIcon, CheckBoldIcon, CheckIcon, LockSolidIcon, RefreshIcon, TrainSolidIcon, UserSolidIcon, UsersIcon } from '../../components/Icons.jsx';
 import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp } from '../../utils/capture.js';
 import { FaceCheckNote, faceFields, useFaceCheck } from '../../face/FaceCheck.jsx';
+import LiveFaceCapture from '../../face/LiveFaceCapture.jsx';
+import { FACE_MODEL } from '../../face/faceMatch.js';
+import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 
 export const STAGES = ['Source', 'Enroute 1', 'Destination', 'Enroute 2', 'End'];
-const STAGES_SHORT = ['Source', 'Enr. 1', 'Dest.', 'Enr. 2', 'End']; // stage buttons on phones under 400px
+// Reference labels under the five stage icons.
+const STAGE_LABEL = ['Source', 'Enroute', 'DEST', 'Enroute', 'END'];
 
-// Stage cell: icon circle (state) + label. `next` is the one stage that can be captured now.
-const CELL = {
-  taken: { circle: 'bg-emerald-500 text-white', text: 'text-emerald-700', Icon: CheckIcon },
-  pending: { circle: 'bg-amber-400 text-slate-900', text: 'text-amber-800', Icon: RefreshIcon },
-  next: { circle: 'bg-brand-100 text-brand-700 ring-2 ring-brand-600', text: 'text-brand-800', Icon: CameraIcon },
-  locked: { circle: 'bg-slate-100 text-slate-400', text: 'text-slate-400', Icon: LockIcon },
+// Stage mark (reference: green check = taken, purple camera = capture now, grey lock = not open yet);
+// amber = saved on this device, waiting to sync.
+const MARK = {
+  taken: { label: 'text-success', node: <span className="grid h-8 w-8 place-items-center rounded-full bg-success text-white shadow-[0_3px_8px_rgba(37,180,90,0.35)]"><CheckBoldIcon className="h-4.5 w-4.5" /></span> },
+  pending: { label: 'text-amber-700', node: <span className="grid h-8 w-8 place-items-center rounded-full bg-amber-400 text-white"><RefreshIcon className="h-4.5 w-4.5" /></span> },
+  next: { label: 'text-camera', node: <span className="grid h-8 w-8 place-items-center rounded-xl bg-camera/12 text-camera"><CameraSolidIcon className="h-6 w-6" /></span> },
+  locked: { label: 'text-slate-500', node: <span className="grid h-8 w-8 place-items-center text-locked"><LockSolidIcon className="h-6 w-6" /></span> },
 };
-const LegendDot = ({ state, children }) => {
-  const { circle, Icon } = CELL[state];
-  return <span className="inline-flex items-center gap-1.5"><span className={`grid h-5 w-5 place-items-center rounded-full ${circle}`}><Icon className="h-3 w-3" /></span>{children}</span>;
-};
+const LegendDot = ({ state, children }) => (
+  <span className="inline-flex items-center gap-1.5"><span className="inline-block origin-left scale-[0.6]">{MARK[state].node}</span><span className="-ml-3">{children}</span></span>
+);
 
 const VERIFICATION = [{ value: 'pending', label: 'Pending review' }, { value: 'verified', label: 'Verified' }, { value: 'rejected', label: 'Rejected' }];
 const gpsText = (r) => (r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude.toFixed(5)}${r.gps_accuracy_m != null ? ` ±${Math.round(r.gps_accuracy_m)} m` : ''}` : null);
@@ -40,8 +44,14 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const policy = useResource(`/divisions/${journey.division_id}/policy`);
   const faceOn = policy.data?.attendance_face_verification === true;
+  // With face verification, the photo comes from the live check (blink + head turn) unless the division
+  // turned liveness off (default on).
+  const liveOn = faceOn && policy.data?.face_liveness_required === true;
+  const [liveness, setLiveness] = useState(liveOn ? null : 'not_required');
   const face = useFaceCheck({ photo, employeeId: target.staff.employee_id, enabled: faceOn, threshold: policy.data?.face_match_threshold ?? 0.5 });
   const faceOk = !faceOn || face.status === 'matched';
+  const gate = useSecurityGate('attendance');
+  const liveOk = !liveOn || liveness === 'passed';
 
   async function submit(e) {
     e.preventDefault();
@@ -52,6 +62,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
       payload: {
         id: crypto.randomUUID(), journey_id: journey.id, employee_id: target.staff.employee_id, stage: target.stage,
         device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId, ...faceFields(face),
+        ...gate.evidence({ liveness: liveOn ? liveness : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
       },
       media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
     });
@@ -61,13 +72,23 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   }
 
   return (
-    <Dialog open title={`${target.staff.name} · ${STAGES[target.stage - 1]}`} onClose={onClose}>
-      <form onSubmit={submit} className="space-y-3">
+    <Dialog open title={`${target.staff.name} · ${STAGES[target.stage - 1]}`} onClose={onClose} onSubmit={submit}
+      footer={<SubmitBar busy={busy} disabled={!gps || !photo || policy.loading || !faceOk || !liveOk || !gate.allowed} label="Mark attendance" onCancel={onClose} flush />}>
+      <div className="space-y-3">
+        <p className="text-center text-xs font-medium text-muted">{target.staff.emp_id} · Stage {target.stage} of 5 · {journey.train_no}</p>
+        {liveOn ? (
+          photo ? (
+            <div className="relative overflow-hidden rounded-2xl ring-1 ring-line">
+              <img src={photo} alt="Live check photo" className="max-h-60 w-full object-cover" />
+              <button type="button" className="btn-secondary absolute bottom-2 right-2" onClick={() => { setPhoto(null); setLiveness(null); }}>Redo live check</button>
+            </div>
+          )
+            : <LiveFaceCapture name={target.staff.name} onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
+        ) : <PhotoCapture value={photo} onChange={setPhoto} required />}
         <GpsCapture value={gps} onChange={setGps} />
-        <PhotoCapture value={photo} onChange={setPhoto} required />
         <FaceCheckNote check={face} name={target.staff.name} />
-        <SubmitBar busy={busy} disabled={!gps || !photo || policy.loading || !faceOk} label="Mark attendance" onCancel={onClose} />
-      </form>
+        {gate.notice}
+      </div>
     </Dialog>
   );
 }
@@ -97,11 +118,15 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [faces, setFaces] = useState({});
   const faceOn = policy.data?.attendance_face_verification === true;
+  const liveOn = faceOn && policy.data?.face_liveness_required === true;
+  const [live, setLive] = useState({});
+  const gate = useSecurityGate('attendance');
   const threshold = policy.data?.face_match_threshold ?? 0.5;
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const members = stage ? eligible(stage) : [];
   const chosen = members.filter((m) => picked[m.employee_id]);
-  const ready = gps && chosen.length && !policy.loading
+  const ready = gps && chosen.length && !policy.loading && gate.allowed
+    && (!liveOn || chosen.every((m) => live[m.employee_id] === 'passed'))
     && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
     && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
 
@@ -119,6 +144,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         payload: {
           id: crypto.randomUUID(), journey_id: journey.id, employee_id: m.employee_id, stage, device_timestamp: at, ...gps,
           photo_media_id: mediaId, group_submission_id: group, ...(faceOn ? faceFields(faces[m.employee_id] ?? {}) : {}),
+          ...gate.evidence({ liveness: liveOn ? live[m.employee_id] ?? 'failed' : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
         },
         media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
       });
@@ -155,13 +181,19 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                 </label>
                 {picked[m.employee_id] && (
                   <div className="mt-2 space-y-2">
-                    <PhotoCapture value={photos[m.employee_id]} required={photoRequired || faceOn} onChange={(v) => setPhotos((p) => ({ ...p, [m.employee_id]: v }))} />
+                    {liveOn && !photos[m.employee_id] ? (
+                      <LiveFaceCapture name={m.name} onDone={(r) => { setLive((l) => ({ ...l, [m.employee_id]: r.liveness })); setPhotos((p) => ({ ...p, [m.employee_id]: r.photo })); }} />
+                    ) : (
+                      <PhotoCapture value={photos[m.employee_id]} required={photoRequired || faceOn}
+                        onChange={(v) => { setLive((l) => ({ ...l, [m.employee_id]: liveOn ? null : l[m.employee_id] })); setPhotos((p) => ({ ...p, [m.employee_id]: liveOn ? null : v })); }} />
+                    )}
                     <MemberFaceCheck photo={photos[m.employee_id]} member={m} enabled={faceOn} threshold={threshold} onResult={onFace} />
                   </div>
                 )}
               </li>
             ))}
           </ul>
+          {gate.notice}
           <SubmitBar busy={busy} disabled={!ready} label={chosen.length ? `Mark attendance for ${chosen.length}` : 'Mark attendance'} onCancel={onClose} />
         </form>
       )}
@@ -181,49 +213,44 @@ function StageGrid({ journey: j, status }) {
 
   return (
     <>
-      <Panel title="Staff · five-stage attendance">
-        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-600">
-          <LegendDot state="taken">Taken</LegendDot>
-          <LegendDot state="next">Next (tap to capture)</LegendDot>
-          <LegendDot state="pending">Saved on device</LegendDot>
-          <LegendDot state="locked">Locked</LegendDot>
-        </div>
-        <DataState res={status} empty="No staff allocated to this journey.">
-          {(rows) => (
-            <ul className="space-y-3">
-              {rows.map((s) => (
-                <li key={s.employee_id} className="rounded-2xl bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-200">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <p className="flex min-w-0 items-center gap-2 text-sm font-bold text-brand-900">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-700 text-white"><UserIcon className="h-4 w-4" /></span>
-                      <span className="truncate">{s.emp_id} - {s.name}</span>
-                    </p>
-                    {s.completed && <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><CheckIcon className="h-3.5 w-3.5" /> Complete</span>}
-                  </div>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {s.stages.map((c) => {
-                      const pending = local[`${s.employee_id}:${c.stage}`] || c.status === 'pending';
-                      const cell = CELL[pending ? 'pending' : c.status] ?? CELL.locked;
-                      const clickable = submit && c.status === 'next' && !pending && j;
-                      return (
-                        <button key={c.stage} type="button" disabled={!clickable} onClick={() => setTarget({ staff: s, stage: c.stage })}
-                          className={`flex min-w-0 flex-col items-center gap-1 rounded-xl py-1 text-[11px] font-semibold leading-tight transition enabled:active:scale-95 sm:text-xs ${cell.text}`}
-                          aria-label={`${s.name} stage ${c.stage} ${pending ? 'pending sync' : c.status}`}>
-                          <span className={`grid h-10 w-10 place-items-center rounded-full ${cell.circle}`}><cell.Icon className="h-5 w-5" /></span>
-                          <span className="min-[400px]:hidden">{STAGES_SHORT[c.stage - 1]}</span>
-                          <span className="hidden min-[400px]:inline">{STAGES[c.stage - 1]}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </DataState>
-      </Panel>
+      <div className="mb-3 flex flex-wrap gap-x-3.5 gap-y-1 text-[11.5px] font-medium text-muted">
+        <LegendDot state="taken">Taken</LegendDot>
+        <LegendDot state="next">Capture now</LegendDot>
+        <LegendDot state="pending">Saved on device</LegendDot>
+        <LegendDot state="locked">Locked</LegendDot>
+      </div>
+      <DataState res={status} empty="No staff allocated to this journey.">
+        {(rows) => (
+          <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
+            {rows.map((s) => (
+              <li key={s.employee_id} className="card px-3.5 pb-3 pt-3">
+                <div className="mb-3 flex items-center gap-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-700 text-white"><UserSolidIcon className="h-4.5 w-4.5" /></span>
+                  <p className="min-w-0 flex-1 truncate text-[15px] font-bold text-ink">{s.emp_id} - {s.name}</p>
+                  {s.completed && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success"><CheckIcon className="h-3 w-3" /> Complete</span>}
+                </div>
+                <div className="grid grid-cols-5">
+                  {s.stages.map((c) => {
+                    const pending = local[`${s.employee_id}:${c.stage}`] || c.status === 'pending';
+                    const state = pending ? 'pending' : MARK[c.status] ? c.status : 'locked';
+                    const clickable = submit && c.status === 'next' && !pending && j;
+                    return (
+                      <button key={c.stage} type="button" disabled={!clickable} onClick={() => setTarget({ staff: s, stage: c.stage })}
+                        className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl py-1 transition duration-150 enabled:hover:bg-camera/5 enabled:active:scale-90"
+                        aria-label={`${s.name} stage ${c.stage} ${pending ? 'pending sync' : c.status}`} title={STAGES[c.stage - 1]}>
+                        {MARK[state].node}
+                        <span className={`text-[11px] font-semibold leading-none ${MARK[state].label}`}>{STAGE_LABEL[c.stage - 1]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DataState>
       {submit && j && (status.data ?? []).length > 1 && (
-        <button type="button" className="btn-secondary mt-3" onClick={() => setGroupOpen(true)}>Group attendance</button>
+        <button type="button" className="btn-secondary mt-4 h-11 w-full sm:w-auto" onClick={() => setGroupOpen(true)}><UsersIcon /> Group attendance</button>
       )}
       {groupOpen && j && (
         <GroupDialog journey={j} rows={status.data ?? []} local={local} onClose={() => setGroupOpen(false)}
@@ -324,8 +351,12 @@ function JourneyAttendance({ id }) {
 
   return (
     <>
-      <PageHeader back={<a href="#/attendance" className="btn-link mb-1 inline-flex items-center"><ChevronLeftIcon /> Journeys</a>}
-        title="Attendance" subtitle={j ? `${j.train_no} · ${j.train_name}` : undefined} />
+      <PageHeader back={j ? `#/journeys/${j.id}` : '#/attendance'} title="Attendance" />
+      {j && (
+        <p className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-brand-900">
+          <TrainSolidIcon className="h-4.5 w-4.5 text-brand-700" /><span className="truncate">{j.train_name} · {j.train_no}</span>
+        </p>
+      )}
       {tabs.length > 1 && <Tabs tabs={tabs} value={tab} onChange={setTab} />}
       {tab === 'records' && j ? <AttendanceRecords journey={j} /> : <StageGrid journey={j} status={status} />}
     </>

@@ -9,6 +9,7 @@ from app.models import Inspection, InspectionPhase, Journey, MediaKind, Verifica
 from app.schemas.common import PageParams
 from app.schemas.operations import InspectionIn, ReviewIn
 from app.security.principal import Principal
+from app.services import security
 from app.services import media
 from app.services.common import audit, check_replay, get_or_404, paginate, payload_hash
 from app.services.journeys import check_capture_window, get_journey, is_allocated, journey_day_for
@@ -59,11 +60,13 @@ def create(db: Session, p: Principal, body: InspectionIn, *, sync_op_id: uuid.UU
     if body.phase == InspectionPhase.AFTER and j.before_inspection_enabled and (body.round, InspectionPhase.BEFORE) not in done:
         raise BusinessRuleViolation("The Before inspection of this round must be recorded first", code="phase_order")
 
+    evidence = security.check_capture(db, p, policy, body, kind="inspection")
     photo_id = media.claim(db, body.photo_media_id, MediaKind.INSPECTION_PHOTO, j.division_id, p.id,
                            required=policy.inspection_photo_required, label="Inspection photo")
     video_id = media.claim(db, body.video_media_id, MediaKind.INSPECTION_VIDEO, j.division_id, p.id,
                            required=False, label="Inspection video")
-    record = Inspection(**body.model_dump(exclude={"photo_media_id", "video_media_id"}), photo_media_id=photo_id,
+    record = Inspection(**body.model_dump(exclude={"photo_media_id", "video_media_id", "security", "gps_timestamp"}), **evidence,
+                        photo_media_id=photo_id,
                         video_media_id=video_id, division_id=j.division_id, created_by_id=p.id, payload_hash=digest,
                         sync_op_id=sync_op_id)
     db.add(record)

@@ -1,46 +1,93 @@
 @import "tailwindcss";
 
+/* Inter (OFL), Latin subset only, bundled so it works offline and under the CSP (font-src 'self'). */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+/* Swachh Safar design system. Every colour, radius and shadow of the app comes from these tokens, measured
+   against the blue-and-white reference design. Change the accent here, not in screens. */
 @theme {
-  --font-sans: "Segoe UI", Roboto, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-  /* Brand: royal blue (primary actions) to navy (headings). The single place to change the app's accent. */
-  --color-brand-50: oklch(97% 0.014 254.604);
-  --color-brand-100: oklch(93.2% 0.032 255.585);
-  --color-brand-200: oklch(88.2% 0.059 254.128);
-  --color-brand-300: oklch(80.9% 0.105 251.813);
-  --color-brand-400: oklch(70.7% 0.165 254.624);
-  --color-brand-500: oklch(62.3% 0.214 259.815);
-  --color-brand-600: oklch(54.6% 0.245 262.881);
-  --color-brand-700: oklch(48.8% 0.243 264.376);
-  --color-brand-800: oklch(42.4% 0.199 265.638);
-  --color-brand-900: oklch(37.9% 0.146 265.522);
-  --color-brand-950: oklch(28.2% 0.091 267.935);
-  /* App background: a very light blue wash behind white cards. */
-  --color-canvas: #f3f7fe;
+  --font-sans: "Inter Variable", Inter, "Segoe UI", Roboto, system-ui, -apple-system, Arial, sans-serif;
+
+  /* Brand blue: brand-700 is the primary (#0759D6), brand-600 the action blue, brand-500 the secondary,
+     brand-900 the deep navy used for headings. */
+  --color-brand-50: #f2f7ff;
+  --color-brand-100: #eaf3ff;
+  --color-brand-200: #cfe2fd;
+  --color-brand-300: #a3c8fa;
+  --color-brand-400: #5ea3f8;
+  --color-brand-500: #1685f8;
+  --color-brand-600: #0866e8;
+  --color-brand-700: #0759d6;
+  --color-brand-800: #0a47aa;
+  --color-brand-900: #08295c;
+  --color-brand-950: #061d42;
+
+  --color-canvas: #f3f6fb;   /* app background behind white cards */
+  --color-ink: #111d35;      /* primary text */
+  --color-muted: #64748b;    /* secondary text */
+  --color-line: #dee6f0;     /* borders and dividers */
+  --color-success: #25b45a;  /* completed attendance */
+  --color-feedback: #f34383; /* the feedback module */
+  --color-camera: #8966f3;   /* a photo that can be taken now */
+  --color-locked: #626b76;   /* a step that is not open yet */
+
+  --shadow-card: 0 1px 2px rgba(17, 29, 53, 0.04), 0 4px 14px rgba(7, 89, 214, 0.06);
+  --shadow-raised: 0 2px 6px rgba(17, 29, 53, 0.06), 0 10px 28px rgba(7, 89, 214, 0.10);
+  --shadow-bar: 0 1px 0 #dee6f0, 0 2px 10px rgba(17, 29, 53, 0.04);
+
+  --animate-fade-in: fade-in 200ms ease-out both;
+  --animate-modal-in: modal-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-rise-in: rise-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-splash-in: splash-in 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-train-in: train-in 900ms cubic-bezier(0.2, 0.8, 0.2, 1) 150ms both;
+
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
+  @keyframes rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes splash-in { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: none; } }
+  @keyframes train-in { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
 }
 
 @layer base {
   html { -webkit-tap-highlight-color: transparent; }
-  body { @apply bg-white text-slate-900 antialiased; }
+  body { @apply bg-canvas font-sans text-ink antialiased; font-feature-settings: "cv11", "ss01"; }
+  button:not(:disabled), [role="button"], a[href] { cursor: pointer; }
 }
 
 @layer components {
-  .card { @apply rounded-3xl bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06),0_8px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-100 sm:p-6; }
+  /* White rounded card on the canvas: 16px radius, soft blue-tinted shadow, hairline border. */
+  .card { @apply min-w-0 rounded-2xl bg-white p-4 shadow-card ring-1 ring-line/70; }
+  .tap { @apply transition duration-150 ease-out active:scale-[0.98]; }
+
   .input {
-    @apply block h-12 w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900
-      placeholder:text-slate-400 shadow-sm transition outline-none
-      focus:border-brand-600 focus:ring-4 focus:ring-brand-600/15 disabled:bg-slate-50 disabled:text-slate-500;
+    @apply block h-11 w-full min-w-0 rounded-xl border border-line bg-white px-3.5 text-[15px] text-ink
+      placeholder:text-slate-400 transition outline-none
+      focus:border-brand-600 focus:ring-4 focus:ring-brand-600/12 disabled:bg-slate-50 disabled:text-slate-500;
   }
+  textarea.input { @apply h-auto min-h-24 py-2.5 leading-relaxed; }
   .input-error { @apply border-red-400 focus:border-red-500 focus:ring-red-500/15; }
+
   .btn-primary {
-    @apply inline-flex h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-brand-700 px-5 text-base font-semibold
-      text-white shadow-sm shadow-brand-900/20 transition hover:bg-brand-800 active:scale-[0.99]
+    @apply inline-flex h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-brand-700 px-5 text-[15px] font-semibold
+      text-white shadow-[0_4px_12px_rgba(7,89,214,0.25)] transition duration-150 hover:bg-brand-800 active:scale-[0.98]
       focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700
-      disabled:cursor-not-allowed disabled:opacity-60;
+      disabled:cursor-not-allowed disabled:bg-brand-300 disabled:shadow-none;
   }
   .btn-secondary {
-    @apply inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-white px-3.5 text-sm font-semibold text-brand-800
-      ring-1 ring-slate-200 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-brand-700
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-white px-3.5 text-sm font-semibold text-brand-700
+      ring-1 ring-brand-200 transition duration-150 hover:bg-brand-50 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-brand-700
       disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-link { @apply text-sm font-semibold text-brand-700 underline-offset-2 hover:underline; }
+  .icon-btn { @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl text-brand-900 transition hover:bg-brand-50 active:scale-95; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
 }

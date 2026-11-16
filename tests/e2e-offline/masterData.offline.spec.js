@@ -53,7 +53,12 @@ test.afterAll(() => expect(net.server.cspViolations).toEqual([]));
 
 test('master data: online administration, offline reads, read-only users', async () => {
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
-  const context = await chromium.launchPersistentContext(dir, { ...pixel, baseURL: 'http://localhost:4175/' });
+  const context = await chromium.launchPersistentContext(dir, {
+    ...pixel,
+    baseURL: `http://localhost:${process.env.E2E_PORT || '4175'}/`,
+    geolocation: { latitude: 28.6139, longitude: 77.209, accuracy: 15 },
+    permissions: ['geolocation'],
+  });
   await net.install(context);
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto('/#/login');
@@ -162,7 +167,7 @@ test('master data: online administration, offline reads, read-only users', async
   // ---- read-only user: sees the data, cannot change it ----
   server.connected = true;
   await context.setOffline(false);
-  await page.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click(); // bottom bar: the menu from any screen
   await page.getByRole('button', { name: 'Logout' }).click();
   await signIn(page, VIEWER, 'Vijay');
   await openTab(page, 'Inventory items');

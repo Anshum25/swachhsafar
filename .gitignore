@@ -27,3 +27,13 @@ google-services.json
 
 # Face models are copied from node_modules at build time (vite.config.js)
 public/models/
+
+# Test runner output
+.vitest/
+
+# Android build output and local config
+android/**/build/
+android/.gradle/
+android/local.properties
+*.jks
+*.keystore

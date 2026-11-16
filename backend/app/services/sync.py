@@ -34,6 +34,9 @@ from app.schemas.faces import FaceProfileOut
 from app.services import attendance, complaints, faces, feedback, inspections, inventory
 from app.services import journeys as journey_svc
 from app.services.policy import get_policy
+from app.services import security as security_svc
+from app.schemas.security import SecurityEventIn
+from app.models import SecurityEvent
 
 # Records may commit slightly out of updated_at order; re-sending a small window keeps deltas lossless.
 CURSOR_OVERLAP = timedelta(seconds=120)
@@ -48,7 +51,21 @@ HANDLERS: dict[str, tuple[type[BaseModel], Handler]] = {
     "feedback.railway.create": (RailwayFeedbackIn, lambda db, p, b, op: feedback.create_railway(db, p, b, commit=False)),
     "complaint.create": (ComplaintIn, lambda db, p, b, op: complaints.create(db, p, b, commit=False)),
     "inventory.record": (TxnIn, lambda db, p, b, op: inventory.record(db, p, b, commit=False)),
+    "security.event": (SecurityEventIn, lambda db, p, b, op: _security_event(db, p, b)),
 }
+
+
+def _security_event(db: Session, p: Principal, body: SecurityEventIn):
+    """A security observation the device recorded (possibly offline). Idempotent by the event id."""
+    existing = db.get(SecurityEvent, body.id)
+    if existing is not None:
+        return existing, True
+    division = body.division_id if body.division_id and p.can_access_division(body.division_id) else None
+    security_svc.record(db, type=body.type, severity=body.severity, source="device", user_id=p.id, device_id=p.device_id,
+                        session_id=p.session_id, division_id=division, details=body.details,
+                        occurred_at=body.occurred_at, event_id=body.id)
+    db.flush()
+    return db.get(SecurityEvent, body.id), False
 
 # Errors that a later retry can resolve (dependency not ready / transient). Everything else is final.
 RETRYABLE_CODES = {"media_pending", "pnr_unavailable", "sms_unavailable", "service_unavailable", "rate_limited"}
@@ -60,6 +77,9 @@ def _passenger_start(db: Session, p: Principal, body: PassengerFeedbackStart):
 
 
 def process_batch(db: Session, p: Principal, body: SyncBatchIn) -> list[dict]:
+    if p.device_id and body.device_id != p.device_id:
+        from app.errors import Forbidden
+        raise Forbidden("Device mismatch for active session", code="device_mismatch")
     results = []
     for op in body.operations:
         stored = db.get(SyncOperation, op.op_id)

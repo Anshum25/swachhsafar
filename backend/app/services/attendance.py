@@ -9,6 +9,7 @@ from app.models import Attendance, AttendanceStage, FaceEnrollment, Journey, Med
 from app.schemas.common import PageParams
 from app.schemas.operations import AttendanceIn, GroupAttendanceIn, ReviewIn
 from app.security.principal import Principal
+from app.services import security
 from app.services import media
 from app.services.common import audit, check_replay, get_or_404, paginate, payload_hash
 from app.services.journeys import check_capture_window, get_journey, is_allocated
@@ -61,10 +62,13 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
 
     if policy.attendance_face_verification:
         _check_face(db, policy, body)
+    evidence = security.check_capture(db, p, policy, body, kind="attendance",
+                                      liveness_required=policy.attendance_face_verification and policy.face_liveness_required)
     photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO,
                            j.division_id, p.id, required=policy.attendance_photo_required or policy.attendance_face_verification,
                            label="Attendance photo")
-    record = Attendance(**body.model_dump(exclude={"photo_media_id"}), photo_media_id=photo_id, division_id=j.division_id,
+    record = Attendance(**body.model_dump(exclude={"photo_media_id", "security", "gps_timestamp"}), **evidence,
+                        photo_media_id=photo_id, division_id=j.division_id,
                         created_by_id=p.id, payload_hash=digest, sync_op_id=sync_op_id)
     db.add(record)
     try:
@@ -87,7 +91,8 @@ def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dic
                             photo_media_id=m.photo_media_id, group_submission_id=body.group_submission_id,
                             face_distance=m.face_distance, face_model=m.face_model,
                             device_timestamp=body.device_timestamp, latitude=body.latitude, longitude=body.longitude,
-                            gps_accuracy_m=body.gps_accuracy_m)
+                            gps_accuracy_m=body.gps_accuracy_m, gps_timestamp=body.gps_timestamp,
+                            security=body.security.model_copy(update={"liveness": m.liveness}) if body.security else None)
         savepoint = db.begin_nested()
         try:
             record, replayed = create(db, p, item, commit=False)

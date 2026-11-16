@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 
 from app.schemas.common import StrictModel
@@ -22,3 +24,22 @@ class PolicySettings(StrictModel):
     # employee's registered face descriptors; a distance above the threshold blocks the attendance.
     attendance_face_verification: bool = False
     face_match_threshold: float = Field(default=0.5, ge=0.3, le=0.7)
+
+    # ---- device security (enforced by the app; recorded and re-checked by the server where it can) ----
+    # Location: a fix must be at most this old and this accurate for location-dependent actions
+    # (attendance, inspection, passenger/railway feedback). gps_block_app: also keep the whole app closed
+    # until a valid fix exists (otherwise only location-dependent actions are blocked).
+    gps_enforced: bool = True
+    gps_block_app: bool = True
+    gps_max_age_seconds: int = Field(default=120, ge=10, le=3600)
+    gps_max_accuracy_m: int = Field(default=100, ge=5, le=5000)
+    gps_timeout_seconds: int = Field(default=20, ge=5, le=120)
+    # Consecutive fixes implying a faster speed are flagged as suspicious (trains run below 160 km/h).
+    gps_max_speed_kmh: int = Field(default=250, ge=50, le=1000)
+    # VPN / proxy: "block" refuses location-dependent actions while one is detected, "warn" records it.
+    vpn_policy: Literal["off", "warn", "block"] = "block"
+    # How long a device may keep working offline after its last online check of the user's session.
+    # Strictly capped at 24 hours maximum.
+    offline_session_hours: int = Field(default=24, ge=1, le=24)
+    # A live-camera challenge (blink + head turn) before the face is matched for attendance.
+    face_liveness_required: bool = False  # optional blink + head-turn check; the photo is face-matched either way

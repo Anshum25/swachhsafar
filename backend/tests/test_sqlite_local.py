@@ -4,6 +4,8 @@ Connection pragmas, migrations (fresh, repeated and concurrent), the append-only
 NULLS-NOT-DISTINCT unique rules, timezone round trips, concurrent API writes under the database write lock,
 and the idempotent bootstrap CLI."""
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 import os
 import subprocess
 import sys
@@ -48,7 +50,7 @@ def test_migrations_fresh_repeated_and_concurrent(tmp_path):
     again = _upgrade(db_file)
     assert again.wait(timeout=180) == 0
     con = sqlite3.connect(db_file)
-    assert con.execute("SELECT version_num FROM alembic_version").fetchall() == [("0002",)]
+    assert con.execute("SELECT version_num FROM alembic_version").fetchall() == [(ScriptDirectory.from_config(Config("alembic.ini")).get_current_head(),)]
     assert con.execute("SELECT count(*) FROM roles").fetchone() == (6,)  # reference data applied exactly once
     assert con.execute("SELECT count(*) FROM permissions").fetchone()[0] > 0
     assert con.execute("PRAGMA integrity_check").fetchone() == ("ok",)

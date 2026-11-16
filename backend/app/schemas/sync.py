@@ -13,6 +13,7 @@ OpType = Literal[
     "feedback.railway.create",
     "complaint.create",
     "inventory.record",
+    "security.event",
 ]
 
 

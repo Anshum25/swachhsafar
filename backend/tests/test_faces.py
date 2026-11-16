@@ -36,7 +36,7 @@ def test_registration_requires_consent_permission_and_four_descriptors(world, db
     events = db.scalars(select(AuditLog).where(AuditLog.action == "user.face.enroll")).all()
     assert len(events) == 1 and "descriptors" not in str(events[0].changes)
     assert world.client.delete(f"{API}/users/{world.users['jan'].id}/face", headers=world.h("admin")).status_code == 204
-    db.expire_all()
+    db.rollback()  # end this session's read snapshot (SQLite WAL) so the API's delete is visible
     assert db.get(FaceEnrollment, world.users["jan"].id) is None
 
 

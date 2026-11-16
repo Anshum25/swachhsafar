@@ -6,6 +6,7 @@ from pydantic import Field, field_validator
 
 from app.models import InspectionPhase, VerificationStatus
 from app.schemas.common import Accuracy, AwareDatetime, Captured, CoachCode, Latitude, Longitude, ReadModel, StrictModel
+from app.schemas.security import CaptureSecurity
 
 
 class AttendanceIn(Captured):
@@ -18,6 +19,9 @@ class AttendanceIn(Captured):
     # Face verification result computed on the device (distance to the closest registered descriptor).
     face_distance: float | None = Field(default=None, ge=0, le=4)
     face_model: str | None = Field(default=None, max_length=40)
+    # When the location fix was taken (device clock), and the capture conditions the app reports.
+    gps_timestamp: AwareDatetime | None = None
+    security: CaptureSecurity | None = None
 
 
 class GroupMember(StrictModel):
@@ -26,6 +30,7 @@ class GroupMember(StrictModel):
     photo_media_id: uuid.UUID | None = None
     face_distance: float | None = Field(default=None, ge=0, le=4)
     face_model: str | None = Field(default=None, max_length=40)
+    liveness: Literal["passed", "failed", "not_required", "unavailable"] | None = None
 
 
 class GroupAttendanceIn(StrictModel):
@@ -36,6 +41,8 @@ class GroupAttendanceIn(StrictModel):
     latitude: Latitude
     longitude: Longitude
     gps_accuracy_m: Accuracy | None = None
+    gps_timestamp: AwareDatetime | None = None
+    security: CaptureSecurity | None = None
     members: list[GroupMember] = Field(min_length=1, max_length=100)
 
     @field_validator("members")
@@ -106,6 +113,8 @@ class InspectionIn(Captured):
     comments: str | None = Field(default=None, max_length=2000)
     photo_media_id: uuid.UUID | None = None
     video_media_id: uuid.UUID | None = None
+    gps_timestamp: AwareDatetime | None = None
+    security: CaptureSecurity | None = None
 
 
 class InspectionOut(ReadModel):

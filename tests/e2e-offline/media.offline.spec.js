@@ -12,7 +12,7 @@ import { IDS } from '../helpers/operationalFixtures.js';
 import { FIELD_PERMS, createFakeNetwork, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
-const BASE = 'http://localhost:4175/';
+const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
 const EMAIL = 'media.e2e@example.com';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 // A minimal MP4 header ('ftyp') followed by deterministic filler: enough for type handling and checksums.
@@ -64,7 +64,7 @@ test('inspection video and photo: validated, persisted offline across restart, u
   // Android camera apps may report no type: the extension decides.
   await dialog.getByTestId('video-input').setInputFiles({ name: 'VID_0001.mp4', mimeType: '', buffer: MP4 });
   await expect(dialog.getByTestId('video-preview')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Submit inspection' }).click();
+  await dialog.getByRole('button', { name: 'Save Now' }).click();
   await expect(page.getByTestId('toast').filter({ hasText: 'Inspection saved on this device' }).first()).toBeVisible();
 
   // ---- reload and full restart, offline: the video is read back from device storage ----

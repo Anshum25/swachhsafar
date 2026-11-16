@@ -51,8 +51,16 @@ export default function Install() {
                 <li>Open <b>Swachh Safar</b> from your home screen and sign in.</li>
               </ol>
             )}
-            {ios && waited && <p className="text-xs text-slate-500">On iPhone, use Safari for installation.</p>}
+            {ios && waited && <p className="text-xs text-slate-500">On iPhone, use Safari for installation (Share → Add to Home Screen).</p>}
           </>
+        )}
+        {isAndroid() && !standalone && (
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-xs text-slate-500 mb-2">Prefer the native Android application?</p>
+            <a href="/download" className="btn-secondary w-full text-center block text-sm font-semibold">
+              Get the Android app (APK)
+            </a>
+          </div>
         )}
         {!standalone && (
           <a href="/#/login" className="block text-center text-sm font-semibold text-brand-700 underline-offset-2 hover:underline">Continue in the browser instead</a>

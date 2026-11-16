@@ -13,6 +13,7 @@ import { createOutboxRepository } from '../database/outboxRepository.js';
 import { LocalRuleError } from '../database/errors.js';
 import { CHANGES_SCOPE, OUTBOX_ENTITY, createLocalStore } from './localStore.js';
 import { dataUrlToBytes, sha256Hex } from '../database/mediaStore.js';
+import { getDevice } from '../security/device.js';
 
 export const ENTITY_TYPE = OUTBOX_ENTITY;
 
@@ -58,11 +59,12 @@ export function createOperationsQueue({
   }
 
   async function deviceId() {
-    let id = await outbox.getMeta('device_id');
-    if (!id) {
-      id = `pwa-${crypto.randomUUID()}`;
-      await outbox.setMeta('device_id', id, now());
-    }
+    // One canonical device id (security/device.js) is used for registration, the session token, sync and
+    // the offline lease. The outbox meta copy is kept in step with it (older builds generated their own).
+    const dev = await getDevice().catch(() => null);
+    let id = dev?.id || (await outbox.getMeta('device_id'));
+    if (!id) id = `web-${crypto.randomUUID().replace(/-/g, '')}`;
+    if ((await outbox.getMeta('device_id')) !== id) await outbox.setMeta('device_id', id, now());
     return id;
   }
 

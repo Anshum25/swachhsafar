@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useResource, useSession } from '../../app/session.jsx';
 import { useNotify } from '../../app/Layout.jsx';
 import { navigate } from '../../app/router.js';
@@ -6,13 +6,17 @@ import MediaPreview from '../../components/MediaPreview.jsx';
 import ReviewPanel from '../../components/ReviewPanel.jsx';
 import { GpsCapture, VoiceRecorder, outcomeToast, savedLocally } from '../../components/Capture.jsx';
 import {
-  Badge, ConfirmDialog, DataState, DetailList, Dialog, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader, Pager, Panel, RatingScale, STATE_TONE, Segmented, Select, Stepper, SubmitBar, SyncBadge, SyncState, Table, Tabs, fmtDate, fmtDateTime, label,
+  ActionMenu, Badge, ConfirmDialog, DataState, DetailList, Dialog, Empty, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader, Pager, Panel, RatingScale, STATE_TONE, Segmented, Select, Stepper, SubmitBar, SyncBadge, SyncState, Table, Tabs, fmtDate, fmtDateTime, label,
 } from '../../components/ui.jsx';
-import { ChevronLeftIcon, Spinner, ThumbUpIcon, TrainIcon } from '../../components/Icons.jsx';
+import {
+  ArrowLeftIcon, CheckBoldIcon, ChevronRightIcon, PhoneIcon, ScanIcon, SeatIcon, Spinner, ThumbUpSolidIcon, TicketIcon, TrainSolidIcon, UserIcon,
+} from '../../components/Icons.jsx';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus.js';
 import { useAction } from '../../hooks/useAction.js';
 import { canAct } from '../../services/authorization.js';
 import { ONLINE_ONLY } from '../../services/operations.js';
 import { deviceTimestamp } from '../../utils/capture.js';
+import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 
 const journeyDay = (j) => Math.max(1, Math.floor((Date.now() - new Date(`${j.journey_date}T00:00:00`)) / 86_400_000) + 1);
 const PASSENGER_STATUS = ['draft', 'verified', 'completed', 'void'].map((s) => ({ value: s, label: label(s) }));
@@ -65,89 +69,184 @@ function JourneyCoachFields({ journeys, form, set, coachRequired = true }) {
   );
 }
 
-const PASSENGER_STEPS = ['Personal Details', 'Verification', 'Feedback & Comments'];
+// Reference wizard steps. PNR and OTP ("verification code") verification belong to step 1; ratings are
+// step 2; comments, voice and submission step 3 (ratings and comments are submitted together).
+const PASSENGER_STEPS = ['Personal Details', 'Passenger Feedback', 'Comments'];
 
-// Coaches of the selected journey, with how many passenger feedbacks each day already has. Tapping a day
-// picks that coach and day for the form below.
-function CoachDayPicker({ journey, form, set }) {
-  const res = useResource(journey ? '/feedback/passenger' : null, { journey_id: journey?.id, page_size: 200 });
-  if (!journey) return null;
-  const days = Math.max(1, journey.operational_days ?? journey.duration_days ?? 1);
+const journeyDays = (j) => Math.max(1, j?.operational_days ?? j?.duration_days ?? 1);
+
+// Feedback overview (reference): one card per coach of the journey, a pink thumbs-up per journey day with the
+// number of passenger feedbacks already taken there. A day opens the passenger form for that coach and day.
+function FeedbackOverview({ journeyId }) {
+  const journeys = useActiveJourneys();
+  const list = journeys.data?.items ?? [];
+  const [picked, setPicked] = useState(journeyId ?? '');
+  const id = picked || journeyId || list[0]?.id || '';
+  const fromList = list.find((x) => x.id === id);
+  const one = useResource(id && !fromList ? `/journeys/${id}` : null);
+  const journey = fromList ?? one.data;
+  const res = useResource(id ? '/feedback/passenger' : null, { journey_id: id, page_size: 200 });
+  const summary = useResource(id ? `/journeys/${id}/summary` : null);
+
+  if (journeys.loading && !journeys.data && !journeyId) return <Loading />;
+  if (!id) return journeys.error ? <ErrorNote error={journeys.error} onRetry={journeys.reload} /> : <Empty title="No active journeys are assigned to you." />;
+  if (!journey) return one.error ? <ErrorNote error={one.error} onRetry={one.reload} /> : <Loading />;
+
+  const days = journeyDays(journey);
+  const today = Math.min(days, journeyDay(journey));
   const count = new Map();
   for (const f of res.data?.items ?? []) {
     if (f.status === 'void') continue;
     const k = `${f.coach_code}|${f.journey_day}`;
     count.set(k, (count.get(k) ?? 0) + 1);
   }
+  const open = (coach, day) => navigate(`/feedback/new/${journey.id}/${encodeURIComponent(coach)}/${day}`);
+  const recent = (res.data?.items ?? []).filter((f) => f.status !== 'completed' && f.status !== 'void').slice(0, 6);
+
   return (
-    <div className="space-y-2" aria-label="Coach and day">
-      {journey.coaches.map((c) => (
-        <div key={c.code} className={`rounded-2xl bg-white p-3 ring-1 ${form.coach_code === c.code ? 'ring-2 ring-brand-600' : 'ring-slate-200'}`}>
-          <p className="mb-2 flex items-center gap-2 text-sm font-extrabold text-brand-900"><TrainIcon className="h-5 w-5 text-brand-600" />{c.code}
-            <span className="text-xs font-medium text-slate-500">{c.classification === 'AC' ? 'AC' : 'Non-AC'}</span></p>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))] gap-1.5">
-            {Array.from({ length: days }, (_, i) => i + 1).map((d) => {
-              const n = count.get(`${c.code}|${d}`) ?? 0;
-              const on = form.coach_code === c.code && Number(form.journey_day) === d;
-              return (
-                <button key={d} type="button" onClick={() => set({ coach_code: c.code, journey_day: d })} aria-pressed={on}
-                  aria-label={`Coach ${c.code} day ${d}, ${n} feedback`}
-                  className={`flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-semibold transition active:scale-95 ${on ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-brand-50'}`}>
-                  <span>Day {d}</span>
-                  <span className={`grid h-7 w-7 place-items-center rounded-full ${on ? 'bg-white/20' : n ? 'bg-rose-500 text-white' : 'bg-rose-50 text-rose-500 ring-1 ring-rose-200'}`}>
-                    {n ? n : <ThumbUpIcon className="h-3.5 w-3.5" />}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+    <>
+      {list.length > 1 && (
+        <div className="mb-3">
+          <Field label="Journey"><Select value={id} onChange={setPicked}
+            options={list.map((x) => ({ value: x.id, label: `${x.train_no} · ${x.train_name}` }))} /></Field>
         </div>
-      ))}
-    </div>
+      )}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[13px]">
+        <p className="flex min-w-0 items-center gap-2 font-semibold text-brand-900"><TrainSolidIcon className="h-4.5 w-4.5 shrink-0 text-brand-700" /><span className="truncate">{journey.train_name} · {journey.train_no}</span></p>
+        {summary.data && <p className="text-xs font-medium text-muted">Passenger: <b className="text-ink">{summary.data.passenger_feedback_completed}</b> &nbsp;|&nbsp; Railway: <b className="text-ink">{summary.data.railway_feedback}</b></p>}
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
+        {journey.coaches.map((c) => (
+          <section key={c.code} className="card flex items-center gap-2 py-3 pl-3 pr-1.5" aria-label={`Coach ${c.code}`}>
+            <div className="flex w-14 shrink-0 flex-col items-center gap-0.5 self-stretch justify-center">
+              <TrainSolidIcon className="h-7 w-7 text-brand-700" />
+              <p className="text-[15px] font-extrabold text-brand-900">{c.code}</p>
+            </div>
+            <div className="min-w-0 flex-1 overflow-x-auto">
+              <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${days}, minmax(3.25rem, 1fr))` }}>
+                {Array.from({ length: days }, (_, i) => i + 1).map((d) => {
+                  const n = count.get(`${c.code}|${d}`) ?? 0;
+                  return (
+                    <button key={d} type="button" onClick={() => open(c.code, d)} aria-label={`Coach ${c.code} day ${d}, ${n} feedback`}
+                      className="flex flex-col items-center gap-1 rounded-xl py-1 transition duration-150 hover:bg-feedback/5 active:scale-90">
+                      <span className={`text-[12px] font-semibold ${d === today ? 'text-feedback' : 'text-ink'}`}>Day {d}</span>
+                      <span className="relative grid h-[30px] w-[30px] place-items-center rounded-full bg-gradient-to-br from-[#ff6b9d] to-feedback text-white shadow-[0_3px_8px_rgba(243,67,131,0.35)]">
+                        <ThumbUpSolidIcon className="h-4 w-4" />
+                        {n > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-feedback ring-1 ring-feedback/40">{n}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <button type="button" className="icon-btn h-9 w-7 shrink-0 text-slate-400" onClick={() => open(c.code, today)} aria-label={`Coach ${c.code}: feedback for today`}>
+              <ChevronRightIcon className="h-5 w-5" />
+            </button>
+          </section>
+        ))}
+      </div>
+      {recent.length > 0 && (
+        <Panel title="Waiting for verification" className="mt-4">
+          <ul className="divide-y divide-line/70">
+            {recent.map((f) => (
+              <li key={f.id}>
+                <a href={`#/feedback/passenger/${f.id}`} className="flex items-center gap-3 py-2.5 text-sm">
+                  <span className="min-w-0 flex-1"><b className="block truncate text-ink">{f.passenger_name}</b><span className="text-xs text-muted">Coach {f.coach_code} · Day {f.journey_day} · {f.mobile_masked}</span></span>
+                  {f.sync_status === 'pending' ? <Badge tone="amber">Not synced</Badge> : <Badge tone={STATE_TONE[f.status]}>{label(f.status)}</Badge>}
+                  <ChevronRightIcon className="h-4 w-4 text-slate-400" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+    </>
   );
 }
 
-function PassengerStart() {
+const DETAILS_RULES = {
+  seat_no: (v) => (v.length > 10 ? 'Seat number is at most 10 characters.' : null),
+  pnr: (v) => (v && !/^\d{10}$/.test(v) ? 'PNR is 10 digits.' : null),
+  mobile: (v) => (!/^[6-9]\d{9}$/.test(v) ? 'Enter a 10-digit Indian mobile number (starts with 6–9).' : null),
+  passenger_name: (v) => (v.trim().length < 2 ? 'Enter the passenger’s name.' : null),
+};
+const EMPTY_DETAILS = { passenger_name: '', mobile: '', pnr: '', seat_no: '' };
+
+// Step 1 (reference: Feedback (H1) · Personal Details) for a coach and day picked on the overview. What is
+// typed is kept for this coach/day while the user goes back and forth (session storage, this tab only).
+function PassengerStart({ journeyId, coach, day }) {
   const { queue } = useSession();
   const notify = useNotify();
-  const journeys = useActiveJourneys();
-  const [form, setForm] = useState({ journey_id: '', coach_code: '', journey_day: 1, passenger_name: '', mobile: '', pnr: '', seat_no: '' });
+  const journey = useResource(`/journeys/${journeyId}`);
+  const draftKey = `swachh.feedback.draft:${journeyId}:${coach}:${day}`;
+  const [form, setForm] = useState(() => {
+    try { return { ...EMPTY_DETAILS, ...JSON.parse(sessionStorage.getItem(draftKey) ?? '{}') }; } catch { return EMPTY_DETAILS; }
+  });
+  const [errors, setErrors] = useState({});
   const [gps, setGps] = useState(null);
   const [busy, setBusy] = useState(false);
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const [savedOffline, setSavedOffline] = useState(false);
+  const gate = useSecurityGate('location');
+  useEffect(() => {
+    try { sessionStorage.setItem(draftKey, JSON.stringify(form)); } catch { /* storage unavailable */ }
+  }, [draftKey, form]);
+  const set = (k) => (e) => { const v = e.target.value; setForm((f) => ({ ...f, [k]: v })); setErrors((x) => ({ ...x, [k]: null })); };
+  const j = journey.data;
+  const known = j?.coaches.find((c) => c.code === coach);
 
   async function submit(e) {
     e.preventDefault();
+    const found = Object.fromEntries(Object.entries(DETAILS_RULES).map(([k, rule]) => [k, rule(form[k] ?? '')]).filter(([, v]) => v));
+    setErrors(found);
+    if (Object.keys(found).length || busy) return;
     setBusy(true);
     const id = crypto.randomUUID();
     const outcome = await queue.submit({
       type: 'feedback.passenger.start',
-      payload: { id, ...form, pnr: form.pnr || null, seat_no: form.seat_no || null, device_timestamp: deviceTimestamp(), ...gps },
+      payload: {
+        id, journey_id: journeyId, coach_code: coach, journey_day: day, passenger_name: form.passenger_name.trim(), mobile: form.mobile,
+        pnr: form.pnr || null, seat_no: form.seat_no || null, device_timestamp: deviceTimestamp(), ...gps,
+      },
     });
     setBusy(false);
     outcomeToast(notify, outcome, 'Passenger details');
+    if (!savedLocally(outcome)) return;
+    try { sessionStorage.removeItem(draftKey); } catch { /* storage unavailable */ }
     if (outcome.status === 'synced') navigate(`/feedback/passenger/${id}`);
-    else if (savedLocally(outcome)) setForm((f) => ({ ...f, passenger_name: '', mobile: '', pnr: '', seat_no: '' }));
+    else { setForm(EMPTY_DETAILS); setSavedOffline(true); }
   }
 
-  const journey = journeys.data?.items.find((x) => x.id === form.journey_id);
   return (
-    <Panel title="New passenger feedback">
-      <Stepper steps={PASSENGER_STEPS} current={0} />
-      <form onSubmit={submit} className="space-y-3">
-        <JourneyCoachFields journeys={journeys} form={form} set={set} />
-        <CoachDayPicker journey={journey} form={form} set={set} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Passenger name"><input className="input" required minLength={2} value={form.passenger_name} onChange={(e) => set({ passenger_name: e.target.value })} /></Field>
-          <Field label="Mobile" hint="10-digit Indian mobile, used for OTP"><input className="input" required inputMode="numeric" pattern="[6-9][0-9]{9}" value={form.mobile} onChange={(e) => set({ mobile: e.target.value })} /></Field>
-          <Field label="PNR" hint="10 digits, if the division verifies PNR"><input className="input" inputMode="numeric" pattern="[0-9]{10}" value={form.pnr} onChange={(e) => set({ pnr: e.target.value })} /></Field>
-          <Field label="Seat"><input className="input" maxLength={10} value={form.seat_no} onChange={(e) => set({ seat_no: e.target.value })} /></Field>
-        </div>
-        <GpsCapture value={gps} onChange={setGps} />
-        <p className="text-xs text-slate-500">PNR and OTP verification and the ratings need a connection. Details captured offline are saved and can be continued from the list once synced.</p>
-        <SubmitBar busy={busy} disabled={!gps} label="Save & Continue" />
-      </form>
-    </Panel>
+    <>
+      <PageHeader back={`#/feedback/journey/${journeyId}`} title={`Feedback (${coach})`} />
+      <div className="card mx-auto max-w-xl px-4 pb-5 pt-4">
+        <Stepper steps={PASSENGER_STEPS} current={0} />
+        {journey.error && !j && <ErrorNote error={journey.error} onRetry={journey.reload} />}
+        {j && (
+          <p className="-mt-1 mb-4 rounded-xl bg-canvas px-3 py-2 text-center text-xs font-medium text-muted">
+            {j.train_no} · {j.train_name} · Coach <b className="text-ink">{coach}</b>{known ? ` (${known.classification === 'AC' ? 'AC' : 'Non-AC'})` : ''} · Day <b className="text-ink">{day}</b>
+          </p>
+        )}
+        {j && !known && <ErrorNote error={{ message: `Coach ${coach} is not on this journey.` }} />}
+        {savedOffline && (
+          <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200" role="status">
+            Details saved on this device. Verification starts once they reach the server: continue from the Feedback overview.
+          </p>
+        )}
+        <form onSubmit={submit} noValidate className="space-y-4">
+          <Field icon={SeatIcon} label="Seat No." error={errors.seat_no}><input className="input" maxLength={10} value={form.seat_no} onChange={set('seat_no')} /></Field>
+          <Field icon={TicketIcon} label="PNR" hint="10 digits, if the division verifies PNR" error={errors.pnr}><input className="input tracking-wide" inputMode="numeric" maxLength={10} value={form.pnr} onChange={set('pnr')} /></Field>
+          <Field icon={PhoneIcon} label="Mobile" hint="Verification code is sent here" error={errors.mobile}><input className="input tracking-wide" type="tel" inputMode="numeric" autoComplete="off" maxLength={10} required value={form.mobile} onChange={set('mobile')} /></Field>
+          <Field icon={UserIcon} label="Name" error={errors.passenger_name}><input className="input" autoComplete="off" required value={form.passenger_name} onChange={set('passenger_name')} /></Field>
+          <GpsCapture value={gps} onChange={setGps} />
+          {gate.notice}
+          <button type="submit" className="btn-primary w-full" disabled={busy || !gps || (j && !known) || !gate.allowed}>
+            {busy ? <Spinner /> : <ScanIcon className="h-5 w-5" />} Save &amp; Generate Verification Code
+          </button>
+          {!gps && <p className="text-center text-xs text-muted">Capture the GPS location to continue.</p>}
+        </form>
+      </div>
+    </>
   );
 }
 
@@ -166,6 +265,7 @@ function VoidDialog({ open, onClose, onVoid, busy }) {
 function PassengerFlow({ id }) {
   const { ops, me } = useSession();
   const notify = useNotify();
+  const online = useNetworkStatus();
   const res = useResource(`/feedback/passenger/${id}`);
   const fb = res.data;
   const journey = useResource(fb ? `/journeys/${fb.journey_id}` : null);
@@ -177,6 +277,7 @@ function PassengerFlow({ id }) {
   const [comments, setComments] = useState('');
   const [voice, setVoice] = useState(null);
   const [voiding, setVoiding] = useState(false);
+  const [stage, setStage] = useState('ratings'); // within a verified record: 'ratings' (step 2) or 'comments' (step 3)
   const { busy, error, run } = useAction();
 
   if (res.loading && !fb) return <Loading />;
@@ -189,101 +290,113 @@ function PassengerFlow({ id }) {
     if (out) res.reload();
     return out;
   };
+  const current = fb.status === 'completed' ? PASSENGER_STEPS.length : fb.status === 'verified' ? (stage === 'comments' ? 2 : 1) : 0;
+  const missing = (questions.data ?? []).filter((q) => q.required && ratings[q.id] === undefined).length;
+  const j = journey.data;
 
   return (
     <>
-      <PageHeader back={<a href="#/feedback" className="btn-link mb-1 inline-flex items-center"><ChevronLeftIcon /> Feedback</a>}
-        title={fb.passenger_name} subtitle={`Coach ${fb.coach_code} · Day ${fb.journey_day} · ${fb.mobile_masked}`}
-        actions={canAct(me, 'feedback.passenger.void', fb) && onServer && (
-          <OnlineButton className="btn-secondary text-red-700" onClick={() => setVoiding(true)}>Void</OnlineButton>
+      <PageHeader back={`#/feedback/journey/${fb.journey_id}`} title={`Feedback (${fb.coach_code})`}
+        barAction={canAct(me, 'feedback.passenger.void', fb) && onServer && fb.status !== 'void' && (
+          <ActionMenu items={[{ label: 'Void feedback', danger: true, onClick: () => setVoiding(true), disabled: !online, hint: online ? undefined : ONLINE_ONLY.feedback }]} />
         )} />
-      {fb.status !== 'void' && (
-        <Stepper steps={PASSENGER_STEPS} current={fb.status === 'completed' ? PASSENGER_STEPS.length : fb.status === 'verified' ? 2 : 1} />
-      )}
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Badge tone={STATE_TONE[fb.status]}>{label(fb.status)}</Badge>
-        <Badge>PNR: {label(fb.pnr_status)}</Badge>
-        <Badge>OTP: {label(fb.otp_status)}</Badge>
-        <SyncBadge status={fb.sync_status} error={fb.last_sync_error} />
-      </div>
-      <ErrorNote error={error} />
-      {!onServer && (
-        <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
-          Saved on this device, waiting to sync. PNR and OTP verification start once the server has this record.
-        </p>
-      )}
-      {onServer && fb.status !== 'completed' && fb.status !== 'void' && collector && <OfflineActionsNote reason={ONLINE_ONLY.pnr} />}
-      <div className="mt-3 space-y-4">
-        <Panel title="Passenger and journey">
-          <DetailList items={[
-            ['Train', journey.data ? `${journey.data.train_no} · ${journey.data.train_name}` : null],
-            ['Journey date', journey.data ? fmtDate(journey.data.journey_date) : null],
-            ['Coach', `${fb.coach_code} · ${fb.coach_class === 'AC' ? 'AC' : 'Non-AC'}`],
-            ['Seat', fb.seat_no],
-            ['PNR', fb.pnr],
-            ['Mobile', fb.mobile_masked],
-            ['Captured', fmtDateTime(fb.device_timestamp)],
-            fb.void_reason && ['Void reason', fb.void_reason],
-          ]} />
-        </Panel>
+      <div className="mx-auto max-w-xl space-y-4">
+        <div className="card px-4 pb-4 pt-4">
+          {fb.status !== 'void' && <Stepper steps={PASSENGER_STEPS} current={current} />}
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-700"><UserIcon className="h-5 w-5" /></span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[15px] font-bold text-ink">{fb.passenger_name}</p>
+              <p className="truncate text-xs text-muted">Seat {fb.seat_no ?? '—'} · PNR {fb.pnr ?? '—'} · {fb.mobile_masked}</p>
+            </div>
+          </div>
+          <p className="mt-3 rounded-xl bg-canvas px-3 py-2 text-xs font-medium text-muted">
+            {j ? `${j.train_no} · ${fmtDate(j.journey_date)} · ` : ''}Coach <b className="text-ink">{fb.coach_code}</b> ({fb.coach_class === 'AC' ? 'AC' : 'Non-AC'}) · Day <b className="text-ink">{fb.journey_day}</b>
+          </p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <Badge tone={STATE_TONE[fb.status]}>{label(fb.status)}</Badge>
+            <Badge>PNR: {label(fb.pnr_status)}</Badge>
+            <Badge>OTP: {label(fb.otp_status)}</Badge>
+            <SyncBadge status={fb.sync_status} error={fb.last_sync_error} />
+          </div>
+          {fb.void_reason && <p className="mt-2 text-sm text-red-700">Voided: {fb.void_reason}</p>}
+        </div>
+        <ErrorNote error={error} />
+        {!onServer && (
+          <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
+            Saved on this device, waiting to sync. PNR and OTP verification start once the server has this record.
+          </p>
+        )}
+        {onServer && fb.status !== 'completed' && fb.status !== 'void' && collector && <OfflineActionsNote reason={ONLINE_ONLY.pnr} />}
         {!collector && fb.status !== 'completed' && fb.status !== 'void' && (
-          <p className="text-sm text-slate-500">Only the staff member who collected this feedback can verify and complete it.</p>
+          <p className="text-sm text-muted">Only the staff member who collected this feedback can verify and complete it.</p>
         )}
         {collector && onServer && fb.status === 'draft' && fb.pnr_status === 'pending' && (
-          <Panel title="Step 1 · Verify PNR">
-            <p className="mb-3 text-sm text-slate-600">PNR {fb.pnr ?? '—'} will be checked against this journey.</p>
-            <OnlineButton className="btn-primary" disabled={!!busy} onClick={() => step('pnr', () => ops.passengerFeedback.verifyPnr(id))}>{busy === 'pnr' && <Spinner />} Verify PNR</OnlineButton>
+          <Panel title="Verify PNR">
+            <p className="mb-3 text-sm text-muted">PNR {fb.pnr ?? '—'} will be checked against this journey.</p>
+            <OnlineButton className="btn-primary w-full" disabled={!!busy} onClick={() => step('pnr', () => ops.passengerFeedback.verifyPnr(id))}>{busy === 'pnr' && <Spinner />} Verify PNR</OnlineButton>
           </Panel>
         )}
         {collector && onServer && fb.status === 'draft' && fb.pnr_status !== 'pending' && ['not_sent', 'sent'].includes(fb.otp_status) && (
-          <Panel title="Step 2 · OTP verification">
-            <div className="flex flex-wrap items-end gap-2">
-              <OnlineButton className="btn-secondary h-12" disabled={!!busy}
-                onClick={async () => { const out = await step('send', () => ops.passengerFeedback.sendOtp(id)); if (out) { setOtpInfo(out); notify('info', `OTP sent to ${out.mobile_masked}.`); } }}>
-                {busy === 'send' && <Spinner />} {fb.otp_status === 'sent' ? 'Resend OTP' : 'Send OTP'}
-              </OnlineButton>
-              {fb.otp_status === 'sent' && (
-                <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); step('otp', () => ops.passengerFeedback.verifyOtp(id, otp)); }}>
-                  <input className="input w-36 tracking-widest" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} placeholder="6-digit code" aria-label="OTP code" value={otp} onChange={(e) => setOtp(e.target.value)} required />
-                  <button type="submit" className="btn-primary" disabled={!!busy}>{busy === 'otp' && <Spinner />} Verify</button>
-                </form>
-              )}
-            </div>
-            {otpInfo && <p className="mt-2 text-xs text-slate-500">{otpInfo.sends_remaining} resends left · expires {fmtDateTime(otpInfo.expires_at)}</p>}
+          <Panel title="Verification code">
+            <p className="mb-3 text-sm text-muted">A one-time code is sent by SMS to the passenger’s mobile {fb.mobile_masked}.</p>
+            <OnlineButton className={fb.otp_status === 'sent' ? 'btn-secondary h-11 w-full' : 'btn-primary w-full'} disabled={!!busy}
+              onClick={async () => { const out = await step('send', () => ops.passengerFeedback.sendOtp(id)); if (out) { setOtpInfo(out); notify('info', `OTP sent to ${out.mobile_masked}.`); } }}>
+              {busy === 'send' ? <Spinner /> : <ScanIcon className="h-5 w-5" />} {fb.otp_status === 'sent' ? 'Resend OTP' : 'Send OTP'}
+            </OnlineButton>
+            {fb.otp_status === 'sent' && (
+              <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); step('otp', () => ops.passengerFeedback.verifyOtp(id, otp)); }}>
+                <input className="input min-w-0 flex-1 text-center text-lg font-semibold tracking-[0.4em]" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} placeholder="••••••" aria-label="OTP code" value={otp} onChange={(e) => setOtp(e.target.value)} required />
+                <button type="submit" className="btn-primary" disabled={!!busy}>{busy === 'otp' && <Spinner />} Verify</button>
+              </form>
+            )}
+            {otpInfo && <p className="mt-2 text-xs text-muted">{otpInfo.sends_remaining} resends left · expires {fmtDateTime(otpInfo.expires_at)}</p>}
           </Panel>
         )}
         {fb.status === 'draft' && (fb.pnr_status === 'invalid' || fb.otp_status === 'locked') && (
           <ErrorNote error={{ message: fb.pnr_status === 'invalid' ? 'PNR is not valid for this journey. This feedback cannot be counted.' : 'Too many wrong OTP attempts. OTP verification is locked.' }} />
         )}
-        {collector && fb.status === 'verified' && (
-          <Panel title="Step 3 · Ratings">
-            {questions.loading || !bank ? <Loading label="Loading questions…" /> : questions.error ? <ErrorNote error={questions.error} /> : (
-              <form className="space-y-4" onSubmit={(e) => {
-                e.preventDefault();
-                // Completion is a server step: the voice file is uploaded (and acknowledged) first, then claimed.
-                step('complete', async () => {
-                  const voiceId = voice ? (await ops.media.upload({ value: voice, kind: 'feedback_voice', divisionId: fb.division_id, journeyId: fb.journey_id })) : null;
-                  return ops.passengerFeedback.complete(id, ratings, comments, voiceId);
-                }, 'Feedback completed.');
-              }}>
+        {collector && fb.status === 'verified' && (questions.loading || !bank ? <Loading label="Loading questions…" /> : questions.error ? <ErrorNote error={questions.error} /> : (
+          <form className="space-y-4" onSubmit={(e) => {
+            e.preventDefault();
+            if (stage !== 'comments') { setStage('comments'); return; }
+            // Completion is a server step: the voice file is uploaded (and acknowledged) first, then claimed.
+            step('complete', async () => {
+              const voiceId = voice ? (await ops.media.upload({ value: voice, kind: 'feedback_voice', divisionId: fb.division_id, journeyId: fb.journey_id })) : null;
+              return ops.passengerFeedback.complete(id, ratings, comments, voiceId);
+            }, 'Feedback completed.');
+          }}>
+            {stage !== 'comments' ? (
+              <div className="animate-rise-in space-y-3">
+                <h2 className="text-[15px] font-bold text-ink">Passenger Feedback <span className="font-medium text-muted">· rate {bank.scale_min}–{bank.scale_max}</span></h2>
                 {questions.data.map((q) => (
-                  <div key={q.id}>
-                    <p className="mb-1.5 text-sm font-medium">{q.position}. {q.text_en}{q.required && <span className="text-red-600"> *</span>}</p>
-                    {q.text_hi && <p className="mb-1.5 text-xs text-slate-500">{q.text_hi}</p>}
+                  <div key={q.id} className="card py-3.5">
+                    <p className="mb-1 text-sm font-semibold text-ink">{q.position}. {q.text_en}{q.required && <span className="text-red-600"> *</span>}</p>
+                    {q.text_hi && <p className="mb-2 text-xs text-muted">{q.text_hi}</p>}
                     <RatingScale min={bank.scale_min} max={bank.scale_max} value={ratings[q.id]} label={`Rating for question ${q.position}`}
                       onChange={(v) => setRatings((r) => ({ ...r, [q.id]: v }))} />
                   </div>
                 ))}
-                <Field label="Comments"><textarea className="input h-20 py-3" maxLength={2000} value={comments} onChange={(e) => setComments(e.target.value)} /></Field>
+                <button type="submit" className="btn-primary w-full" disabled={missing > 0}>
+                  {missing ? `${missing} required question${missing > 1 ? 's' : ''} left` : 'Next: Comments'} {!missing && <ChevronRightIcon className="h-5 w-5" />}
+                </button>
+              </div>
+            ) : (
+              <div className="card animate-rise-in space-y-4">
+                <h2 className="text-[15px] font-bold text-ink">Comments</h2>
+                <Field label="Comments"><textarea className="input" rows={4} maxLength={2000} placeholder="What did the passenger say?" value={comments} onChange={(e) => setComments(e.target.value)} /></Field>
                 <Field label="Voice comment"><VoiceRecorder value={voice} onChange={setVoice} /></Field>
-                <SubmitBar busy={busy === 'complete'} label="Submit feedback" disabled={questions.data.some((q) => q.required && ratings[q.id] === undefined)} />
-              </form>
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" className="btn-secondary h-12" onClick={() => setStage('ratings')}><ArrowLeftIcon /> Back</button>
+                  <button type="submit" className="btn-primary px-3" disabled={!!busy || missing > 0}>{busy === 'complete' ? <Spinner /> : <CheckBoldIcon />} Submit feedback</button>
+                </div>
+              </div>
             )}
-          </Panel>
-        )}
+          </form>
+        ))}
         {fb.status === 'completed' && (
           <Panel title="Feedback completed">
-            <p className="mb-3 text-sm text-slate-600">Submitted {fmtDateTime(fb.completed_at)} with {fb.ratings.length} rating(s).</p>
+            <p className="mb-3 flex items-center gap-2 text-sm text-muted"><span className="grid h-6 w-6 place-items-center rounded-full bg-success text-white"><CheckBoldIcon className="h-3.5 w-3.5" /></span>Submitted {fmtDateTime(fb.completed_at)} with {fb.ratings.length} rating(s).</p>
             <RatingsView ratings={fb.ratings} bank={bank} />
             {fb.comments && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{fb.comments}</p>}
             {fb.voice_media_id && <div className="mt-3"><MediaPreview id={fb.voice_media_id} kind="audio" label="Voice comment" /></div>}
@@ -308,6 +421,7 @@ function RailwayForm() {
   const j = journeys.data?.items.find((x) => x.id === form.journey_id);
   const questions = useResource(j ? '/feedback/questions' : null, { journey_id: form.journey_id, audience: 'railway' });
   const bank = useBanks(j?.division_id).find((b) => b.audience === 'railway' && b.is_active);
+  const gate = useSecurityGate('location');
 
   async function submit(e) {
     e.preventDefault();
@@ -346,8 +460,9 @@ function RailwayForm() {
         ))}
         <Field label="Comments"><textarea className="input h-20 py-3" value={form.comments} onChange={(e) => set({ comments: e.target.value })} /></Field>
         <GpsCapture value={gps} onChange={setGps} />
+        {gate.notice}
         <p className="text-xs text-slate-500">Photo or voice attachments are not part of railway feedback on the server yet.</p>
-        <SubmitBar busy={busy} disabled={!gps || !Object.keys(ratings).length} label="Submit" />
+        <SubmitBar busy={busy} disabled={!gps || !Object.keys(ratings).length || !gate.allowed} label="Submit" />
       </form>
     </Panel>
   );
@@ -471,6 +586,8 @@ function FeedbackRecords() {
   );
 }
 
+// Routes: #/feedback (overview), #/feedback/journey/<id> (overview of a journey), #/feedback/new/<journey>/<coach>/<day>
+// (passenger step 1), #/feedback/passenger/<id> (a passenger record: verification, ratings, comments).
 export default function Feedback({ parts }) {
   const { can } = useSession();
   const tabs = [
@@ -480,11 +597,15 @@ export default function Feedback({ parts }) {
   ].filter(Boolean);
   const [tab, setTab] = useState(tabs[0]?.value);
   if (parts[0] === 'passenger' && parts[1]) return <PassengerFlow id={parts[1]} key={parts[1]} />;
+  if (parts[0] === 'new' && parts[3]) {
+    return <PassengerStart journeyId={parts[1]} coach={decodeURIComponent(parts[2])} day={Math.max(1, Number(parts[3]) || 1)} key={parts.join('/')} />;
+  }
+  const journeyId = parts[0] === 'journey' ? parts[1] : undefined;
   return (
     <>
-      <PageHeader title="Feedback" subtitle="Passenger (PNR/OTP verified) and railway official feedback" />
-      <Tabs tabs={tabs} value={tab} onChange={setTab} />
-      {tab === 'passenger' && <PassengerStart />}
+      <PageHeader title="Feedback" back={journeyId ? `#/journeys/${journeyId}` : '#/'} />
+      {tabs.length > 1 && <Tabs tabs={tabs} value={tab} onChange={setTab} />}
+      {tab === 'passenger' && <FeedbackOverview journeyId={journeyId} key={journeyId ?? 'all'} />}
       {tab === 'railway' && <RailwayForm />}
       {tab === 'list' && <FeedbackRecords />}
     </>

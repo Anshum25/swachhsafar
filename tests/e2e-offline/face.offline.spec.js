@@ -11,7 +11,7 @@ import { IDS } from '../helpers/operationalFixtures.js';
 import { FIELD_PERMS, createFakeNetwork, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
-const BASE = 'http://localhost:4175/';
+const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
 const EMAIL = 'face.e2e@example.com';
 const NO_FACE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const net = createFakeNetwork({

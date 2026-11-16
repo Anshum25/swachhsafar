@@ -7,7 +7,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const BASE = 'http://localhost:4175/';
+const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
 
 // Width and height from a PNG's IHDR chunk.
 const pngSize = (buf) => ({ width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) });
@@ -140,6 +140,34 @@ test('install page (share link) needs no sign-in, offers install, works offline'
   await expect(page.getByRole('heading', { name: 'Swachh Safar' })).toBeVisible();
   await page.getByRole('link', { name: 'Continue in the browser instead' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await context.close();
+  rmSync(profile, { recursive: true, force: true });
+});
+
+// Android app with Developer options on: nothing but the "turn off Developer mode" screen; it opens once off.
+test('developer mode keeps the Android app closed until it is turned off', async () => {
+  const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
+  const profile = mkdtempSync(join(tmpdir(), 'swachh-devmode-'));
+  const context = await chromium.launchPersistentContext(profile, { ...pixel, baseURL: BASE });
+  await context.route(/\/api\/v1\/|googleapis\.com|firebaseapp\.com/, (route) => route.abort('connectionrefused'));
+  await context.addInitScript(() => {
+    window.__devMode = true;
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { SwachhSecurity: {
+        getDeviceIntegrity: async () => ({ developerMode: window.__devMode, usbDebugging: false }),
+        openDeveloperSettings: async () => {},
+        addListener: () => ({ remove() {} }),
+      } },
+    };
+  });
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Please turn off Developer mode' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCount(0);
+  await page.evaluate(() => { window.__devMode = false; });
+  await page.getByRole('button', { name: 'Check again' }).click();
+  await expect(page.getByTestId('developer-mode-gate')).toHaveCount(0);
   await context.close();
   rmSync(profile, { recursive: true, force: true });
 });

@@ -3,6 +3,7 @@ import { CameraIcon, PinIcon, Spinner } from './Icons.jsx';
 import { compressImage, getPosition } from '../utils/capture.js';
 import { validateMedia } from '../database/mediaStore.js';
 import { startVoiceRecording, voiceFormat } from '../utils/voiceRecording.js';
+import { useSecurity } from '../security/SecurityProvider.jsx';
 
 export function PhotoCapture({ value, onChange, required }) {
   const input = useRef(null);
@@ -22,16 +23,16 @@ export function PhotoCapture({ value, onChange, required }) {
     <div>
       <input ref={input} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} data-testid="photo-input" />
       {value ? (
-        <div className="relative overflow-hidden rounded-2xl ring-1 ring-slate-200">
-          <img src={value} alt="Captured evidence" className="max-h-64 w-full object-cover" />
-          <button type="button" className="btn-secondary absolute bottom-2 right-2" onClick={() => input.current.click()}>Retake</button>
+        <div className="relative animate-fade-in overflow-hidden rounded-2xl ring-1 ring-line">
+          <img src={value} alt="Captured evidence" className="max-h-60 w-full object-cover" />
+          <button type="button" className="btn-secondary absolute bottom-2 right-2 shadow-card" onClick={() => input.current.click()}>Retake</button>
         </div>
       ) : (
         <button type="button" onClick={() => input.current.click()}
-          className="flex h-40 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-brand-300 bg-brand-50/50 text-brand-800 transition hover:bg-brand-50 active:scale-[0.99]">
-          <span className="grid h-12 w-12 place-items-center rounded-full bg-white text-brand-700 shadow-sm ring-1 ring-brand-100"><CameraIcon className="h-6 w-6" /></span>
-          <span className="text-sm font-bold">Add Photo{required ? '' : ' (optional)'}</span>
-          <span className="text-xs text-slate-500">Camera or gallery · JPG / PNG</span>
+          className="mx-auto flex aspect-[1.2] w-full max-w-[11.5rem] flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-400 bg-brand-100/70 text-brand-700 transition duration-150 hover:bg-brand-100 active:scale-[0.98]">
+          <CameraIcon className="mb-1 h-9 w-9" />
+          <span className="text-[15px] font-bold">Add Photo{required ? '' : ' (optional)'}</span>
+          <span className="text-xs font-medium text-muted">(JPG / PNG)</span>
         </button>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
@@ -39,14 +40,27 @@ export function PhotoCapture({ value, onChange, required }) {
   );
 }
 
+// The record's location. Inside the signed-in app the fix comes from the security location guard (so its
+// time, source and mock flag are known and the division's accuracy/age rules apply); elsewhere directly.
+const GUARD_ERRORS = {
+  denied: 'Location permission is off for this app.', services_off: 'Location (GPS) is switched off.',
+  timeout: 'No location fix arrived in time. Move near a window and try again.', unavailable: 'Location is not available right now.',
+};
 export function GpsCapture({ value, onChange }) {
+  const sec = useSecurity();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   async function locate() {
     setBusy(true);
     setError(null);
     try {
-      onChange(await getPosition());
+      if (sec) {
+        const fix = await sec.guards.location.refresh();
+        if (!fix) throw new Error(GUARD_ERRORS[sec.guards.location.getState().error] ?? 'Location is not available right now.');
+        onChange({ latitude: fix.latitude, longitude: fix.longitude, gps_accuracy_m: fix.accuracy != null ? Math.min(fix.accuracy, 10000) : undefined });
+      } else {
+        onChange(await getPosition());
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -54,9 +68,9 @@ export function GpsCapture({ value, onChange }) {
     }
   }
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
-      <div className="flex items-center gap-2 text-sm">
-        <PinIcon className={`h-5 w-5 ${value ? 'text-emerald-600' : 'text-slate-400'}`} />
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-canvas px-3.5 py-2.5 ring-1 ring-line">
+      <div className="flex min-w-0 items-center gap-2 text-[13px]">
+        <PinIcon className={`h-5 w-5 shrink-0 ${value ? 'text-success' : 'text-slate-400'}`} />
         {value ? (
           <span>{value.latitude.toFixed(5)}, {value.longitude.toFixed(5)} <span className="text-slate-500">±{Math.round(value.gps_accuracy_m)} m</span></span>
         ) : (
@@ -131,7 +145,7 @@ export function VideoCapture({ value, onChange }) {
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => input.current.click()} className="btn-secondary w-full">Record video (optional)</button>
+        <button type="button" onClick={() => input.current.click()} className="btn-secondary h-10 w-full">Record video (optional)</button>
       )}
       {error && <p className="mt-1 text-xs text-red-600" role="alert">{error}</p>}
     </div>

@@ -1,0 +1,13 @@
+{
+  "appId": "in.itfarmer.swachhsafar",
+  "appName": "Swachh Safar",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SwachhSecurity": {}
+  }
+}
+

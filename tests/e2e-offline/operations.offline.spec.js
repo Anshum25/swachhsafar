@@ -17,7 +17,7 @@ import { IDS } from '../helpers/operationalFixtures.js';
 import { FIELD_PERMS, createFakeNetwork, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
-const BASE = 'http://localhost:4175/';
+const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
 const EMAIL = 'supervisor.e2e@example.com';
 const TODAY = istDate(new Date());
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -105,21 +105,23 @@ test('operational screens capture and keep records with the network disconnected
   dialog = page.getByRole('dialog');
   await captureEvidence(dialog);
   await dialog.getByLabel('Comments').fill('Floor mopped, dustbin emptied');
-  await dialog.getByRole('button', { name: 'Submit inspection' }).click();
+  await dialog.getByRole('button', { name: 'Save Now' }).click();
   await toast(page, 'Inspection saved on this device');
   await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before pending' })).toBeVisible();
 
   // Passenger feedback (details; PNR/OTP verification stays pending until online)
-  await page.goto('/#/feedback');
-  await page.getByRole('combobox', { name: 'Journey', exact: true }).selectOption({ label: '12951 · Mumbai Rajdhani' });
-  await page.getByRole('combobox', { name: 'Coach', exact: true }).selectOption({ label: 'B1 (AC)' });
-  await page.getByLabel('Passenger name').fill('Amit Patel');
+  // Coach x day overview (pink thumbs) -> step 1 (Personal Details) for that coach and day.
+  await page.goto(`/#/feedback/journey/${IDS.journey}`);
+  await page.getByRole('button', { name: /^Coach B1 day 1, \d+ feedback$/ }).click();
+  await expect(page.getByRole('heading', { name: 'Feedback (B1)' })).toBeVisible();
+  await page.getByLabel('Name', { exact: true }).fill('Amit Patel');
   await page.getByLabel('Mobile').fill('9876543210');
   await page.getByLabel('PNR').fill('2451870001');
-  await page.getByLabel('Seat').fill('23');
+  await page.getByLabel('Seat No.').fill('23');
   await page.getByRole('button', { name: 'Get GPS' }).click();
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Save & Generate Verification Code' }).click();
   await toast(page, 'Passenger details saved on this device');
+  await page.goto('/#/feedback');
 
   // Railway official feedback with ratings from the (local) question bank
   await page.getByRole('tab', { name: 'Railway official' }).click();

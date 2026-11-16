@@ -105,6 +105,7 @@ class UserOut(ReadModel):
 class MeOut(StrictModel):
     user: UserOut
     divisions: dict[uuid.UUID, list[str]]
+    offline_lease: dict | None = None
 
 
 class KycIn(StrictModel):

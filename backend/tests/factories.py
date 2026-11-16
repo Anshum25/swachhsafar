@@ -27,6 +27,8 @@ class FakeVerifier:
 
 
 class FakeSms:
+    name, enabled = "fake", True
+
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
         self.down = False
@@ -35,6 +37,10 @@ class FakeSms:
         if self.down:
             raise ProviderUnavailable("down")
         self.sent.append((mobile, code))
+        return f"fake-{len(self.sent)}"
+
+    def send_login_otp(self, mobile: str, code: str) -> None:
+        return self.send_otp(mobile, code)
 
     @property
     def last_code(self) -> str:

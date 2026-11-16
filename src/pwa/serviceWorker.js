@@ -22,4 +22,6 @@ cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
 // Single-page app: every same-origin navigation is served the cached index.html (API paths excluded).
-registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/api\//] }));
+// /downloads/ (APK files) always goes to the network: serving the app shell there makes browsers that
+// navigate to a download link (Firefox, Samsung Internet...) show the app instead of downloading.
+registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/api\//, /^\/downloads\//] }));

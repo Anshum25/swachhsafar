@@ -10,7 +10,7 @@ import { IDS } from '../helpers/operationalFixtures.js';
 import { createFakeNetwork, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
-const BASE = 'http://localhost:4175/';
+const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
 const EMAIL = 'responsive.e2e@example.com';
 const ALL_PERMS = [
   'divisions.manage', 'policies.manage', 'permissions.manage', 'charge.manage', 'audit.read', 'users.read', 'users.manage',

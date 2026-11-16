@@ -9,9 +9,10 @@ import {
   Badge, DataState, DetailList, Dialog, Empty, ErrorNote, Field, FilterBar, Loading, PageHeader, Pager, Panel, STATE_TONE, Segmented, Select,
   StaleNote, SubmitBar, SyncBadge, SyncState, Table, Tabs, fmtDateTime, label,
 } from '../../components/ui.jsx';
-import { CheckIcon, ChevronLeftIcon } from '../../components/Icons.jsx';
+import { CheckBoldIcon, MessageIcon, TrainSolidIcon } from '../../components/Icons.jsx';
 import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp } from '../../utils/capture.js';
+import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 
 const PHASES = { B: 'Before', A: 'After' };
 const CLASSES = [{ value: '', label: 'All coaches' }, { value: 'AC', label: 'AC' }, { value: 'NON_AC', label: 'Non-AC' }];
@@ -25,6 +26,7 @@ function InspectDialog({ target, journey, onClose, onDone }) {
   const [video, setVideo] = useState(null);
   const [comments, setComments] = useState('');
   const [busy, setBusy] = useState(false);
+  const gate = useSecurityGate('location');
 
   async function submit(e) {
     e.preventDefault();
@@ -36,6 +38,7 @@ function InspectDialog({ target, journey, onClose, onDone }) {
       payload: {
         id: crypto.randomUUID(), journey_id: journey.id, coach_code: target.coach, day: target.day, round: target.round,
         phase: target.phase, comments: comments.trim() || null, device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId, video_media_id: videoId,
+        ...gate.evidence(),
       },
       media: [
         { id: mediaId, division_id: journey.division_id, kind: 'inspection_photo', dataUrl: photo },
@@ -48,14 +51,18 @@ function InspectDialog({ target, journey, onClose, onDone }) {
   }
 
   return (
-    <Dialog open title={`${target.coach} (${PHASES[target.phase]} Journey) · Day ${target.day} · R${target.round}`} onClose={onClose}>
-      <form onSubmit={submit} className="space-y-3">
-        <GpsCapture value={gps} onChange={setGps} />
+    <Dialog open title={`${target.coach} (${PHASES[target.phase]} Journey)`} onClose={onClose} onSubmit={submit}
+      footer={<SubmitBar busy={busy} disabled={!gps || !photo || !gate.allowed} label="Save Now" icon={<CheckBoldIcon />} onCancel={onClose} flush />}>
+      <div className="space-y-4">
+        <p className="-mt-1 text-center text-xs font-medium text-muted">Day {target.day} · Round {target.round} · {journey.train_no}</p>
         <PhotoCapture value={photo} onChange={setPhoto} required />
-        <Field label="Comments"><textarea className="input h-20 py-3" maxLength={2000} value={comments} onChange={(e) => setComments(e.target.value)} /></Field>
+        <Field label={<span className="inline-flex items-center gap-1.5 font-semibold text-ink"><MessageIcon className="h-4 w-4 text-ink" />Comments</span>}>
+          <textarea className="input" rows={3} maxLength={2000} placeholder="Enter comments..." value={comments} onChange={(e) => setComments(e.target.value)} />
+        </Field>
+        <GpsCapture value={gps} onChange={setGps} />
+        {gate.notice}
         <VideoCapture value={video} onChange={setVideo} />
-        <SubmitBar busy={busy} disabled={!gps || !photo} label="Submit inspection" onCancel={onClose} />
-      </form>
+      </div>
     </Dialog>
   );
 }
@@ -63,12 +70,16 @@ function InspectDialog({ target, journey, onClose, onDone }) {
 // Coach × day × round × phase grid: one card per coach, a column per day, a B (before) and A (after) cell
 // per round. Round and Before→After order and one record per cell are enforced by the local repository
 // (and its triggers) and by the server; only `open` cells can be captured.
+// Reference matrix: a plain letter for a slot that is done (green) or was missed (red), a solid blue tile for
+// the slot that can be inspected now, amber for one saved on this device, grey for one not open yet.
 const CELL_STYLE = {
-  taken: 'bg-brand-700 text-white ring-brand-700',
-  pending: 'bg-amber-400 text-slate-900 ring-amber-400',
-  open: 'bg-white text-brand-800 ring-2 ring-brand-600 hover:bg-brand-50 active:scale-95',
-  locked: 'bg-slate-100 text-slate-400 ring-slate-200',
+  taken: 'text-success bg-success/10',
+  pending: 'bg-amber-400 text-white',
+  open: 'bg-brand-700 text-white shadow-[0_2px_6px_rgba(7,89,214,0.35)] hover:bg-brand-800 active:scale-90',
+  missed: 'text-red-500',
+  locked: 'text-slate-400',
 };
+const LEGEND = [['taken', 'Done'], ['open', 'Inspect now'], ['pending', 'Saved on device'], ['missed', 'Missed'], ['locked', 'Not open']];
 
 function InspectionGrid({ journey: j, grid }) {
   const { can } = useSession();
@@ -88,37 +99,40 @@ function InspectionGrid({ journey: j, grid }) {
   const done = rows.reduce((n, c) => n + c.done, 0);
   const required = rows.reduce((n, c) => n + c.required, 0);
   const openDay = (grid.data ?? []).find((c) => c.day_open)?.day;
+  // A locked slot of a day that has passed (or of a finished journey) was missed, not merely not open yet.
+  const finished = j.state === 'history' || j.state === 'cancelled';
+  const missed = (day) => finished || (openDay != null && day < openDay);
+  const classes = [...new Set(j.coaches.map((c) => c.classification))].length > 1;
 
   return (
     <>
       <StaleNote stale={grid.stale} />
-      <Panel className="mb-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Coach class</p>
-            <Segmented label="Coach class" value={cls} onChange={setCls} options={CLASSES} /></div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-            {[['taken', 'Done'], ['open', 'Open'], ['pending', 'Saved on device'], ['locked', 'Locked']].map(([k, t]) => (
-              <span key={k} className="inline-flex items-center gap-1.5"><span className={`h-4 w-4 rounded ring-1 ${CELL_STYLE[k]}`} />{t}</span>
-            ))}
-          </div>
+      <div className="card mb-4 space-y-3 py-3.5">
+        <div>
+          <div className="flex justify-between text-[13px]"><span className="font-semibold text-ink">Completion{openDay ? ` · today is Day ${openDay}` : ''}</span><span className="font-semibold tabular-nums text-brand-700">{done}/{required}</span></div>
+          <div className="mt-1.5 h-2 rounded-full bg-brand-100"><div className="h-2 rounded-full bg-brand-600 transition-[width] duration-500" style={{ width: `${required ? (done / required) * 100 : 0}%` }} /></div>
         </div>
-        <div className="mt-3">
-          <div className="flex justify-between text-sm"><span className="font-medium">Completion{openDay ? ` · today is day ${openDay}` : ''}</span><span className="tabular-nums text-slate-600">{done}/{required}</span></div>
-          <div className="mt-1 h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-brand-600" style={{ width: `${required ? (done / required) * 100 : 0}%` }} /></div>
+        {classes && <Segmented label="Coach class" value={cls} onChange={setCls} options={CLASSES} />}
+        <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[11.5px] font-medium text-muted">
+          {LEGEND.map(([k, t]) => (
+            <span key={k} className="inline-flex items-center gap-1.5"><span className={`grid h-4.5 w-4.5 place-items-center rounded text-[10px] font-bold ${CELL_STYLE[k]}`}>A</span>{t}</span>
+          ))}
         </div>
-      </Panel>
+      </div>
       {byCoach.length === 0 ? <Empty title="No coaches to inspect." /> : (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
           {byCoach.map(([coach, days]) => (
-            <section key={coach} className="rounded-2xl bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-200 sm:p-4" aria-label={`Coach ${coach}`}>
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-lg font-extrabold text-brand-900">{coach}</h3>
-                <span className="text-xs text-slate-500">{classOf(coach) === 'AC' ? 'AC' : 'Non-AC'} · {days.reduce((n, d) => n + d.done, 0)}/{days.reduce((n, d) => n + d.required, 0)}</span>
+            <section key={coach} className="card px-3 pb-3 pt-2.5" aria-label={`Coach ${coach}`}>
+              <div className="relative mb-2 text-center">
+                <h3 className="text-[17px] font-extrabold text-brand-900">{coach}</h3>
+                <span className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-canvas px-2 py-0.5 text-[11px] font-semibold text-muted">
+                  {classOf(coach) === 'AC' ? 'AC' : 'Non-AC'} · {days.reduce((n, d) => n + d.done, 0)}/{days.reduce((n, d) => n + d.required, 0)}
+                </span>
               </div>
               <div className="overflow-x-auto">
-                <div className="grid w-max min-w-full gap-x-3 gap-y-1.5" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(4.25rem, 1fr))` }}>
+                <div className="grid min-w-full gap-x-1 gap-y-1.5" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(3.6rem, 1fr))` }}>
                   {days.map((d) => (
-                    <p key={d.day} className={`text-center text-xs font-semibold ${d.day_open ? 'text-brand-700' : 'text-slate-500'}`}>Day {d.day}{d.day_open ? ' •' : ''}</p>
+                    <p key={d.day} className={`text-center text-[12.5px] font-semibold ${d.day_open ? 'text-brand-700' : 'text-ink'}`}>Day {d.day}{d.day_open && <span className="ml-0.5 inline-block h-1.5 w-1.5 -translate-y-0.5 rounded-full bg-brand-600" />}</p>
                   ))}
                   {rounds.map((r) => days.map((d) => (
                     <div key={`${r}:${d.day}`} className="flex justify-center gap-1.5">
@@ -126,14 +140,15 @@ function InspectionGrid({ journey: j, grid }) {
                         const cell = d.cells.find((x) => x.round === r && x.phase === ph);
                         const key = `${coach}:${d.day}:${r}:${ph}`;
                         const status = local[key] ? 'pending' : cell?.status ?? 'locked';
+                        const look = status === 'locked' && missed(d.day) ? 'missed' : status;
                         const clickable = can('inspections.submit') && status === 'open';
                         return (
                           <button key={ph} type="button" disabled={!clickable}
                             onClick={() => setTarget({ coach, day: d.day, round: r, phase: ph, key })}
-                            className={`grid h-8 w-8 place-items-center rounded-lg text-sm font-bold ring-1 transition ${CELL_STYLE[status]}`}
+                            className={`grid h-[26px] w-[26px] place-items-center rounded-[5px] text-[13px] font-extrabold transition duration-150 ${CELL_STYLE[look]}`}
                             aria-label={`Coach ${coach} day ${d.day} round ${r} ${PHASES[ph]} ${status}`}
-                            title={`Day ${d.day} · Round ${r} · ${PHASES[ph]} · ${status === 'pending' ? 'saved on device' : status}`}>
-                            {status === 'taken' ? <CheckIcon className="h-4 w-4" /> : ph}
+                            title={`Day ${d.day} · Round ${r} · ${PHASES[ph]} · ${status === 'pending' ? 'saved on device' : look}`}>
+                            {ph}
                           </button>
                         );
                       })}
@@ -141,7 +156,7 @@ function InspectionGrid({ journey: j, grid }) {
                   )))}
                 </div>
               </div>
-              <p className="mt-2 text-[11px] text-slate-400">{rounds.length > 1 ? `One row per round (1–${rounds.length}) · ` : ''}B = before, A = after</p>
+              {rounds.length > 1 && <p className="mt-2 text-center text-[11px] text-slate-400">One row per round (1–{rounds.length}) · B = before, A = after</p>}
             </section>
           ))}
         </div>
@@ -237,8 +252,10 @@ function JourneyInspection({ id }) {
 
   return (
     <>
-      <PageHeader back={<a href="#/inspections" className="btn-link mb-1 inline-flex items-center"><ChevronLeftIcon /> Journeys</a>}
-        title="Coach inspection" subtitle={`${j.train_no} · ${j.train_name}`} />
+      <PageHeader back={`#/journeys/${j.id}`} title="Inspection" />
+      <p className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-brand-900">
+        <TrainSolidIcon className="h-4.5 w-4.5 text-brand-700" /><span className="truncate">{j.train_name} · {j.train_no}</span>
+      </p>
       {tabs.length > 1 && <Tabs tabs={tabs} value={tab} onChange={setTab} />}
       {tab === 'records' ? <InspectionRecords journey={j} /> : <InspectionGrid journey={j} grid={grid} />}
     </>
@@ -249,7 +266,7 @@ export default function Inspections({ parts }) {
   if (parts[0]) return <JourneyInspection id={parts[0]} key={parts[0]} />;
   return (
     <>
-      <PageHeader title="Coach inspection" subtitle="Day, round and before/after photo inspections" />
+      <PageHeader title="Inspection" subtitle="Day, round and before/after photo inspections" />
       <JourneyPicker base="/inspections" />
     </>
   );

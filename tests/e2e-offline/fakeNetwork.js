@@ -58,6 +58,11 @@ export function createFakeNetwork({ users, today }) {
         if (!acct) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { code: 400, message: 'INVALID_LOGIN_CREDENTIALS' } }) });
         return json({ kind: 'identitytoolkit#VerifyPasswordResponse', localId: acct.uid, email: body.email, displayName: '', idToken: acct.token, registered: true, refreshToken: `refresh-${acct.uid}`, expiresIn: '2592000' });
       }
+      if (url.includes('accounts:signInWithCustomToken')) {
+        const customToken = body.token;
+        const acct = Object.values(accounts).find((a) => a.token === customToken) || Object.values(accounts)[0];
+        return json({ kind: 'identitytoolkit#SignInWithCustomTokenResponse', idToken: acct ? acct.token : customToken, refreshToken: `refresh-${acct?.uid || 'user'}`, expiresIn: '2592000' });
+      }
       if (url.includes('accounts:lookup')) {
         const email = emailOf(body.idToken);
         const acct = accounts[email];
@@ -78,9 +83,93 @@ export function createFakeNetwork({ users, today }) {
         return route.abort('internetdisconnected');
       }
       const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+
+      if (req.method() === 'GET' && path === '/auth/captcha/image') {
+        // Fake: the image shows 12345 (plain SVG text is fine for a test double).
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="64"><rect width="200" height="64" fill="#eef"/><text x="40" y="42" font-size="30">12345</text></svg>';
+        return json({ algorithm: 'TEXT', token: 'e2e-token', image: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`, length: 5,
+          expires_at: new Date(Date.now() + 300_000).toISOString() });
+      }
+      if (req.method() === 'POST' && path === '/auth/captcha/check') {
+        const ok = req.postDataJSON()?.captcha?.answer === '12345';
+        return ok ? route.fulfill({ status: 204 }) : json({ error: { code: 'captcha_invalid', message: 'The security check failed.' } }, 422);
+      }
+      if (req.method() === 'GET' && path === '/auth/captcha') {
+        return json({
+          algorithm: 'SHA-256',
+          challenge: 'dfe50f1336423b96f987a242b4f72360301ccd0d1d2cd8801330952da766e3b9',
+          salt: 'e2e-salt',
+          signature: 'e2e-sig',
+          maxnumber: 10,
+          expires_at: new Date(Date.now() + 300_000).toISOString(),
+        });
+      }
+
+      if (req.method() === 'POST' && path === '/auth/login') {
+        const body = req.postDataJSON() || {};
+        const username = (body.username || '').toLowerCase();
+        const targetEmail = Object.keys(users).find((e) => e.toLowerCase() === username || users[e].user?.emp_id?.toLowerCase() === username);
+        if (body.captcha?.algorithm === 'TEXT' && body.captcha.answer !== '12345') {
+          return json({ error: { code: 'captcha_invalid', message: 'The security check failed.' } }, 422);
+        }
+        if (!targetEmail || !accounts[targetEmail] || body.password === 'Wrong-Password-1') {
+          return json({ error: { code: 'auth/invalid-login-credentials', message: 'Employee ID or password is incorrect.' } }, 401);
+        }
+        const acct = accounts[targetEmail];
+        return json({
+          custom_token: acct.token,
+          session_id: 'e2e-session-id',
+          device_id: body.device?.id || 'e2e-device',
+          method: 'password',
+        });
+      }
+
+      if (req.method() === 'POST' && path === '/auth/otp/request') {
+        return json({ expires_in_seconds: 300, resend_after_seconds: 60 });
+      }
+
+      if (req.method() === 'POST' && path === '/auth/otp/verify') {
+        const body = req.postDataJSON() || {};
+        if (body.code && body.code !== '123456') {
+          return json({ error: { code: 'otp_invalid', message: 'The 6-digit code is incorrect or expired. Request a new code.' } }, 401);
+        }
+        const firstEmail = Object.keys(users)[0];
+        const acct = accounts[firstEmail];
+        return json({
+          custom_token: acct.token,
+          session_id: 'e2e-session-id',
+          device_id: body.device?.id || 'e2e-device',
+          method: 'otp',
+        });
+      }
+
+      if (req.method() === 'GET' && path === '/security/network') {
+        return json({ ip: '127.0.0.1', vpn: false, source: 'fake', detail: null, server_time: new Date().toISOString() });
+      }
+
       const caller = emailOf(String(req.headers().authorization ?? '').replace(/^Bearer /, ''));
       if (!caller || !users[caller]) return json({ error: { code: 'unauthenticated', message: 'No valid token' } }, 401);
-      if (req.method() === 'GET' && path === '/auth/me') return json(users[caller]);
+      if (req.method() === 'GET' && path === '/auth/me') {
+        const u = users[caller];
+        const nowIso = new Date().toISOString();
+        const expIso = new Date(Date.now() + 24 * 3_600_000).toISOString();
+        return json({
+          ...u,
+          offline_lease: {
+            lease_id: 'e2e-lease-id',
+            emp_id: u.user?.emp_id || '',
+            user_id: u.user?.id || '',
+            device_id: 'unspecified',
+            session_id: 'e2e-session-id',
+            issued_at: nowIso,
+            expires_at: expIso,
+            authorization_version: 1,
+            policy_version: 1,
+            permitted_operations: ['attendance.record', 'inspection.record', 'feedback.passenger.start', 'feedback.railway.create'],
+            signature: 'fake-valid-signature-000000000000000000000000000000000000000000000000',
+          },
+        });
+      }
       if (req.method() === 'GET' && path === '/sync/changes') {
         return json({ ...changesFixture(today), complaint_departments: masters.departments, complaint_categories: masters.categories,
           inventory_items: masters.items, question_banks: masters.banks, policies: masters.policies, face_profiles: server.faceProfiles });
