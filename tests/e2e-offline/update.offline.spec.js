@@ -11,7 +11,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IDS } from '../helpers/operationalFixtures.js';
-import { FIELD_PERMS, createFakeNetwork, meFor } from './fakeNetwork.js';
+import { FIELD_PERMS, createFakeNetwork, ensureGps, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
 const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
@@ -69,7 +69,7 @@ test('a new version is offered, keeps the unsynced record, and the record is del
   await page.getByRole('button', { name: /12951/ }).click();
   await page.getByRole('button', { name: 'Sunita Devi stage 1 next' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(dialog);
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: PNG });
   await expect(dialog.getByAltText('Captured evidence')).toBeVisible();
   await dialog.getByRole('button', { name: 'Mark attendance' }).click();

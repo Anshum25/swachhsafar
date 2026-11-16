@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IDS } from '../helpers/operationalFixtures.js';
-import { FIELD_PERMS, createFakeNetwork, meFor } from './fakeNetwork.js';
+import { FIELD_PERMS, createFakeNetwork, ensureGps, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
 const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
@@ -45,7 +45,7 @@ const toast = (page, text) => expect(page.getByTestId('toast').filter({ hasText:
 const queueBadge = (page) => page.getByTestId('ops-queue');
 
 async function captureEvidence(dialog) {
-  await dialog.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(dialog);
   await expect(dialog.getByText('28.61390, 77.20900')).toBeVisible();
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: PNG });
   await expect(dialog.getByAltText('Captured evidence')).toBeVisible();
@@ -121,7 +121,7 @@ test('operational screens capture and keep records with the network disconnected
   await page.getByLabel('Mobile').fill('9876543210');
   await page.getByLabel('PNR').fill('2451870001');
   await page.getByLabel('Seat No.').fill('23');
-  await page.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(page);
   await page.getByRole('button', { name: 'Save & Generate Verification Code' }).click();
   await toast(page, 'Passenger details saved on this device');
   await page.goto('/#/feedback');
@@ -133,7 +133,7 @@ test('operational screens capture and keep records with the network disconnected
   await page.getByLabel('Official name').fill('A. Inspector');
   await expect(page.getByText('1. Question 1')).toBeVisible();
   await page.getByText('1. Question 1').locator('..').getByRole('button', { name: '4', exact: true }).click();
-  await page.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(page);
   await page.getByRole('button', { name: 'Submit', exact: true }).click();
   await toast(page, 'Railway feedback saved on this device');
 

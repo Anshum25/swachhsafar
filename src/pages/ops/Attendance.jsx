@@ -11,7 +11,7 @@ import {
 } from '../../components/ui.jsx';
 import { CameraSolidIcon, CheckBoldIcon, CheckIcon, LockSolidIcon, RefreshIcon, TrainSolidIcon, UserSolidIcon, UsersIcon } from '../../components/Icons.jsx';
 import { canAct } from '../../services/authorization.js';
-import { deviceTimestamp } from '../../utils/capture.js';
+import { deviceTimestamp, stampLines } from '../../utils/capture.js';
 import { FaceCheckNote, faceFields, useFaceCheck } from '../../face/FaceCheck.jsx';
 import LiveFaceCapture from '../../face/LiveFaceCapture.jsx';
 import { FACE_MODEL } from '../../face/faceMatch.js';
@@ -40,6 +40,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const { queue } = useSession();
   const notify = useNotify();
   const [gps, setGps] = useState(null);
+  const [address, setAddress] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
   const policy = useResource(`/divisions/${journey.division_id}/policy`);
@@ -84,8 +85,8 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
             </div>
           )
             : <LiveFaceCapture name={target.staff.name} onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
-        ) : <PhotoCapture value={photo} onChange={setPhoto} required />}
-        <GpsCapture value={gps} onChange={setGps} />
+        ) : <PhotoCapture value={photo} onChange={setPhoto} required stamp={stampLines({ ...gps, address })} />}
+        <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} />
         <FaceCheckNote check={face} name={target.staff.name} />
         {gate.notice}
       </div>
@@ -115,6 +116,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [picked, setPicked] = useState({});
   const [photos, setPhotos] = useState({});
   const [gps, setGps] = useState(null);
+  const [address, setAddress] = useState(null);
   const [busy, setBusy] = useState(false);
   const [faces, setFaces] = useState({});
   const faceOn = policy.data?.attendance_face_verification === true;
@@ -167,7 +169,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         <form onSubmit={submit} className="space-y-3">
           <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Stage</p>
             <Segmented label="Stage" value={stage} onChange={(v) => { setStage(v); setPicked({}); }} options={stages} /></div>
-          <GpsCapture value={gps} onChange={setGps} />
+          <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} />
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase text-slate-500">Staff due for {STAGES[stage - 1]} ({chosen.length}/{members.length} selected)</p>
             <button type="button" className="btn-link text-xs" onClick={() => setPicked(Object.fromEntries(members.map((m) => [m.employee_id, true])))}>Select all</button>
@@ -185,6 +187,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                       <LiveFaceCapture name={m.name} onDone={(r) => { setLive((l) => ({ ...l, [m.employee_id]: r.liveness })); setPhotos((p) => ({ ...p, [m.employee_id]: r.photo })); }} />
                     ) : (
                       <PhotoCapture value={photos[m.employee_id]} required={photoRequired || faceOn}
+                        stamp={stampLines({ ...gps, address })}
                         onChange={(v) => { setLive((l) => ({ ...l, [m.employee_id]: liveOn ? null : l[m.employee_id] })); setPhotos((p) => ({ ...p, [m.employee_id]: liveOn ? null : v })); }} />
                     )}
                     <MemberFaceCheck photo={photos[m.employee_id]} member={m} enabled={faceOn} threshold={threshold} onResult={onFace} />

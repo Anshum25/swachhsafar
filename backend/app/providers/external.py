@@ -278,3 +278,58 @@ def get_vpn_provider() -> VpnProvider:
             raise RuntimeError("VPN_PROVIDER=http requires VPN_API_URL")
         return HttpVpnProvider(s.vpn_api_url, s.vpn_api_key.get_secret_value() if s.vpn_api_key else None, s.external_timeout_seconds)
     return DisabledVpnProvider()
+
+
+# ---- reverse geocoding ---------------------------------------------------------------------------------
+# Coordinates -> a street address, stamped on the photo a record is saved with, so a reviewer reads a place
+# instead of two numbers. Never required: the record's evidence is the coordinates, and an address that
+# cannot be fetched (disabled, offline, provider down) simply is not shown.
+
+GOOGLE_GEOCODE = "https://maps.googleapis.com/maps/api/geocode/json"
+
+
+class GeocodeProvider(Protocol):
+    def reverse(self, lat: float, lon: float) -> str | None: ...
+
+
+class DisabledGeocoder:
+    enabled = False
+
+    def reverse(self, lat: float, lon: float) -> str | None:
+        return None
+
+
+class GoogleGeocoder:
+    enabled = True
+
+    def __init__(self, key: str, region: str, timeout: float) -> None:
+        self._key, self._region, self._timeout = key, region, timeout
+
+    def reverse(self, lat: float, lon: float) -> str | None:
+        try:
+            resp = httpx.get(GOOGLE_GEOCODE, timeout=self._timeout,
+                             params={"latlng": f"{lat},{lon}", "key": self._key, "region": self._region})
+        except httpx.HTTPError as exc:
+            raise ProviderUnavailable("Geocoding service unreachable") from exc
+        if resp.status_code != 200:
+            raise ProviderUnavailable(f"Geocoding service answered HTTP {resp.status_code}")
+        data = resp.json() if resp.content else {}
+        status = data.get("status")
+        if status == "ZERO_RESULTS":
+            return None
+        if status != "OK":
+            # REQUEST_DENIED is the usual answer for a browser key used from a server, or one whose
+            # project has no Geocoding API: say so, rather than silently showing no address forever.
+            raise ProviderUnavailable(f"Geocoding refused: {status} {data.get('error_message', '')}".strip())
+        results = data.get("results") or []
+        return results[0].get("formatted_address") if results else None
+
+
+@lru_cache
+def get_geocode_provider() -> GeocodeProvider:
+    s = get_settings()
+    if s.geocode_provider == "google":
+        if not s.geocode_api_key:
+            raise RuntimeError("GEOCODE_PROVIDER=google requires GEOCODE_API_KEY")
+        return GoogleGeocoder(s.geocode_api_key.get_secret_value(), s.geocode_region, s.external_timeout_seconds)
+    return DisabledGeocoder()

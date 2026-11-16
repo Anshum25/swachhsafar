@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IDS } from '../helpers/operationalFixtures.js';
-import { FIELD_PERMS, createFakeNetwork, meFor } from './fakeNetwork.js';
+import { FIELD_PERMS, createFakeNetwork, ensureGps, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
 const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
@@ -55,7 +55,7 @@ test('face verification blocks offline attendance without a matching registered 
   // Sunita Devi is registered: a photo without a face cannot be saved.
   await page.getByRole('button', { name: 'Sunita Devi stage 1 next' }).click();
   let dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(dialog);
   await expect(dialog.getByTestId('face-check')).toHaveAttribute('data-status', 'waiting');
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'no-face.png', mimeType: 'image/png', buffer: NO_FACE });
   await expect(dialog.getByTestId('face-check')).toHaveAttribute('data-status', 'no_face', { timeout: 120_000 });
@@ -66,7 +66,7 @@ test('face verification blocks offline attendance without a matching registered 
   // Mohan Lal has no registered face: blocked before any analysis.
   await page.getByRole('button', { name: 'Mohan Lal stage 1 next' }).click();
   dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(dialog);
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: NO_FACE });
   await expect(dialog.getByTestId('face-check')).toHaveAttribute('data-status', 'not_enrolled');
   await expect(dialog.getByRole('button', { name: 'Mark attendance' })).toBeDisabled();

@@ -1,24 +1,41 @@
 import { useEffect, useRef, useState } from 'react';
 import { CameraIcon, PinIcon, Spinner } from './Icons.jsx';
 import { compressImage, getPosition } from '../utils/capture.js';
+import { reverseGeocode } from '../services/geocode.js';
+import { useSession } from '../app/session.jsx';
 import { validateMedia } from '../database/mediaStore.js';
 import { startVoiceRecording, voiceFormat } from '../utils/voiceRecording.js';
 import { useSecurity } from '../security/SecurityProvider.jsx';
 
-export function PhotoCapture({ value, onChange, required }) {
+// `stamp`: what to print across the foot of the photo (see stampLines). The picked file is kept so that a
+// location or address arriving after the photo re-stamps it, instead of leaving the first photo of a shift
+// as the only one without a place on it.
+export function PhotoCapture({ value, onChange, required, stamp }) {
   const input = useRef(null);
   const [error, setError] = useState(null);
+  const file = useRef(null);
+  const lines = JSON.stringify(stamp ?? []);
+  async function render(f, text) {
+    setError(null);
+    onChange(await compressImage(f, 1280, 0.8, text));
+  }
   async function pick(e) {
-    const file = e.target.files?.[0];
+    const picked = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
+    if (!picked) return;
+    file.current = picked;
     try {
-      setError(null);
-      onChange(await compressImage(file));
+      await render(picked, stamp ?? []);
     } catch (err) {
       setError(err.message);
     }
   }
+  useEffect(() => {
+    if (!file.current || !value) return;
+    render(file.current, JSON.parse(lines)).catch(() => {});
+    // Re-stamps only when the text actually changes; `value` is the output, so it is not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines]);
   return (
     <div>
       <input ref={input} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} data-testid="photo-input" />
@@ -46,10 +63,35 @@ const GUARD_ERRORS = {
   denied: 'Location permission is off for this app.', services_off: 'Location (GPS) is switched off.',
   timeout: 'No location fix arrived in time. Move near a window and try again.', unavailable: 'Location is not available right now.',
 };
-export function GpsCapture({ value, onChange }) {
+// `auto`: fetch the fix as soon as the form opens, so the usual case needs no tap at all. The button stays
+// for a retry or a refresh. `onAddress` receives the street address once it is known (null when there is
+// none: offline, or no geocoding configured).
+export function GpsCapture({ value, onChange, auto = false, onAddress }) {
   const sec = useSecurity();
+  const api = useSession()?.api;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [address, setAddress] = useState(null);
+  const started = useRef(false);
+  const onAddressRef = useRef(onAddress);
+  onAddressRef.current = onAddress;
+
+  // The address of the current fix, looked up through our own server. Offline it stays null and the photo
+  // is stamped with coordinates instead; nothing here can stop a record being saved.
+  useEffect(() => {
+    let cancelled = false;
+    if (!value || !api) {
+      setAddress(null);
+      return undefined;
+    }
+    reverseGeocode(api, value).then((found) => {
+      if (cancelled) return;
+      setAddress(found);
+      onAddressRef.current?.(found);
+    });
+    return () => { cancelled = true; };
+  }, [value?.latitude, value?.longitude, api]);
+
   async function locate() {
     setBusy(true);
     setError(null);
@@ -67,14 +109,31 @@ export function GpsCapture({ value, onChange }) {
       setBusy(false);
     }
   }
+  // With `auto`, the fix is fetched as the form opens: by the time the photo is taken the place is
+  // already known, and nobody has to remember to tap anything. Tried once, so a refusal is not retried
+  // in a loop; the button is still there.
+  useEffect(() => {
+    if (!auto || value || started.current) return;
+    started.current = true;
+    locate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto]);
+
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl bg-canvas px-3.5 py-2.5 ring-1 ring-line">
       <div className="flex min-w-0 items-center gap-2 text-[13px]">
         <PinIcon className={`h-5 w-5 shrink-0 ${value ? 'text-success' : 'text-slate-400'}`} />
         {value ? (
-          <span>{value.latitude.toFixed(5)}, {value.longitude.toFixed(5)} <span className="text-slate-500">±{Math.round(value.gps_accuracy_m)} m</span></span>
+          // The address is what a person recognises; the coordinates stay, smaller, because they are the
+          // evidence and the address is only a lookup of them.
+          <span className="min-w-0" data-testid="gps-value">
+            {address && <span className="block truncate font-medium text-ink" title={address}>{address}</span>}
+            <span className={address ? 'block text-xs text-slate-500' : ''}>
+              {value.latitude.toFixed(5)}, {value.longitude.toFixed(5)} <span className="text-slate-500">±{Math.round(value.gps_accuracy_m)} m</span>
+            </span>
+          </span>
         ) : (
-          <span className="text-slate-500">{error ?? 'Location not captured'}</span>
+          <span className="text-slate-500">{busy ? 'Getting location…' : error ?? 'Location not captured'}</span>
         )}
       </div>
       <button type="button" className="btn-secondary" onClick={locate} disabled={busy}>

@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IDS } from '../helpers/operationalFixtures.js';
-import { FIELD_PERMS, createFakeNetwork, meFor } from './fakeNetwork.js';
+import { FIELD_PERMS, createFakeNetwork, ensureGps, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
 const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
@@ -56,7 +56,7 @@ test('inspection video and photo: validated, persisted offline across restart, u
   await page.goto(`/#/inspections/${IDS.journey}`);
   await page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before open' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(dialog);
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: PNG });
   // Unsupported format and oversized files are refused with a reason, and nothing is attached.
   await dialog.getByTestId('video-input').setInputFiles({ name: 'clip.avi', mimeType: 'video/x-msvideo', buffer: MP4 });

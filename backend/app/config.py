@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     pnr_api_host: str | None = None
     pnr_api_key: SecretStr | None = None
 
+    # Reverse geocoding: coordinates -> a street address, stamped on attendance and inspection photos.
+    # "disabled" (the default) keeps everything working and simply shows coordinates; nothing leaves the
+    # server without a key. The key is a SERVER key: restrict it by the server's IP, not by HTTP referrer.
+    geocode_provider: Literal["disabled", "google"] = "disabled"
+    geocode_api_key: SecretStr | None = None
+    geocode_region: str = "IN"  # biases results to India (Google `region`)
+
     external_timeout_seconds: float = 15.0
     media_url_ttl_seconds: int = 600
 

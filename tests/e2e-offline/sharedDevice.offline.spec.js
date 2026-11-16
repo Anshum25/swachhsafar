@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IDS } from '../helpers/operationalFixtures.js';
-import { createFakeNetwork, meFor } from './fakeNetwork.js';
+import { createFakeNetwork, ensureGps, meFor } from './fakeNetwork.js';
 import { istDate } from '../../src/utils/businessDate.js';
 
 const A = 'supervisor.shared@example.com';
@@ -85,7 +85,7 @@ test("one user's offline records are never synced with another user's session", 
   await page.getByRole('button', { name: /12951/ }).click();
   await page.getByRole('button', { name: 'Sunita Devi stage 1 next' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Get GPS' }).click();
+  await ensureGps(dialog);
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: PNG });
   await dialog.getByRole('button', { name: 'Mark attendance' }).click();
   await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toBeVisible();

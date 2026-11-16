@@ -2,8 +2,22 @@
 // Every Google API and /api/v1 request is answered or refused by Playwright routing, so nothing leaves
 // the browser. Each user gets their own unsigned ID token; the server records whose token delivered
 // each operation, so tests can check that records are only ever sent with their owner's credentials.
+import { expect } from '@playwright/test';
 import { changesFixture } from '../helpers/operationalFixtures.js';
 import { DEFAULT_POLICY } from '../../src/database/masterDataRepository.js';
+
+// A location on the form, however it got there. Attendance asks for the fix as soon as the dialog opens,
+// so there is usually nothing to tap and the button has already become "Refresh"; other forms still wait
+// for a tap. Either way this returns once the fix is on screen.
+export async function ensureGps(scope) {
+  const value = scope.getByTestId('gps-value');
+  // Matches both labels on purpose: an automatic fetch renames the button from "Get GPS" to "Refresh"
+  // the moment it succeeds, and a locator pinned to one of them stops matching mid-click.
+  const button = scope.getByRole('button', { name: /Get GPS|Refresh/ });
+  await expect(button).toBeEnabled({ timeout: 30_000 }); // an automatic fetch has finished, or never ran
+  if (!(await value.isVisible().catch(() => false))) await button.click();
+  await expect(value).toBeVisible({ timeout: 30_000 });
+}
 
 const b64url = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 
