@@ -84,7 +84,11 @@ test.afterAll(() => expect(net.server.cspViolations).toEqual([]));
 test('every screen fits phone, tablet and desktop widths', async () => {
   test.setTimeout(600_000);
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
-  const context = await chromium.launchPersistentContext(dir, { ...pixel, baseURL: BASE });
+  // Location must be granted, as in every other operational spec: without it the app shows the "Location
+  // permission is off" block instead of the screens whose layout this test measures.
+  const context = await chromium.launchPersistentContext(dir, {
+    ...pixel, baseURL: BASE, geolocation: { latitude: 28.6139, longitude: 77.209, accuracy: 15 }, permissions: ['geolocation'],
+  });
   await net.install(context);
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto('/#/login');

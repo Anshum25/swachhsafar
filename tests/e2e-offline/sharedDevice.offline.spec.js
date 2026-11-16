@@ -36,6 +36,14 @@ test.afterAll(() => {
 
 async function signIn(page, email, firstName) {
   await page.goto('/#/login');
+  // This spec signs out while offline, so the login screen is already on the page with a security check
+  // that could not be fetched. A hash navigation does not reload it, so ask for a fresh code once the
+  // device is back online, exactly as a user would.
+  const code = page.getByRole('img', { name: 'Number to type' });
+  if (!(await code.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: 'New security code' }).click();
+    await expect(code).toBeVisible();
+  }
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill('E2e-Password-1');
   // The sign-in form keeps its button disabled until the visible security check is answered; the fake
