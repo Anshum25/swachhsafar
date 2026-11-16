@@ -91,6 +91,9 @@ test('every screen fits phone, tablet and desktop widths', async () => {
   await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30_000 });
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password', { exact: true }).fill('E2e-Password-1');
+  // The sign-in form keeps its button disabled until the visible security check is answered; the fake
+  // backend (fakeNetwork.js) accepts 12345.
+  await page.getByLabel('Security code', { exact: true }).fill('12345');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.goto('/#/journeys');
   await expect(page.getByText('Mumbai Rajdhani').first()).toBeVisible({ timeout: 60_000 });
