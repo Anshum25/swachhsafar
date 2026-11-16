@@ -4,10 +4,14 @@
 # Repository settings needed (Settings -> Secrets and variables -> Actions):
 #   Secrets:   DEPLOY_SSH_KEY      private key whose public half is in swachhdeploy@server authorized_keys
 #              DEPLOY_KNOWN_HOSTS  output of: ssh-keyscan 76.13.243.27
-#              (APK, later) ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#              ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#                                  the release signing key; the keystore is generated locally and never committed
 #   Variables: VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID,
 #              VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID (public web config)
-#              DEPLOY_HOST (76.13.243.27), BUILD_APK ('true' once the android/ project builds)
+#              DEPLOY_HOST (76.13.243.27), BUILD_APK ('true' to build and publish the Android app)
+#              APK_API_BASE_URL (optional) the API the APK talks to; defaults to https://ehk.itfarmer.in/api/v1.
+#                               The APK is served from https://localhost by its WebView, so unlike the PWA it
+#                               cannot use a relative /api/v1, and that origin must be in the backend's CORS_ORIGINS.
 name: test-build-deploy
 
 on:
@@ -73,10 +77,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
+      # Capacitor 8 builds with JDK 21 (android/app/capacitor.build.gradle sets source/target 21).
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
+        with: { distribution: temurin, java-version: '21' }
       - uses: android-actions/setup-android@v3
       - run: npm ci
+      # The APK's pages are served from https://localhost by the WebView, so a relative /api/v1 would point
+      # at the app's own assets: this build, and only this build, carries the server's absolute API base.
       - env:
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -85,6 +92,8 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
           VITE_DEMO_MODE: 'false'
+          VITE_API_BASE_URL: ${{ vars.APK_API_BASE_URL || 'https://ehk.itfarmer.in/api/v1' }}
+          VITE_BUILD_SHA: ${{ github.sha }}
         run: npx vite build && npx cap sync android
       - name: Build and sign release APK
         env:
@@ -101,8 +110,23 @@ jobs:
             --ks-key-alias "$ANDROID_KEY_ALIAS" --key-pass env:ANDROID_KEY_PASSWORD --out ../app.apk "$RUNNER_TEMP/aligned.apk"
           "$BT/apksigner" verify ../app.apk
           rm -f "$RUNNER_TEMP/release.jks"
+      # What /downloads/latest.json will say about this release: read from the signed APK itself, never
+      # written by hand. The server adds the commit id and the file name (deploy/scripts/receive-release.sh).
+      - name: Describe the release
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/aapt2" dump badging app.apk > badging.txt
+          if grep -q application-debuggable badging.txt; then echo "Refusing: debuggable release build"; exit 1; fi
+          "$BT/apksigner" verify --print-certs app.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -n1 > cert.txt
+          python3 scripts/describe-apk.py app.apk badging.txt cert.txt > apk.json
+          cat apk.json
       - uses: actions/upload-artifact@v4
-        with: { name: apk, path: app.apk, retention-days: 30 }
+        with:
+          name: apk
+          path: |
+            app.apk
+            apk.json
+          retention-days: 30
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !cancelled() && needs.build-web.result == 'success' && needs.build-apk.result != 'failure'
