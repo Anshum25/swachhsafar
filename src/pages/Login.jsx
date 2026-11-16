@@ -251,16 +251,21 @@ export default function Login() {
             )}
 
             <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              {/* 4. Email Field */}
+              {/* 4. Email or Employee ID. Sign-in accepts either (the backend matches emp_id or email), so
+                   this must not be type="email": the browser would refuse an employee ID for having no "@". */}
               <label className="block">
-                <span className="mb-1.5 block text-sm font-semibold text-slate-700">Email</span>
+                <span className="mb-1.5 block text-sm font-semibold text-slate-700">Email or Employee ID</span>
                 <input
                   id="email"
-                  aria-label="Email"
+                  aria-label="Email or Employee ID"
                   className="input h-11"
                   name="username"
-                  type="email"
-                  autoComplete="email username"
+                  type="text"
+                  inputMode="email"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   placeholder="name@railnet.gov.in or EMP ID"
                   value={email}

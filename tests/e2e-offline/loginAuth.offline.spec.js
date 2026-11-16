@@ -62,6 +62,14 @@ test.describe('Login Screen — Visible CAPTCHA & Mobile OTP Authentication', ()
     const emailInput = page.getByLabel('Email');
     await expect(emailInput).toBeVisible();
 
+    // Sign-in accepts an Employee ID as well as an e-mail (the backend matches either), and an Employee ID
+    // has no "@". A type="email" field would make the browser refuse to submit the form before the app ever
+    // sees it, with "Please include an '@' in the email address".
+    await expect(emailInput).not.toHaveAttribute('type', 'email');
+    await emailInput.fill('EMP123');
+    expect(await emailInput.evaluate((el) => el.checkValidity())).toBe(true);
+    await emailInput.fill('');
+
     const passwordInput = page.getByLabel('Password', { exact: true });
     await expect(passwordInput).toBeVisible();
 
