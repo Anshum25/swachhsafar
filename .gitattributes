@@ -1,0 +1,12 @@
+# Files that are run by a shell must keep LF endings whatever a contributor's core.autocrlf is set to:
+# a CRLF `gradlew` or deploy script is not runnable on the Linux CI runner or on the server
+# ("bad interpreter: /bin/sh^M"). gradlew also needs its executable bit (git update-index --chmod=+x).
+android/gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows-only script, and binaries git must never touch.
+android/gradlew.bat text eol=crlf
+*.jar binary
+*.jks binary
+*.keystore binary
+*.apk binary

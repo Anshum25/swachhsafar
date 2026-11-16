@@ -1,4 +1,6 @@
-package in.itfarmer.swachhsafar.security
+// Kotlin reserves `in`, so the first segment of the package name (in.itfarmer.swachhsafar) has to be
+// written escaped. The compiled package is the plain one the manifest and Capacitor expect.
+package `in`.itfarmer.swachhsafar.security
 
 import android.Manifest
 import android.content.Context
