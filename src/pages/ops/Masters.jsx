@@ -91,24 +91,78 @@ function Trains({ divisionId }) {
   );
 }
 
+// Shown once, after a sign-in is created: the password exists nowhere else, so it is this or nothing.
+function SignInCreated({ user, result, onClose }) {
+  return (
+    <div className="space-y-3" data-testid="signin-created">
+      <p className="text-sm text-slate-700">
+        <b>{user.name}</b> can now sign in with <b>{user.email}</b> or employee ID <b>{user.emp_id}</b>.
+      </p>
+      {result.temp_password ? (
+        <>
+          <Field label="Password"><input className="input font-mono" readOnly value={result.temp_password} data-testid="temp-password" /></Field>
+          <p className="text-xs text-amber-800">
+            Write it down and give it to them now. It is not stored anywhere and cannot be shown again.
+          </p>
+        </>
+      ) : result.signin === 'existing' ? (
+        <p className="text-sm text-slate-600">
+          They had already registered with this address, so their existing password still applies. Nothing was changed.
+        </p>
+      ) : (
+        <p className="text-sm text-slate-600">They sign in with the password you chose.</p>
+      )}
+      <button type="button" className="btn-primary h-12 w-full" onClick={onClose}>Done</button>
+    </div>
+  );
+}
+
 function UserForm({ divisionId, onClose, onSaved }) {
   const { api, user } = useSession();
-  const save = useSave(onSaved);
-  const [f, setF] = useState({ emp_id: '', name: '', email: '', mobile: '', designation: '', role_id: '5' });
+  const [created, setCreated] = useState(null);
+  const save = useSave((u) => { setCreated(u); onSaved?.(u); });
+  const [f, setF] = useState({ emp_id: '', name: '', email: '', mobile: '', designation: '', role_id: '5', password: '' });
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target?.value ?? e }));
   const roles = Object.entries(ROLE_NAMES).filter(([id]) => Number(id) > user.role_id);
+  if (created) return <SignInCreated user={created} result={created} onClose={onClose} />;
   return (
-    <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/users', { ...f, role_id: Number(f.role_id), division_id: divisionId, email: f.email || null, mobile: f.mobile || null, designation: f.designation || null }), 'User created.'); }} className="space-y-3">
+    <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/users', { ...f, role_id: Number(f.role_id), division_id: divisionId, email: f.email || null, mobile: f.mobile || null, designation: f.designation || null, password: f.password || null }), 'User created.'); }} className="space-y-3">
       <ErrorNote error={save.error} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Employee ID"><input className="input" required value={f.emp_id} onChange={set('emp_id')} /></Field>
         <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={set('name')} /></Field>
-        <Field label="Email" hint="Must match the Firebase sign-in email"><input type="email" className="input" value={f.email} onChange={set('email')} /></Field>
+        <Field label="Email" hint="Their sign-in is created with this address"><input type="email" className="input" value={f.email} onChange={set('email')} /></Field>
         <Field label="Mobile"><input className="input" pattern="[6-9][0-9]{9}" value={f.mobile} onChange={set('mobile')} /></Field>
         <Field label="Designation"><input className="input" value={f.designation} onChange={set('designation')} /></Field>
         <Field label="Role"><Select value={f.role_id} onChange={set('role_id')} options={roles.map(([value, l]) => ({ value, label: l }))} /></Field>
+        {f.email && (
+          <Field label="Password" hint="At least 8 characters. Leave empty and one is generated for you.">
+            <input className="input" type="text" minLength={8} autoComplete="new-password" value={f.password} onChange={set('password')} />
+          </Field>
+        )}
       </div>
       <SubmitBar busy={save.busy} label="Create user" onCancel={onClose} />
+    </form>
+  );
+}
+
+// For employees created before sign-ins came with the record: gives them one without a server command.
+function SignInForm({ user, onClose, onSaved }) {
+  const { api } = useSession();
+  const [created, setCreated] = useState(null);
+  const save = useSave((u) => { setCreated(u); onSaved?.(u); });
+  const [password, setPassword] = useState('');
+  if (created) return <SignInCreated user={created} result={created} onClose={onClose} />;
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post(`/users/${user.id}/signin`, { password: password || null }), 'Sign-in created.'); }} className="space-y-3">
+      <ErrorNote error={save.error} />
+      <p className="text-sm text-slate-600">
+        <b>{user.name}</b> has no sign-in yet, so they cannot open the app. This creates one for <b>{user.email}</b>.
+      </p>
+      <Field label="Password" hint="At least 8 characters. Leave empty and one is generated for you.">
+        <input className="input" type="text" minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      </Field>
+      <SubmitBar busy={save.busy} label="Create sign-in" onCancel={onClose} />
     </form>
   );
 }
@@ -121,6 +175,7 @@ function Users({ divisionId }) {
   const res = useResource('/users', { division_id: divisionId, q, page_size: 200 });
   const [creating, setCreating] = useState(false);
   const [faceFor, setFaceFor] = useState(null);
+  const [signInFor, setSignInFor] = useState(null);
   async function toggle(u) {
     try {
       await api.post(`/users/${u.id}/status`, { status: u.status === 'active' ? 'inactive' : 'active' });
@@ -137,7 +192,15 @@ function Users({ divisionId }) {
           <Table rows={page.items} columns={[
             { key: 'name', label: 'Name', render: (u) => <><span className="font-medium">{u.name}</span><span className="block text-xs text-slate-500">{u.emp_id} · {u.email ?? 'no email'}</span></> },
             { key: 'role', label: 'Role', render: (u) => ROLE_NAMES[u.role_id] },
-            { key: 'firebase_linked', label: 'Sign-in', render: (u) => <Badge tone={u.firebase_linked ? 'green' : 'amber'}>{u.firebase_linked ? 'Linked' : 'Not linked'}</Badge> },
+            // "Not linked" means the employee cannot sign in at all. Where that can be put right here and
+            // now, the badge is the button that does it, rather than a dead-end label.
+            { key: 'firebase_linked', label: 'Sign-in', render: (u) => (
+              u.firebase_linked ? <Badge tone="green">Linked</Badge>
+                : manage && u.email ? (
+                  <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setSignInFor(u); }}
+                    aria-label={`Create sign-in for ${u.name}`}>Create sign-in</button>
+                ) : <Badge tone="amber" title={u.email ? undefined : 'Add an email address first'}>Not linked</Badge>
+            ) },
             { key: 'status', label: 'Status', render: (u) => manage
               ? <button type="button" onClick={() => toggle(u)}><Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge></button>
               : <Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge> },
@@ -149,8 +212,13 @@ function Users({ divisionId }) {
         )}
       </DataState>
       {faceFor && <FaceEnrollDialog user={faceFor} onClose={() => setFaceFor(null)} />}
+      <Dialog open={!!signInFor} title="Create sign-in" onClose={() => setSignInFor(null)}>
+        {signInFor && <SignInForm user={signInFor} onClose={() => setSignInFor(null)} onSaved={res.reload} />}
+      </Dialog>
       <Dialog open={creating} title="Add user" onClose={() => setCreating(false)} wide>
-        <UserForm divisionId={divisionId} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); res.reload(); }} />
+        {/* The dialog stays open after saving: it now shows the new sign-in's password, which exists
+            nowhere else. Closing it is the "Done" button's job. */}
+        <UserForm divisionId={divisionId} onClose={() => setCreating(false)} onSaved={res.reload} />
       </Dialog>
     </Panel>
   );

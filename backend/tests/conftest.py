@@ -153,9 +153,9 @@ def db(engine):
 
 @pytest.fixture
 def fakes():
-    from tests.factories import FakePnr, FakeSms, FakeVerifier
+    from tests.factories import FakePnr, FakeProvisioner, FakeSms, FakeVerifier
 
-    return FakeVerifier(), FakeSms(), FakePnr()
+    return FakeVerifier(), FakeSms(), FakePnr(), FakeProvisioner()
 
 
 @pytest.fixture
@@ -165,15 +165,17 @@ def client(engine, fakes):
     from app.main import app
     from app.providers.external import get_pnr_provider, get_sms_provider
     from app.providers.storage import LocalStorage, get_storage
+    from app.security.identity import get_identity_provisioner
     from app.security.tokens import get_token_verifier
 
-    verifier, sms, pnr = fakes
+    verifier, sms, pnr, provisioner = fakes
     storage = LocalStorage(str(_MEDIA))
     app.dependency_overrides.update({
         get_token_verifier: lambda: verifier,
         get_sms_provider: lambda: sms,
         get_pnr_provider: lambda: pnr,
         get_storage: lambda: storage,
+        get_identity_provisioner: lambda: provisioner,
     })
     with TestClient(app) as c:
         yield c

@@ -33,6 +33,19 @@ class TokenIssuer(Protocol):
     def uid_for_email(self, email: str) -> str | None: ...
 
 
+@dataclass(frozen=True)
+class LoginProvisioned:
+    uid: str
+    created: bool  # False: an account for this address already existed and was adopted, password untouched
+
+
+class IdentityProvisioner(Protocol):
+    """Gives a provisioned employee the Firebase login their sign-in needs, so an administrator creating a
+    user in the app is all it takes."""
+
+    def ensure_login(self, email: str, password: str, display_name: str | None = None) -> LoginProvisioned: ...
+
+
 class FirebasePasswordVerifier:
     def check(self, email: str, password: str) -> PasswordCheck:
         s = get_settings()
@@ -83,9 +96,35 @@ class FirebaseTokenIssuer:
             return None
 
 
+class FirebaseIdentityProvisioner:
+    def __init__(self) -> None:
+        from app.security.tokens import get_token_verifier
+
+        get_token_verifier()  # initialises firebase_admin with the service account
+
+    def ensure_login(self, email: str, password: str, display_name: str | None = None) -> LoginProvisioned:
+        from firebase_admin import auth
+
+        try:
+            # Somebody already registered with this address: adopt that account rather than creating a
+            # second one, and never touch its password -- it is theirs, not the administrator's to reset.
+            return LoginProvisioned(auth.get_user_by_email(email).uid, created=False)
+        except auth.UserNotFoundError:
+            pass
+        # The e-mail is not marked verified: nobody has proved they own it. Sign-in does not need that here,
+        # because the employee is linked to this UID explicitly, and only the unlinked path requires proof.
+        return LoginProvisioned(auth.create_user(email=email, password=password, display_name=display_name).uid,
+                                created=True)
+
+
 @lru_cache
 def get_password_verifier() -> PasswordVerifier:
     return FirebasePasswordVerifier()
+
+
+@lru_cache
+def get_identity_provisioner() -> IdentityProvisioner:
+    return FirebaseIdentityProvisioner()
 
 
 @lru_cache

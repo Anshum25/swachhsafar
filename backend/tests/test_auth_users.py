@@ -1,6 +1,9 @@
+import uuid
 from datetime import timedelta
 
-from app.models import EmployeeKyc, RoleId, UserStatus
+from sqlalchemy import select
+
+from app.models import EmployeeKyc, RoleId, User, UserStatus
 from app.timeutil import today_ist
 from tests.factories import make_user
 
@@ -145,3 +148,81 @@ def test_cli_link_user_links_login_and_restricts_role(world, db):
     assert link_user(db, email=sup.email, firebase_uid="uid-other", role=None) == 2
     assert link_user(db, email=other.email, firebase_uid="uid-new-login", role=None) == 2
     assert link_user(db, email="nobody@example.com", firebase_uid="x", role=None) == 2
+
+
+# ---- sign-in comes with the employee ------------------------------------------------------------------
+# An administrator creating a user in the app is all it takes. Before this, a created employee had no login
+# at all: they appeared "Not linked" and only found out at the sign-in screen, and an administrator had to
+# run a server command or have the person register and verify an e-mail.
+
+
+def test_creating_a_user_with_an_email_creates_their_signin(client, world, db, fakes):
+    provisioner = fakes[3]
+    body = dict(emp_id="S1", name="Sign In", email="Sign.In@Example.com", role_id=5, division_id=str(world.a.id))
+    r = client.post(f"{API}/users", headers=world.h("manager"), json=body)
+    assert r.status_code == 201, r.text
+    out = r.json()
+    assert out["firebase_linked"] is True and out["signin"] == "created"
+    # The generated password is returned once, and is the one actually set on the identity store.
+    assert out["temp_password"] and provisioner.created["sign.in@example.com"] == out["temp_password"]
+    user = db.get(User, uuid.UUID(out["id"]))
+    db.refresh(user)
+    assert user.firebase_uid == "uid-sign.in@example.com"
+
+
+def test_administrator_may_choose_the_password_and_it_is_never_echoed(client, world, fakes):
+    body = dict(emp_id="S2", name="Chosen", email="chosen@example.com", role_id=5,
+                division_id=str(world.a.id), password="Platform-9-and-3quarters")
+    out = client.post(f"{API}/users", headers=world.h("manager"), json=body).json()
+    assert out["signin"] == "created" and out["temp_password"] is None
+    assert fakes[3].created["chosen@example.com"] == "Platform-9-and-3quarters"
+
+
+def test_an_employee_without_an_email_gets_no_signin(client, world):
+    out = client.post(f"{API}/users", headers=world.h("manager"),
+                      json=dict(emp_id="S3", name="No Mail", role_id=5, division_id=str(world.a.id))).json()
+    assert out["firebase_linked"] is False and out["signin"] is None and out["temp_password"] is None
+
+
+def test_an_account_that_already_exists_is_adopted_with_its_own_password(client, world, fakes):
+    """Somebody registered themselves first. Their account is linked, their password left alone, and no
+    password is reported -- handing the administrator one that does not work would be worse than none."""
+    fakes[3].existing["known@example.com"] = "uid-already-there"
+    out = client.post(f"{API}/users", headers=world.h("manager"),
+                      json=dict(emp_id="S4", name="Known", email="known@example.com", role_id=5,
+                                division_id=str(world.a.id))).json()
+    assert out["signin"] == "existing" and out["temp_password"] is None
+    assert out["firebase_linked"] is True
+    assert "known@example.com" not in fakes[3].created
+
+
+def test_signin_for_an_employee_who_has_none(client, world, db, fakes):
+    """The repair path for employees created before sign-ins came with the record."""
+    user = make_user(db, world.a, RoleId.JANITOR, "Later Mail", email="later@example.com", firebase_uid=None)
+    assert user.firebase_uid is None
+    out = client.post(f"{API}/users/{user.id}/signin", headers=world.h("manager"), json={}).json()
+    assert out["signin"] == "created" and out["temp_password"]
+    assert fakes[3].created["later@example.com"] == out["temp_password"]
+    # Asking twice is refused rather than silently resetting a password someone is already using.
+    again = client.post(f"{API}/users/{user.id}/signin", headers=world.h("manager"), json={})
+    assert again.status_code == 422 and "already sign in" in again.json()["error"]["message"]
+
+
+def test_signin_needs_an_email_and_the_right_to_manage_that_user(client, world, db):
+    no_mail = make_user(db, world.a, RoleId.JANITOR, "Mailless", firebase_uid=None)
+    r = client.post(f"{API}/users/{no_mail.id}/signin", headers=world.h("manager"), json={})
+    assert r.status_code == 422 and "e-mail" in r.json()["error"]["message"]
+    other = make_user(db, world.b, RoleId.JANITOR, "Other Division", email="other@example.com", firebase_uid=None)
+    assert client.post(f"{API}/users/{other.id}/signin", headers=world.h("manager"), json={}).status_code == 403
+    assert client.post(f"{API}/users/{other.id}/signin", headers=world.h("sup"), json={}).status_code == 403
+
+
+def test_nothing_is_saved_when_the_identity_store_fails(client, world, db, fakes):
+    """A half-created employee -- a record with no possible sign-in -- is exactly what this feature exists
+    to prevent, so the whole request fails and the administrator can simply try again."""
+    fakes[3].fails = True
+    r = client.post(f"{API}/users", headers=world.h("manager"),
+                    json=dict(emp_id="S5", name="Doomed", email="doomed@example.com", role_id=5,
+                              division_id=str(world.a.id)))
+    assert r.status_code == 503 and r.json()["error"]["code"] == "signin_unavailable"
+    assert db.scalar(select(User).where(User.emp_id == "S5")) is None

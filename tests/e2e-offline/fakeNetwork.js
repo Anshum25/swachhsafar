@@ -32,6 +32,9 @@ export function createFakeNetwork({ users, today }) {
   const masters = {
     departments: seed.complaint_departments, categories: seed.complaint_categories, items: seed.inventory_items,
     banks: seed.question_banks,
+    // Employees the Users tab lists. `signins` records what the server was asked to create, so a test can
+    // tell a real provisioning apart from a page that merely looks right.
+    staff: [],
     // backend get_policy: PolicySettings with defaults for anything the division has not set
     policies: Object.fromEntries(Object.entries(seed.policies).map(([d, p]) => [d, { ...DEFAULT_POLICY, ...p }])),
   };
@@ -220,6 +223,36 @@ export function createFakeNetwork({ users, today }) {
       return { status: 200, body: row };
     };
     let m;
+    // ---- employees and their sign-ins ----------------------------------------------------------------
+    if (method === 'GET' && path === '/users') {
+      const d = query.get('division_id');
+      if (d && !member(d)) return outside;
+      return { status: 200, body: { items: masters.staff.filter((u) => u.division_id === d), total: masters.staff.length, page: 1, page_size: 200 } };
+    }
+    if (method === 'POST' && path === '/users') {
+      if (!can('users.manage', body.division_id)) return forbidden;
+      // The server creates the sign-in with the employee: linked straight away, and the generated password
+      // is returned once (absent when the administrator chose one).
+      const generated = body.email && !body.password ? 'gen-pass-1234' : null;
+      const row = {
+        id: crypto.randomUUID(), status: 'active', updated_at: now, name_hindi: null, gender: null, lang: 'en',
+        ...body, email: body.email ? body.email.toLowerCase() : null,
+        firebase_linked: !!body.email,
+        temp_password: generated,
+        signin: body.email ? 'created' : null,
+      };
+      delete row.password;
+      masters.staff.push(row);
+      return { status: 201, body: row };
+    }
+    if ((m = path.match(/^\/users\/([^/]+)\/signin$/)) && method === 'POST') {
+      const row = masters.staff.find((u) => u.id === m[1]);
+      if (!row) return { status: 404, body: { error: { code: 'not_found', message: 'Not found' } } };
+      if (!can('users.manage', row.division_id)) return forbidden;
+      if (row.firebase_linked) return invalid('This employee can already sign in');
+      Object.assign(row, { firebase_linked: true, signin: 'created', temp_password: body.password ? null : 'gen-pass-5678', updated_at: now });
+      return { status: 200, body: row };
+    }
     if (method === 'GET' && path === '/complaints/departments') return list(masters.departments);
     if (method === 'GET' && path === '/complaints/categories') return list(masters.categories);
     if (method === 'GET' && path === '/inventory/items') return list(masters.items);

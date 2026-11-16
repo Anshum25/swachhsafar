@@ -12,7 +12,7 @@ import { istDate } from '../../src/utils/businessDate.js';
 
 const ADMIN = 'admin.masters@example.com';
 const VIEWER = 'viewer.masters@example.com';
-const MANAGE = ['trains.read', 'questions.manage', 'complaints.masters.manage', 'inventory.items.manage', 'policies.manage'];
+const MANAGE = ['trains.read', 'questions.manage', 'complaints.masters.manage', 'inventory.items.manage', 'policies.manage', 'users.read', 'users.manage'];
 const net = createFakeNetwork({
   today: istDate(new Date()),
   users: {
@@ -184,4 +184,52 @@ test('master data: online administration, offline reads, read-only users', async
   await expect(page.getByRole('button', { name: /New version|New bank/ })).toHaveCount(0);
   expect(server.masterWrites.length).toBe(writes);
   await context.close();
+});
+
+
+// An employee an administrator creates can sign in straight away. Before this, creating a user left them
+// with no login at all: the Users tab said "Not linked", and only a server command or a self-registration
+// with a verified e-mail could fix it -- which nobody discovered until the person tried to sign in.
+test('creating a user creates their sign-in, and an unlinked one can be given it', async () => {
+  const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
+  const profile = mkdtempSync(join(tmpdir(), 'swachh-signin-'));
+  const context = await chromium.launchPersistentContext(profile, {
+    ...pixel, baseURL: `http://localhost:${process.env.E2E_PORT || '4175'}/`,
+    geolocation: { latitude: 28.6139, longitude: 77.209, accuracy: 15 }, permissions: ['geolocation'],
+  });
+  await net.install(context);
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('/#/login');
+  await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30_000 });
+  await signIn(page, ADMIN, 'Asha');
+
+  // An employee who already exists without a sign-in, as every user created before this feature did.
+  net.masters.staff.push({ id: 'stuck-user-id', emp_id: '1213', name: 'Om Unlinked', email: 'om@example.com',
+    role_id: 5, division_id: IDS.division, status: 'active', firebase_linked: false, updated_at: new Date().toISOString() });
+
+  await openTab(page, 'Users');
+  await page.getByRole('button', { name: 'Add user' }).click();
+  let dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Employee ID').fill('NEW1');
+  await dialog.getByLabel('Name').fill('New Janitor');
+  await dialog.getByLabel('Email').fill('new.janitor@example.com');
+  await dialog.getByRole('button', { name: 'Create user' }).click();
+
+  // The password is shown once, because it exists nowhere else.
+  await expect(dialog.getByTestId('signin-created')).toBeVisible();
+  await expect(dialog.getByTestId('temp-password')).toHaveValue('gen-pass-1234');
+  await expect(dialog.getByText(/cannot be shown again/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('row', { name: /New Janitor/ })).toContainText('Linked');
+
+  // That employee is offered a sign-in, instead of a dead-end "Not linked" label.
+  const row = page.getByRole('row', { name: /Om Unlinked/ });
+  await row.getByRole('button', { name: /Create sign-in/ }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Create sign-in' }).click();
+  await expect(dialog.getByTestId('temp-password')).toHaveValue('gen-pass-5678');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('row', { name: /Om Unlinked/ })).toContainText('Linked');
+  await context.close();
+  rmSync(profile, { recursive: true, force: true });
 });

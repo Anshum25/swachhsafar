@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from app.errors import Unauthenticated
 from app.models import Division, RoleId, User, UserStatus
 from app.providers.external import PnrResult, ProviderUnavailable
+from app.security.identity import LoginProvisioned
 from app.timeutil import today_ist
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + bytes(200)
@@ -24,6 +25,26 @@ class FakeVerifier:
             raise Unauthenticated("Invalid or expired token", code="invalid_token")
         uid = token[4:]
         return self.claims.get(uid, {"uid": uid})
+
+
+class FakeProvisioner:
+    """Stands in for Firebase when an employee's sign-in is created. Records what was asked for, and returns
+    the same UID for an address it has seen before, as the real one adopts an existing account."""
+
+    def __init__(self) -> None:
+        self.created: dict[str, str] = {}  # email -> password
+        self.existing: dict[str, str] = {}  # email -> uid of an account that already exists
+        self.fails = False
+
+    def ensure_login(self, email: str, password: str, display_name: str | None = None) -> LoginProvisioned:
+        if self.fails:
+            raise RuntimeError("identity store unavailable")
+        if email in self.existing:
+            return LoginProvisioned(self.existing[email], created=False)
+        self.created[email] = password
+        uid = f"uid-{email}"
+        self.existing[email] = uid
+        return LoginProvisioned(uid, created=True)
 
 
 class FakeSms:
