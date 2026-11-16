@@ -2,11 +2,16 @@
 //
 // Updates are prompted, not forced: a new version waits until the user taps "Update" (pwa.update), so a
 // running page never has its lazily-loaded screens removed from the cache underneath it.
+//
+// Not registered inside the Android app: there the whole build is packaged in the APK and served from
+// https://localhost by the WebView, so there is nothing for a service worker to cache and no new version to
+// fetch — the app is updated by installing a newer APK (src/pwa/appUpdate.js).
 import { registerSW } from 'virtual:pwa-register';
+import { isNativeApp } from '../security/native.js';
 import { pwa } from './pwaState.js';
 
 export function registerServiceWorker() {
-  if (!('serviceWorker' in navigator) || import.meta.env.DEV) return;
+  if (!('serviceWorker' in navigator) || import.meta.env.DEV || isNativeApp()) return;
   const update = registerSW({
     immediate: true,
     onNeedRefresh: () => pwa.needRefresh(),

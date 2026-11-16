@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import Logo from '../components/Logo.jsx';
 import { installInstructions } from '../pwa/pwaState.js';
+import { serverUrl } from '../services/serverOrigin.js';
 
 const ANDROID_VERSIONS = { 24: '7.0', 26: '8.0', 28: '9', 29: '10', 30: '11', 31: '12', 33: '13', 34: '14' };
 const ua = () => (typeof navigator === 'undefined' ? '' : navigator.userAgent);
@@ -13,13 +14,19 @@ export const platformOf = (agent = ua()) =>
     ? 'ios' : /Android/i.test(agent) ? 'android' : 'desktop';
 
 const mb = (n) => `${(n / 1_048_576).toFixed(1)} MB`;
+const released = ({ released_at: at, published_at: pub }) => {
+  const d = new Date(at ?? pub ?? '');
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 export default function Download() {
   const [release, setRelease] = useState({ status: 'loading' });
   const platform = platformOf();
 
   useEffect(() => {
-    fetch('/downloads/latest.json', { cache: 'no-store', headers: { Accept: 'application/json' } })
+    // serverUrl keeps this relative in the browser and points it at the site inside the Android app, where
+    // the page itself is served from https://localhost.
+    fetch(serverUrl('/downloads/latest.json'), { cache: 'no-store', headers: { Accept: 'application/json' } })
       .then(async (r) => {
         const type = r.headers.get('content-type') ?? '';
         if (!r.ok || !type.includes('json')) return setRelease({ status: 'none' });
@@ -46,15 +53,17 @@ export default function Download() {
             <p className="text-sm text-slate-500">Checking the latest release…</p>
           ) : release.status === 'ready' ? (
             <>
-              <a href={release.latest_url ?? release.url} className="btn-primary flex h-12 w-full items-center justify-center text-base font-bold" data-testid="download-apk">
+              <a href={serverUrl(release.latest_url ?? release.url)} className="btn-primary flex h-12 w-full items-center justify-center text-base font-bold" data-testid="download-apk">
                 Download Android APK
               </a>
+              {/* Only what the published release actually states: a field the publisher did not write is
+                  left out rather than shown as "undefined" or "NaN MB". */}
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                <dt className="text-slate-500">Version</dt><dd className="font-semibold text-ink">{release.version_name} ({release.version_code})</dd>
-                <dt className="text-slate-500">Size</dt><dd className="text-ink">{mb(release.size_bytes)}</dd>
-                <dt className="text-slate-500">Released</dt><dd className="text-ink">{new Date(release.released_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</dd>
-                <dt className="text-slate-500">Needs</dt><dd className="text-ink">Android {ANDROID_VERSIONS[release.min_sdk] ?? `API ${release.min_sdk}`} or newer</dd>
-                <dt className="text-slate-500">SHA-256</dt><dd className="break-all font-mono text-[11px] text-slate-700" data-testid="apk-sha256">{release.sha256}</dd>
+                {release.version_name && <><dt className="text-slate-500">Version</dt><dd className="font-semibold text-ink">{release.version_name}{release.version_code ? ` (${release.version_code})` : ''}</dd></>}
+                {release.size_bytes > 0 && <><dt className="text-slate-500">Size</dt><dd className="text-ink">{mb(release.size_bytes)}</dd></>}
+                {released(release) && <><dt className="text-slate-500">Released</dt><dd className="text-ink">{released(release)}</dd></>}
+                {release.min_sdk > 0 && <><dt className="text-slate-500">Needs</dt><dd className="text-ink">Android {ANDROID_VERSIONS[release.min_sdk] ?? `API ${release.min_sdk}`} or newer</dd></>}
+                {release.sha256 && <><dt className="text-slate-500">SHA-256</dt><dd className="break-all font-mono text-[11px] text-slate-700" data-testid="apk-sha256">{release.sha256}</dd></>}
               </dl>
               <details className="text-sm text-slate-700">
                 <summary className="cursor-pointer font-semibold text-brand-700">How to install</summary>

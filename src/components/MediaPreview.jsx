@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from '../app/session.jsx';
 import { API_BASE } from '../services/apiClient.js';
+import { serverOrigin } from '../services/serverOrigin.js';
 import { Spinner } from './Icons.jsx';
 
 const toBlobUrl = (bytes, type) => URL.createObjectURL(new Blob([bytes], { type }));
@@ -19,9 +20,13 @@ export async function loadMedia({ id, store, api, permissions }) {
     return { url, type: local.meta.mime_type, source: 'device', revoke: () => URL.revokeObjectURL(url) };
   }
   const link = await api.get(`/media/${id}/download`);
-  const base = new URL(API_BASE, location.origin).pathname.replace(/\/$/, '');
-  const target = new URL(link.url, location.origin);
-  if (target.origin === location.origin && target.pathname.startsWith(`${base}/`)) {
+  // The link is relative to the API ('/api/v1/media/{id}/file') when the API serves the file itself. It is
+  // resolved against the server's origin, not the page's: inside the Android app the page is https://localhost
+  // and resolving there would point the <img> at the APK's own assets instead of the server.
+  const origin = serverOrigin();
+  const base = new URL(API_BASE, origin).pathname.replace(/\/$/, '');
+  const target = new URL(link.url, origin);
+  if (target.origin === origin && target.pathname.startsWith(`${base}/`)) {
     const blob = await api.getBlob(target.pathname.slice(base.length) + target.search);
     const url = URL.createObjectURL(blob);
     return { url, type: blob.type, source: 'server', revoke: () => URL.revokeObjectURL(url) };
