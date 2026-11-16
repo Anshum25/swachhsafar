@@ -107,6 +107,46 @@ This is covered by `tests/e2e-offline/update.offline.spec.js`.
    `swachhsafar-cert-renew.{service,timer}` enabled.
 7. Pre-existing and unrelated: the `admission.cblu.ac.in` certificate expired on 26 Jul 2026.
 
+## Server changes the Android app needs (not yet applied)
+
+The APK runs the same build, but its WebView serves the pages from `https://localhost`, so every request it
+makes to `ehk.itfarmer.in` is cross-origin. Two changes, both on the server; neither affects the PWA.
+
+1. **Backend** `/etc/swachhsafar/backend.env` — add the app's origin and restart:
+
+   ```ini
+   CORS_ORIGINS=["https://ehk.itfarmer.in","https://localhost"]
+   ```
+   ```bash
+   sudo systemctl restart swachhsafar-api
+   ```
+
+   `https://localhost` is the APK's own origin, not a machine: nothing on the server listens there, and a
+   browser cannot claim it. Keep whatever origins the file already lists and add this one.
+
+2. **nginx** — `/downloads/latest.json` must be readable by the app, which asks it whether a newer APK has
+   been published. Already in `deploy/nginx/swachhsafar-app.conf`; install it once:
+
+   ```bash
+   sudo cp deploy/nginx/swachhsafar-app.conf /etc/swachhsafar/nginx/app.conf
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+   It adds an exact-match location for that one file with `Access-Control-Allow-Origin: https://localhost`.
+   The APK files themselves are downloaded by the browser, not by script, and need no CORS.
+
+3. **`/usr/local/sbin/swachh-receive-release`** — reinstall from `deploy/scripts/receive-release.sh`: the
+   published `latest.json` now also carries the version, size, SHA-256 and signing certificate that the
+   `/download` page shows, taken from the APK by the CI job.
+
+Check afterwards:
+
+```bash
+curl -sI -H 'Origin: https://localhost' https://ehk.itfarmer.in/downloads/latest.json | grep -i access-control
+curl -sI -X OPTIONS -H 'Origin: https://localhost' -H 'Access-Control-Request-Method: GET' \
+     -H 'Access-Control-Request-Headers: authorization' https://ehk.itfarmer.in/api/v1/me | grep -i access-control
+```
+
 ## Verification evidence (2026-11-05)
 
 - Plain `curl` with system trust: TLS verifies (HTTP/2), with the Let's Encrypt chain to ISRG Root X1. `http://…:8082`
