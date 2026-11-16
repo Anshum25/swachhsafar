@@ -80,7 +80,10 @@ jobs:
       # Capacitor 8 builds with JDK 21 (android/app/capacitor.build.gradle sets source/target 21).
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21' }
-      - uses: android-actions/setup-android@v3
+      # v4 or newer: v3 installs the obsolete SDK package "tools", which Google no longer publishes, so it
+      # fails before the build starts. Licences are accepted without printing all of them into the log.
+      - uses: android-actions/setup-android@v4
+        with: { log-accepted-android-sdk-licenses: false }
       - run: npm ci
       # The APK's pages are served from https://localhost by the WebView, so a relative /api/v1 would point
       # at the app's own assets: this build, and only this build, carries the server's absolute API base.
