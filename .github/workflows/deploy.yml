@@ -75,8 +75,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Node 22+: the Capacitor 8 CLI refuses to run on Node 20. The web jobs stay on the Node they are
+      # tested with; only this job needs the newer one.
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version: 22, cache: npm }
       # Capacitor 8 builds with JDK 21 (android/app/capacitor.build.gradle sets source/target 21).
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21' }
