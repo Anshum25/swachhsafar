@@ -107,7 +107,17 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          # Tolerate the line breaks and CRs that copying base64 through a terminal or the web UI adds,
+          # then check the result really is the keystore before a 4-minute build depends on it.
+          printf '%s' "$KEYSTORE_B64" | tr -d '\r\n \t' | base64 -d > "$RUNNER_TEMP/release.jks"
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" \
+                 -storepass:env ANDROID_KEYSTORE_PASSWORD >/dev/null 2>&1; then
+            echo "::error::ANDROID_KEYSTORE_B64 does not decode to a keystore that ANDROID_KEYSTORE_PASSWORD opens."
+            echo "Re-create it with:  base64 -w0 release.jks   (Linux/macOS)"
+            echo "or: [Convert]::ToBase64String([IO.File]::ReadAllBytes('release.jks'))  (PowerShell)"
+            echo "and paste the whole single line, with nothing added around it."
+            exit 1
+          fi
           cd android && ./gradlew assembleRelease
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
