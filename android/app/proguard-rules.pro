@@ -7,3 +7,13 @@
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# The scanner's result arrives as a Parcelable the ACPL companion app wrote, and a parcel carries the
+# writer's class name as a string: reading it does Class.forName("com.acpl.ACPL_L1_Data") against this
+# app's classes. R8 renaming or dropping that class (or its CREATOR, which is only ever reached
+# reflectively) turns every scan into "the result could not be read" in release builds, while debug
+# builds -- unminified -- work. Keep the class, its fields and its CREATOR exactly as written.
+-keep class com.acpl.** { *; }
+-keepclassmembers class * implements android.os.Parcelable {
+    public static final ** CREATOR;
+}

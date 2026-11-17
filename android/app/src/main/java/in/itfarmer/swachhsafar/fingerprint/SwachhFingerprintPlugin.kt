@@ -39,6 +39,7 @@ class SwachhFingerprintPlugin : Plugin() {
         const val ACPL_PACKAGE = "com.acpl.fingerscannersupport"
         const val ACTION_CAPTURE = "in.acpl.fp.capture"
         const val ACTION_MATCH = "in.acpl.fp.match"
+        const val EXTRA_L1_DATA = "ACPL_L1_Data"
         const val VENDOR_ID = 0x34FC
     }
 
@@ -150,38 +151,91 @@ class SwachhFingerprintPlugin : Plugin() {
             return
         }
 
-        val l1Data: ACPL_L1_Data? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            data.getParcelableExtra("ACPL_L1_Data", ACPL_L1_Data::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            data.getParcelableExtra("ACPL_L1_Data")
+        // The parcel names the class that wrote it and is read back with this app's classes, so the
+        // reader has to be told which loader to use; without it the extras come back unparcelled.
+        data.setExtrasClassLoader(ACPL_L1_Data::class.java.classLoader)
+
+        val l1Data: ACPL_L1_Data? = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                data.getParcelableExtra(EXTRA_L1_DATA, ACPL_L1_Data::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                data.getParcelableExtra(EXTRA_L1_DATA)
+            }
+        } catch (_: Exception) {
+            // The installed companion app writes its fields in an order this app's copy of the class does
+            // not expect. That is not a failed scan, and the extras are still there to be read directly.
+            null
         }
 
-        if (l1Data == null) {
-            call.reject("Scanner returned empty result", "no_scanner")
-            return
-        }
+        // A template found anywhere in the answer beats the error code: this app's copy of ACPL_L1_Data
+        // mirrors the vendor's field order, and a copy that is out by one field reads a stray number as
+        // errorCode and refuses a scan that is perfectly good. The error code is believed only when there
+        // is no template to be had.
+        val template = isoTemplate(l1Data?.templateBase64)
+            ?: isoTemplate(l1Data?.base64ISOTemplate)
+            ?: templateFromExtras(data)
 
-        if (l1Data.errorCode != 0) {
-            val msg = l1Data.status ?: "Capture failed with error code ${l1Data.errorCode}"
-            call.reject(msg, "poor_quality")
-            return
-        }
-
-        val template = l1Data.templateBase64 ?: l1Data.base64ISOTemplate
-        if (template.isNullOrEmpty()) {
-            call.reject("Scanner returned empty template", "poor_quality")
+        if (template == null) {
+            val code = l1Data?.errorCode ?: 0
+            val status = l1Data?.status
+            val detail = when {
+                !status.isNullOrBlank() -> status
+                code != 0 -> "the scanner reported error $code"
+                else -> "the scanner app answered with ${describeExtras(data)}"
+            }
+            call.reject("No fingerprint template in the scan: $detail", "poor_quality")
             return
         }
 
         val ret = JSObject().apply {
             put("template", template)
             put("format", "iso-19794-2")
-            if (l1Data.nfiq > 0) {
-                put("quality", l1Data.nfiq)
-            }
+            val nfiq = l1Data?.nfiq ?: 0
+            if (nfiq > 0) put("quality", nfiq)
         }
         call.resolve(ret)
+    }
+
+    // An ISO/IEC 19794-2 template begins with the magic "FMR", which is "Rk1S" once base64-encoded. It is
+    // what tells a template from the base64 of an image, and an image is the one thing that must never be
+    // taken out of the scanner: see docs/FINGERPRINT.md.
+    private fun isoTemplate(value: String?): String? {
+        val v = value?.trim()
+        return if (!v.isNullOrEmpty() && v.startsWith("Rk1S")) v else null
+    }
+
+    // The companion app's own extras, read directly. Used when the typed read gives nothing: the vendor
+    // ships more than one build of that app and they do not all return the same shape.
+    private fun templateFromExtras(data: Intent): String? {
+        val extras = data.extras ?: return null
+        for (key in extras.keySet()) {
+            val found = try {
+                @Suppress("DEPRECATION")
+                isoTemplate(extras.get(key) as? String)
+            } catch (_: Exception) {
+                null
+            }
+            if (found != null) return found
+        }
+        return null
+    }
+
+    // What the scanner app actually sent, for an error a person can act on: the keys and the kind of value
+    // under each. Never a value -- a template is biometric data and an image must not leave the scanner.
+    private fun describeExtras(data: Intent): String {
+        val extras = data.extras ?: return "no extras at all"
+        val keys = extras.keySet()
+        if (keys.isEmpty()) return "no extras at all"
+        return keys.joinToString(", ") { key ->
+            val kind = try {
+                @Suppress("DEPRECATION")
+                extras.get(key)?.javaClass?.simpleName ?: "null"
+            } catch (_: Exception) {
+                "unreadable"
+            }
+            "$key ($kind)"
+        }
     }
 
     // =============================================================================================

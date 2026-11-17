@@ -76,6 +76,20 @@ describe('scanner', () => {
     expect(out).toMatchObject({ template: 'AAEC', format: 'iso-19794-2', quality: 72, finger: 'left_thumb' });
   });
 
+  // Every failure used to read "the scan was not clear enough", whatever had actually gone wrong, because
+  // the canned sentence replaced the scanner's own words. A clear print that the app could not read then
+  // looked exactly like a smudged one.
+  it('keeps what the scanner said alongside the advice', async () => {
+    const detail = 'No fingerprint template in the scan: the scanner app answered with ACPL_L1_Data (Bundle)';
+    const odd = plugin({ capture: async () => { throw Object.assign(new Error(detail), { code: 'poor_quality' }); } });
+    const err = await captureFinger({}, odd).catch((e) => e);
+    expect(err.message).toMatch(/Wipe the sensor/);
+    expect(err.message).toContain(detail);
+    // An unknown code is still reported rather than swallowed into a generic sentence.
+    const unknown = plugin({ capture: async () => { throw Object.assign(new Error('usb detached'), { code: 'weird' }); } });
+    await expect(captureFinger({}, unknown)).rejects.toThrow(/usb detached/);
+  });
+
   it('turns a refusal into a message a person can act on', async () => {
     await expect(captureFinger({}, null)).rejects.toBeInstanceOf(ScanError);
     await expect(captureFinger({}, null)).rejects.toThrow(/No fingerprint scanner is connected/);

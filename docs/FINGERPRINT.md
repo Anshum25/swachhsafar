@@ -84,6 +84,24 @@ Then register fingers per employee in Masters → Users → **Finger**. At least
 Registrations reach a phone by the same rule as faces: only for staff on a journey that phone's user
 supervises, ending within the last 7 days, in a division with fingerprint verification on.
 
+## Reading the scanner app's answer
+
+The capture is done by ACPL's companion app, which hands back an `ACPL_L1_Data` parcel. Two things about
+that are easy to get wrong, and both were:
+
+- **A parcel carries the name of the class that wrote it**, and reading it resolves that name against this
+  app's classes. R8 renamed `com.acpl.ACPL_L1_Data` to `x0.b` in release builds, so every scan failed to
+  unparcel — and only in release builds, which is why it survived testing. `proguard-rules.pro` keeps the
+  class, its fields and its `CREATOR`.
+- **This app's copy of that class mirrors a field order it does not own.** A copy out by one field reads a
+  stray number as `errorCode` and refuses a good scan, so a template found anywhere in the answer now wins
+  over the error code, and the error code is believed only when there is no template. A template is
+  recognised by the ISO 19794-2 magic `FMR` (`Rk1S` in base64), which is also what stops an image being
+  mistaken for one.
+
+A scan that fails now says what the scanner app actually returned — the extras' names and their types,
+never a value.
+
 ## What the record keeps
 
 `fingerprint_score`, `fingerprint_matcher` and `fingerprint_finger` on the attendance row, and only for a

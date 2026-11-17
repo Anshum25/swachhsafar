@@ -73,7 +73,14 @@ const SCAN_ERRORS = {
   cancelled: 'Scan cancelled.',
   permission: 'Permission to use the scanner was refused.',
 };
-export const scanMessage = (code, fallback) => SCAN_ERRORS[code] ?? fallback ?? 'The fingerprint could not be read.';
+// The canned sentence says what to do about it; the scanner's own words say what happened. Keeping only
+// the first made every failure read "the scan was not clear enough", including the ones that had nothing
+// to do with the finger -- so a clear print and a result the app could not read looked the same.
+export const scanMessage = (code, detail) => {
+  const known = SCAN_ERRORS[code];
+  if (!known) return detail || 'The fingerprint could not be read.';
+  return detail && detail !== known ? `${known} (${detail})` : known;
+};
 
 // One capture: { template, format, quality, finger }. Throws ScanError, which callers show as-is.
 //
@@ -90,7 +97,7 @@ export async function captureFinger({ finger, timeoutMs = 15_000 } = {}, plugin 
   } catch (e) {
     throw new ScanError(e?.code ?? 'failed', scanMessage(e?.code, e?.message));
   }
-  if (!out?.template) throw new ScanError(out?.code ?? 'poor_quality', scanMessage(out?.code));
+  if (!out?.template) throw new ScanError(out?.code ?? 'poor_quality', scanMessage(out?.code, out?.message));
   return { template: out.template, format: out.format ?? TEMPLATE_FORMAT, quality: out.quality ?? null, finger };
 }
 
