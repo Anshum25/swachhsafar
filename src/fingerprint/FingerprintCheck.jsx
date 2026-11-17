@@ -41,7 +41,7 @@ export function useFingerprintCheck({ employeeId, enabled, threshold }) {
       const captured = await captureFinger({});
       const result = await matchFinger({ template: captured.template, profile });
       const decision = decideFingerprint({ result, profile, threshold });
-      setState({ status: decision.matched ? 'matched' : decision.reason, ...decision });
+      setState({ status: decision.matched ? 'matched' : decision.reason, ...decision, threshold });
     } catch (e) {
       setState({ status: 'error', message: e.message });
     }
@@ -62,8 +62,11 @@ export function FingerprintCheckNote({ check, name }) {
     scanning: [`${base} bg-brand-50 text-brand-900`, <Spinner key="s" className="mt-0.5 h-4 w-4" />, 'Reading the finger…'],
     matched: [`${base} bg-emerald-50 text-emerald-800`, <CheckIcon key="c" className="mt-0.5 h-4 w-4" />,
       `Fingerprint matched: ${name}${check.finger ? ` (${fingerLabel(check.finger).toLowerCase()})` : ''}.`],
+    // The score and the score it had to reach are both named. Without them a refused finger is just a
+    // "no", and there is no way to tell a wrong person from a threshold set too high for these scanners --
+    // which is exactly the judgement an administrator has to make in Masters -> Division policy.
     mismatch: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
-      `The fingerprint does not match ${name}. Try another finger, or use the photo check.`],
+      `The fingerprint does not match ${name}${check.score != null ? ` (score ${check.score}, needs ${check.threshold})` : ''}. Try another finger, or use the photo check.`],
     not_enrolled: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
       `${name} has no registered fingerprints on this device. An administrator must register them (Masters → Users → Fingerprint), then sync.`],
     wrong_matcher: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,

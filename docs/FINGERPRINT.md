@@ -69,7 +69,15 @@ Two rules the native side must keep:
 Per division, in Masters → Division policy:
 
 - `attendance_fingerprint_verification` — accept fingerprint as proof of identity
-- `fingerprint_match_score` — the score at or above which the scanner's matcher is believed (default 40)
+- `fingerprint_match_score` — the score at or above which the scanner's matcher is believed (default 30,
+  settable 20–200)
+
+The default is 30, not the 40 it started at. The score is a ratio of minutiae that line up, and a genuine
+finger pressed at a different angle from the one it was registered at overlaps only partly, so clear
+prints from the right person were scoring in the thirties and being refused. A refused scan now names the
+score it got and the score it needed, so a division raises or lowers this against what its own scanners
+actually produce rather than against a guess. Below 20 the server will not go: at some point the matcher
+stops distinguishing people, and a biometric that accepts everyone is worse than no biometric at all.
 
 Then register fingers per employee in Masters → Users → **Finger**. At least two, deliberately.
 

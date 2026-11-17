@@ -14,7 +14,7 @@ import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp, stampLines } from '../../utils/capture.js';
 import { FaceCheckNote, faceFields, useFaceCheck } from '../../face/FaceCheck.jsx';
 import { FingerprintButton, FingerprintCheckNote, useFingerprintCheck } from '../../fingerprint/FingerprintCheck.jsx';
-import { fingerprintFields } from '../../fingerprint/fingerprintMatch.js';
+import { DEFAULT_MATCH_SCORE, fingerprintFields } from '../../fingerprint/fingerprintMatch.js';
 import LiveFaceCapture from '../../face/LiveFaceCapture.jsx';
 import { FACE_MODEL } from '../../face/faceMatch.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
@@ -57,7 +57,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   // demanded of a phone that has no scanner.
   const fingerprintOn = policy.data?.attendance_fingerprint_verification === true;
   const finger = useFingerprintCheck({ employeeId: target.staff.employee_id, enabled: fingerprintOn,
-    threshold: policy.data?.fingerprint_match_score ?? 40 });
+    threshold: policy.data?.fingerprint_match_score ?? DEFAULT_MATCH_SCORE });
   const fingerOk = fingerprintOn && finger.status === 'matched';
   const faceOk = fingerOk || !faceOn || face.status === 'matched';
   // A photo is what the face check compares against; a fingerprint capture does not need one of its own.

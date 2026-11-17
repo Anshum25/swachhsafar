@@ -28,8 +28,10 @@ class PolicySettings(StrictModel):
     # replacement: a phone without the scanner still marks attendance by face.
     attendance_fingerprint_verification: bool = False
     # Score at or above which the scanner's own matcher is taken as a match. The scale is the SDK's, not
-    # ours; the default follows the usual 1:1 verification threshold for ISO minutiae matchers.
-    fingerprint_match_score: int = Field(default=40, ge=20, le=200)
+    # ours. The default is set for the AST300's minutiae matcher, which scores a genuine finger held
+    # differently from how it was registered -- a partial overlap -- well below what an identical capture
+    # would score; 40 refused clear prints in the field. A division that wants it stricter raises it.
+    fingerprint_match_score: int = Field(default=30, ge=20, le=200)
 
     # ---- device security (enforced by the app; recorded and re-checked by the server where it can) ----
     # Location: a fix must be at most this old and this accurate for location-dependent actions

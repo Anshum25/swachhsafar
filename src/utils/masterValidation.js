@@ -83,6 +83,8 @@ export const POLICY_FIELDS = [
   { key: 'complaint_default_sla_hours', type: 'int', min: 1, max: 1440, label: 'Default complaint SLA (hours)', group: 'Complaints' },
   { key: 'attendance_face_verification', type: 'bool', label: 'Face verification for attendance (blocks attendance when the face does not match)', group: 'Face verification' },
   { key: 'face_match_threshold', type: 'float', min: 0.3, max: 0.7, label: 'Face match strictness (lower is stricter)', hint: '0.3–0.7 · recommended 0.5', group: 'Face verification' },
+  { key: 'attendance_fingerprint_verification', type: 'bool', label: 'Accept a fingerprint as proof of identity (an alternative to the face check, never a replacement)', group: 'Fingerprint verification' },
+  { key: 'fingerprint_match_score', type: 'int', min: 20, max: 200, label: 'Fingerprint match score (lower accepts weaker matches)', hint: '20–200 · recommended 30. The scanner shows the score it gave, so lower this only as far as real scans need.', group: 'Fingerprint verification' },
 ];
 
 export function validatePolicy(f) {

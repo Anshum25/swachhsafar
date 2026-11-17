@@ -5,7 +5,9 @@
 // score is never read on the wrong scale -- a division that changes scanner vendor must re-enrol, and
 // until it does, its old templates are reported as not enrolled rather than quietly compared.
 
-export const DEFAULT_MATCH_SCORE = 40;
+// Must match PolicySettings.fingerprint_match_score's default: the fallback for a device that has not
+// yet synced its division's policy. See the schema for why it is 30 and not higher.
+export const DEFAULT_MATCH_SCORE = 30;
 export const MIN_FINGERS = 2; // a cut or a bandage must not lock someone out of a shift
 
 // { matched, reason, score, finger, matcher }

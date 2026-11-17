@@ -3,6 +3,7 @@
 //
 // The scanner's SDK does the comparing and owns the score's scale. These tests pin down what the app does
 // with that score, and that a scan which could not be compared is never treated as a match.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_MATCH_SCORE, decideFingerprint, fingerprintFields } from '../../src/fingerprint/fingerprintMatch.js';
 import { SCAN_GRACE_MS, ScanError, captureFinger, matchFinger, scannerStatus } from '../../src/fingerprint/scanner.js';
@@ -39,6 +40,20 @@ describe('fingerprint decision', () => {
     expect(fingerprintFields(ok)).toEqual({ fingerprint_score: 72, fingerprint_matcher: 'acpl-sdk-v1', fingerprint_finger: 'left_index' });
     expect(fingerprintFields(decideFingerprint({ result: { score: 5, matcher: 'acpl-sdk-v1' }, profile: PROFILE }))).toEqual({});
     expect(fingerprintFields(null)).toEqual({});
+  });
+});
+
+// A device that has not yet synced its division's policy falls back to DEFAULT_MATCH_SCORE, so a server
+// default that drifts away from it silently changes who is accepted on a phone that is behind.
+describe('the default match score', () => {
+  it('is the same number the server schema defaults to', () => {
+    const schema = readFileSync(new URL('../../backend/app/schemas/policy.py', import.meta.url), 'utf8');
+    const m = schema.match(/fingerprint_match_score: int = Field\(default=(\d+), ge=(\d+), le=(\d+)\)/);
+    expect(m, 'fingerprint_match_score not found in policy.py').not.toBeNull();
+    expect(Number(m[1])).toBe(DEFAULT_MATCH_SCORE);
+    // And the default has to sit inside the range an administrator is allowed to set.
+    expect(DEFAULT_MATCH_SCORE).toBeGreaterThanOrEqual(Number(m[2]));
+    expect(DEFAULT_MATCH_SCORE).toBeLessThanOrEqual(Number(m[3]));
   });
 });
 
