@@ -117,7 +117,7 @@ export default function FingerprintEnrollDialog({ user, onClose }) {
         </label>
         <div>
           <p className="mb-2 text-sm font-semibold text-slate-800">
-            Scan at least {MIN_FINGERS} fingers, so a cut or a bandage does not stop {user.name} being marked present
+            Scan at least {MIN_FINGERS} fingers (e.g. Right & Left Index). Any additional fingers are optional.
           </p>
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
             {FINGERS.map((f) => <FingerSlot key={f.id} finger={f} slot={slots[f.id]} disabled={!device.connected} onScan={() => scan(f)} />)}

@@ -191,6 +191,10 @@ class SwachhFingerprintPlugin : Plugin() {
                             bestScore = score
                             bestFinger = finger
                         }
+                        // Early exit once a solid match is found
+                        if (bestScore >= 60.0) {
+                            break
+                        }
                     }
                 }
 
