@@ -2,20 +2,27 @@
 // written escaped. The compiled package is the plain one the manifest and Capacitor expect.
 package `in`.itfarmer.swachhsafar.fingerprint
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.hardware.usb.UsbManager
+import android.os.Build
 import android.util.Base64
+import androidx.activity.result.ActivityResult
+import com.acpl.ACPL_L1_Data
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Capacitor plugin that exposes the USB fingerprint scanner to the web layer.
- *
- * The JS side accesses it as `Capacitor.Plugins.SwachhFingerprint` via
- * `src/fingerprint/scanner.js`, which is the **only** file that talks to it.
+ * Capacitor plugin that integrates the ACPL Access AST300 fingerprint scanner
+ * with the web application layer using ACPL's "Scanner Support tools" companion app
+ * (`com.acpl.fingerscannersupport`).
  *
  * Three methods — `status`, `capture`, `match` — follow the contract defined in
  * `docs/FINGERPRINT.md` and exercised by `tests/unit/fingerprintMatch.test.js`.
@@ -25,9 +32,15 @@ import java.util.concurrent.Executors
 @CapacitorPlugin(name = "SwachhFingerprint")
 class SwachhFingerprintPlugin : Plugin() {
 
-    private var driver: FingerprintDriver? = null
+    companion object {
+        const val MATCHER_ID = "acpl_ast300"
+        const val DEVICE_NAME = "Access AST300"
+        const val ACPL_PACKAGE = "com.acpl.fingerscannersupport"
+        const val ACTION_CAPTURE = "in.acpl.fp.capture"
+        const val ACTION_MATCH = "in.acpl.fp.match"
+        const val VENDOR_ID = 0x34FC
+    }
 
-    /** Single-threaded executor for USB I/O and SDK calls that must not block the main thread. */
     private lateinit var executor: ExecutorService
 
     override fun load() {
@@ -35,7 +48,6 @@ class SwachhFingerprintPlugin : Plugin() {
         executor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "SwachhFingerprint-IO").apply { isDaemon = true }
         }
-        driver = AcplAst300Driver(context)
     }
 
     // =============================================================================================
@@ -44,22 +56,34 @@ class SwachhFingerprintPlugin : Plugin() {
 
     @PluginMethod
     fun status(call: PluginCall) {
-        val d = driver
-        if (d == null) {
-            call.resolve(JSObject().apply {
-                put("connected", false)
-                put("reason", "driver_not_loaded")
-            })
-            return
+        val pm = context.packageManager
+        val isAppInstalled = try {
+            pm.getPackageInfo(ACPL_PACKAGE, 0)
+            true
+        } catch (_: Exception) {
+            false
         }
 
-        val reason = d.disconnectReason()
-        call.resolve(JSObject().apply {
-            put("connected", reason == null)
-            put("device", d.deviceName)
-            put("matcher", d.matcherId)
-            if (reason != null) put("reason", reason)
-        })
+        val ret = JSObject()
+        if (!isAppInstalled) {
+            ret.put("connected", false)
+            ret.put("device", DEVICE_NAME)
+            ret.put("matcher", MATCHER_ID)
+            ret.put("reason", "Scanner Support tools not installed. Please install 'Scanner Support tools' for ACPL.")
+        } else {
+            // Check if USB device is attached
+            val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+            val isScannerAttached = usbManager.deviceList.values.any { it.vendorId == VENDOR_ID } ||
+                    usbManager.deviceList.isNotEmpty()
+
+            // As long as the companion driver app is installed and scanner is attached (or available)
+            ret.put("connected", isScannerAttached)
+            ret.put("device", DEVICE_NAME)
+            ret.put("matcher", MATCHER_ID)
+            ret.put("reason", if (isScannerAttached) "ready" else "No fingerprint scanner is connected. Plug it in via USB OTG.")
+        }
+
+        call.resolve(ret)
     }
 
     // =============================================================================================
@@ -69,28 +93,67 @@ class SwachhFingerprintPlugin : Plugin() {
 
     @PluginMethod
     fun capture(call: PluginCall) {
-        val d = driver
-        if (d == null) {
-            call.reject("Driver not loaded", "no_scanner")
+        val pm = context.packageManager
+        try {
+            pm.getPackageInfo(ACPL_PACKAGE, 0)
+        } catch (_: Exception) {
+            call.reject("Scanner Support tools not installed", "no_scanner")
             return
         }
 
-        val timeoutMs = call.data.optLong("timeoutMs", 15_000L)
+        val intent = Intent(ACTION_CAPTURE).apply {
+            setPackage(ACPL_PACKAGE)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
 
-        executor.execute {
-            try {
-                val result = d.capture(timeoutMs)
-                call.resolve(JSObject().apply {
-                    put("template", result.template)
-                    put("format", result.format)
-                    result.quality?.let { put("quality", it) }
-                })
-            } catch (e: CaptureException) {
-                call.reject(e.message ?: "Capture failed", e.code)
-            } catch (e: Exception) {
-                call.reject(e.message ?: "Capture failed", "no_scanner")
+        startActivityForResult(call, intent, "captureResultCallback")
+    }
+
+    @ActivityCallback
+    private fun captureResultCallback(call: PluginCall, result: ActivityResult) {
+        if (result.resultCode == Activity.RESULT_CANCELED) {
+            call.reject("Scan cancelled", "cancelled")
+            return
+        }
+
+        val data = result.data
+        if (data == null) {
+            call.reject("No data returned from scanner", "no_scanner")
+            return
+        }
+
+        val l1Data: ACPL_L1_Data? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            data.getParcelableExtra("ACPL_L1_Data", ACPL_L1_Data::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            data.getParcelableExtra("ACPL_L1_Data")
+        }
+
+        if (l1Data == null) {
+            call.reject("Scanner returned empty result", "no_scanner")
+            return
+        }
+
+        if (l1Data.errorCode != 0) {
+            val msg = l1Data.status ?: "Capture failed with error code ${l1Data.errorCode}"
+            call.reject(msg, "poor_quality")
+            return
+        }
+
+        val template = l1Data.templateBase64 ?: l1Data.base64ISOTemplate
+        if (template.isNullOrEmpty()) {
+            call.reject("Scanner returned empty template", "poor_quality")
+            return
+        }
+
+        val ret = JSObject().apply {
+            put("template", template)
+            put("format", "iso-19794-2")
+            if (l1Data.nfiq > 0) {
+                put("quality", l1Data.nfiq)
             }
         }
+        call.resolve(ret)
     }
 
     // =============================================================================================
@@ -99,14 +162,6 @@ class SwachhFingerprintPlugin : Plugin() {
 
     @PluginMethod
     fun match(call: PluginCall) {
-        val d = driver
-        if (d == null) {
-            call.reject("Driver not loaded", "no_scanner")
-            return
-        }
-
-        // --- Parse arguments ---
-
         val templateB64 = call.getString("template")
         if (templateB64.isNullOrEmpty()) {
             call.reject("'template' is required", "no_scanner")
@@ -119,41 +174,34 @@ class SwachhFingerprintPlugin : Plugin() {
             return
         }
 
-        val candidates = mutableListOf<CandidateTemplate>()
-        try {
-            for (i in 0 until candidatesArr.length()) {
-                val obj = candidatesArr.getJSONObject(i)
-                candidates.add(
-                    CandidateTemplate(
-                        finger = obj.getString("finger"),
-                        template = obj.getString("template"),
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            call.reject("Invalid candidates format: ${e.message}", "no_scanner")
-            return
-        }
-
-        val probe: ByteArray = try {
-            Base64.decode(templateB64, Base64.DEFAULT)
-        } catch (e: Exception) {
-            call.reject("Invalid Base64 in 'template': ${e.message}", "no_scanner")
-            return
-        }
-
-        // --- Run the matcher off the main thread ---
-
         executor.execute {
             try {
-                val result = d.match(probe, candidates)
-                call.resolve(JSObject().apply {
-                    put("score", result.score)
-                    result.finger?.let { put("finger", it) }
-                    put("matcher", result.matcher)
-                })
+                val probe = Base64.decode(templateB64, Base64.DEFAULT)
+                var bestScore = 0.0
+                var bestFinger: String? = null
+
+                for (i in 0 until candidatesArr.length()) {
+                    val obj = candidatesArr.getJSONObject(i)
+                    val finger = obj.optString("finger")
+                    val candB64 = obj.optString("template")
+                    if (!candB64.isNullOrEmpty()) {
+                        val candBytes = Base64.decode(candB64, Base64.DEFAULT)
+                        val score = IsoTemplateMatcher.match(probe, candBytes)
+                        if (score > bestScore) {
+                            bestScore = score
+                            bestFinger = finger
+                        }
+                    }
+                }
+
+                val ret = JSObject().apply {
+                    put("score", bestScore)
+                    bestFinger?.let { put("finger", it) }
+                    put("matcher", MATCHER_ID)
+                }
+                call.resolve(ret)
             } catch (e: Exception) {
-                call.reject(e.message ?: "Match failed", "no_scanner")
+                call.reject("Matching error: ${e.message}", "no_scanner")
             }
         }
     }
@@ -164,9 +212,6 @@ class SwachhFingerprintPlugin : Plugin() {
 
     override fun handleOnDestroy() {
         super.handleOnDestroy()
-        driver?.release()
-        driver = null
         executor.shutdown()
     }
 }
-
