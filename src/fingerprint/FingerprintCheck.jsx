@@ -68,7 +68,7 @@ export function FingerprintCheckNote({ check, name }) {
     mismatch: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
       `The fingerprint does not match ${name}${check.score != null ? ` (score ${check.score}, needs ${check.threshold})` : ''}. Try another finger, or use the photo check.`],
     not_enrolled: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
-      `${name} has no registered fingerprints on this device. An administrator must register them (Masters → Users → Fingerprint), then sync.`],
+      `This device has no fingerprints for ${name}. They reach a phone only after the division's policy has fingerprint verification switched on, the fingers are registered (Masters → Users → Finger), and this phone syncs while online — check all three in that order.`],
     wrong_matcher: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
       `${name}'s fingerprints were registered with a different scanner and cannot be compared with this one. They must be registered again.`],
     unreadable: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,

@@ -5,13 +5,18 @@
 // with that score, and that a scan which could not be compared is never treated as a match.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_MATCH_SCORE, decideFingerprint, fingerprintFields } from '../../src/fingerprint/fingerprintMatch.js';
+import { DEFAULT_MATCH_SCORE, MIN_FINGERS, SAMPLES_PER_FINGER, decideFingerprint, fingerprintFields } from '../../src/fingerprint/fingerprintMatch.js';
 import { SCAN_GRACE_MS, ScanError, captureFinger, matchFinger, scannerStatus } from '../../src/fingerprint/scanner.js';
 
 const PROFILE = {
   matcher: 'acpl-sdk-v1',
   format: 'iso-19794-2',
-  fingers: [{ finger: 'right_index', template: 'AAEC' }, { finger: 'left_index', template: 'AQID' }],
+  // Each finger is registered from several presses: one press records only the part of the fingertip
+  // that happened to touch the sensor, and matching tries them all.
+  fingers: [
+    { finger: 'right_index', templates: ['AAEC', 'AAED', 'AAEE', 'AAEF'] },
+    { finger: 'left_index', templates: ['AQID', 'AQIE', 'AQIF', 'AQIG'] },
+  ],
 };
 
 describe('fingerprint decision', () => {
@@ -45,6 +50,25 @@ describe('fingerprint decision', () => {
 
 // A device that has not yet synced its division's policy falls back to DEFAULT_MATCH_SCORE, so a server
 // default that drifts away from it silently changes who is accepted on a phone that is behind.
+describe('how many presses a finger is registered from', () => {
+  it('asks for several, and at least two fingers', () => {
+    expect(SAMPLES_PER_FINGER).toBeGreaterThan(1);
+    expect(MIN_FINGERS).toBeGreaterThanOrEqual(2);
+  });
+
+  // The server decides what it will store; the app must not ask for more presses than it accepts, or
+  // registration fails at the last step after someone has pressed a finger a dozen times.
+  it('stays inside what the server accepts', () => {
+    const schema = readFileSync(new URL('../../backend/app/schemas/fingerprints.py', import.meta.url), 'utf8');
+    const maxSamples = Number(schema.match(/^MAX_SAMPLES = (\d+)/m)[1]);
+    const minFingers = Number(schema.match(/^MIN_FINGERS = (\d+)/m)[1]);
+    const maxFingers = Number(schema.match(/^MAX_FINGERS = (\d+)/m)[1]);
+    expect(SAMPLES_PER_FINGER).toBeLessThanOrEqual(maxSamples);
+    expect(MIN_FINGERS).toBe(minFingers);
+    expect(MIN_FINGERS).toBeLessThanOrEqual(maxFingers);
+  });
+});
+
 describe('the default match score', () => {
   it('is the same number the server schema defaults to', () => {
     const schema = readFileSync(new URL('../../backend/app/schemas/policy.py', import.meta.url), 'utf8');

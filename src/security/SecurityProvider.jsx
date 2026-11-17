@@ -88,9 +88,18 @@ export function SecurityProvider({ children }) {
   }), [policy, location, network, device, offlineExpired, startup, guards, log, decideAction, refreshAll]);
 
   const app = decideAction('app');
+  // Whether the app has ever been open in this session. A division that keeps the app shut until there
+  // is a usable fix (gps_block_app) is answered at startup -- but once someone is working, a fix that
+  // drifts out of tolerance must not take the screen away from them: on a phone indoors that reads as
+  // the app restarting itself over and over, losing whatever was half-filled in. From then on the
+  // banner says location is unusable and the records that need one refuse themselves, which is where
+  // the refusal belongs.
+  const opened = useRef(false);
+  if (app.allowed) opened.current = true;
+
   let screen = children;
   if (startup === 'checking' && policy.gps_enforced) screen = <StartupCheck location={location} network={network} />;
-  else if (!app.allowed) screen = <SecurityBlockScreen code={app.blockers[0]} onRetry={refreshAll} onSettings={() => guards.location.openSettings()} />;
+  else if (!app.allowed && !opened.current) screen = <SecurityBlockScreen code={app.blockers[0]} onRetry={refreshAll} onSettings={() => guards.location.openSettings()} />;
   return <SecurityContext.Provider value={value}>{screen}</SecurityContext.Provider>;
 }
 

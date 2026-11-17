@@ -27,7 +27,8 @@ class FingerprintEnrollment(Timestamps, Base):
     division_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("divisions.id"), nullable=False, index=True)
     format: Mapped[str] = mapped_column(String(40), nullable=False)
     matcher: Mapped[str] = mapped_column(String(40), nullable=False)
-    # [{"finger": "right_index", "template": "<base64 ISO 19794-2>"}, ...]
+    # [{"finger": "right_index", "templates": ["<base64 ISO 19794-2>", ...]}, ...]: several presses of
+    # each finger, because one press records only the part that happened to touch the sensor.
     fingers: Mapped[list] = mapped_column(JSONType, nullable=False)
     consent_at: Mapped[datetime] = mapped_column(TZDateTime(), nullable=False)
     consent_recorded_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)

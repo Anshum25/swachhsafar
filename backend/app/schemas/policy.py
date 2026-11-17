@@ -27,18 +27,22 @@ class PolicySettings(StrictModel):
     # Fingerprint verification needs a scanner, so it is an alternative to the face check, never a
     # replacement: a phone without the scanner still marks attendance by face.
     attendance_fingerprint_verification: bool = False
-    # Score at or above which the scanner's own matcher is taken as a match. The scale is the SDK's, not
-    # ours. The default is set for the AST300's minutiae matcher, which scores a genuine finger held
-    # differently from how it was registered -- a partial overlap -- well below what an identical capture
-    # would score; 40 refused clear prints in the field. A division that wants it stricter raises it.
-    fingerprint_match_score: int = Field(default=30, ge=20, le=200)
+    # Score at or above which the matcher's answer is taken as the same finger. The score is the
+    # percentage of the smaller print whose minutiae line up, and it is only ever produced from at least
+    # twelve matched points, so it is not a number that can be lowered far before it stops meaning
+    # anything: a lower setting accepts other people. 30 was tried and did exactly that. Registration
+    # takes several presses of each finger, which is what lets a genuine finger reach this honestly
+    # rather than the threshold being bent down to meet a single impression.
+    fingerprint_match_score: int = Field(default=40, ge=30, le=100)
 
     # ---- device security (enforced by the app; recorded and re-checked by the server where it can) ----
     # Location: a fix must be at most this old and this accurate for location-dependent actions
     # (attendance, inspection, passenger/railway feedback). gps_block_app: also keep the whole app closed
-    # until a valid fix exists (otherwise only location-dependent actions are blocked).
+    # until a valid fix exists, and off by default -- a fix good enough for a record is not always there
+    # indoors, and holding the entire app behind one only stopped people reading a journey or a report
+    # they could perfectly well be shown. What needs a location still refuses without one.
     gps_enforced: bool = True
-    gps_block_app: bool = True
+    gps_block_app: bool = False
     gps_max_age_seconds: int = Field(default=120, ge=10, le=3600)
     gps_max_accuracy_m: int = Field(default=100, ge=5, le=5000)
     gps_timeout_seconds: int = Field(default=20, ge=5, le=120)
@@ -49,5 +53,8 @@ class PolicySettings(StrictModel):
     # How long a device may keep working offline after its last online check of the user's session.
     # Strictly capped at 24 hours maximum.
     offline_session_hours: int = Field(default=24, ge=1, le=24)
-    # A live-camera challenge (blink + head turn) before the face is matched for attendance.
-    face_liveness_required: bool = False  # optional blink + head-turn check; the photo is face-matched either way
+    # A live-camera challenge (blink + head turn) for attendance. The app uses it whenever
+    # attendance_face_verification is on -- matching a face against a still only proves a photo of that
+    # face was in front of the lens, and a photo can be held up to it -- so this switch is for demanding
+    # the challenge where face verification itself is off.
+    face_liveness_required: bool = False

@@ -6,9 +6,15 @@
 // until it does, its old templates are reported as not enrolled rather than quietly compared.
 
 // Must match PolicySettings.fingerprint_match_score's default: the fallback for a device that has not
-// yet synced its division's policy. See the schema for why it is 30 and not higher.
-export const DEFAULT_MATCH_SCORE = 30;
+// yet synced its division's policy. The score is the percentage of the smaller print that matched, never
+// produced from fewer than twelve matched minutiae; see the schema for why it is not lower.
+export const DEFAULT_MATCH_SCORE = 40;
 export const MIN_FINGERS = 2; // a cut or a bandage must not lock someone out of a shift
+// How many presses of each finger are taken at registration. One press records only the part of the
+// fingertip that happened to touch the sensor, at the angle it happened to be held, and verifying later
+// against that single impression fails whenever the finger lands differently -- which is most of the
+// time. Phones ask for the same finger over and over for exactly this reason.
+export const SAMPLES_PER_FINGER = 4;
 
 // { matched, reason, score, finger, matcher }
 //   not_enrolled  nothing registered for this employee on this device

@@ -271,22 +271,23 @@ class SwachhFingerprintPlugin : Plugin() {
             var bestScore = 0.0
             var bestFinger: String? = null
 
+            // A finger is registered from several presses, so each candidate carries a list of them and
+            // the best one counts: the press being verified has to resemble only one of the impressions
+            // taken at registration, not the single one that happened to be stored first.
             for (i in 0 until candidatesArr.length()) {
                 val obj = candidatesArr.getJSONObject(i)
                 val finger = obj.optString("finger")
-                val candB64 = obj.optString("template")
-                if (!candB64.isNullOrEmpty()) {
+                for (candB64 in templatesOf(obj)) {
                     val candBytes = Base64.decode(candB64, Base64.DEFAULT)
                     val score = IsoTemplateMatcher.match(probe, candBytes)
                     if (score > bestScore) {
                         bestScore = score
                         bestFinger = finger
                     }
-                    // Early exit once a solid match is found
-                    if (bestScore >= 60.0) {
-                        break
-                    }
+                    // Nothing is learned by comparing further once the match is beyond doubt.
+                    if (bestScore >= 90.0) break
                 }
+                if (bestScore >= 90.0) break
             }
 
             val ret = JSObject().apply {
@@ -298,6 +299,22 @@ class SwachhFingerprintPlugin : Plugin() {
         } catch (e: Exception) {
             call.reject("Matching error: ${e.message}", "no_scanner")
         }
+    }
+
+    // The impressions stored for one finger: a "templates" list, or the single "template" an app built
+    // before multi-press registration still sends.
+    private fun templatesOf(obj: org.json.JSONObject): List<String> {
+        val out = ArrayList<String>()
+        val arr = obj.optJSONArray("templates")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val t = arr.optString(i)
+                if (!t.isNullOrEmpty()) out.add(t)
+            }
+        }
+        val single = obj.optString("template")
+        if (out.isEmpty() && !single.isNullOrEmpty()) out.add(single)
+        return out
     }
 
     // =============================================================================================

@@ -49,7 +49,11 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const faceOn = policy.data?.attendance_face_verification === true;
   // With face verification, the photo comes from the live check (blink + head turn) unless the division
   // turned liveness off (default on).
-  const liveOn = faceOn && policy.data?.face_liveness_required === true;
+  // Face verification means the live check, always. Matching a face against a still photo only proves
+  // that a photo of that face was in front of the lens, and a photo can be held up to it; the blink and
+  // head turn are what makes it proof of the person. A division that wants no camera challenge turns
+  // face verification off rather than keeping a check that can be satisfied with a photograph.
+  const liveOn = faceOn || policy.data?.face_liveness_required === true;
   const [liveness, setLiveness] = useState(liveOn ? null : 'not_required');
   const face = useFaceCheck({ photo, employeeId: target.staff.employee_id, enabled: faceOn, threshold: policy.data?.face_match_threshold ?? 0.5 });
   // Fingerprint is an alternative to the face check, never a replacement: the scanner can be absent or

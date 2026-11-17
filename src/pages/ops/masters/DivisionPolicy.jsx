@@ -8,7 +8,9 @@ import { POLICY_FIELDS, policyPayload, validatePolicy } from '../../../utils/mas
 import { ConfirmDialog, OfflineWriteNote, useMasterAccess, useSave } from './common.jsx';
 
 const GROUPS = [...new Set(POLICY_FIELDS.map((f) => f.group))];
-const show = (field, v) => (field.type === 'bool' ? (v ? 'Yes' : 'No') : v == null || v === '' ? 'No limit' : String(v));
+const show = (field, v) => (field.type === 'bool' ? (v ? 'Yes' : 'No')
+  : field.type === 'enum' ? (field.options.find((o) => o.value === v)?.label ?? String(v))
+    : v == null || v === '' ? 'No limit' : String(v));
 
 function PolicyForm({ policy, divisionId, onSaved, onCancel }) {
   const { api } = useSession();
@@ -36,7 +38,9 @@ function PolicyForm({ policy, divisionId, onSaved, onCancel }) {
               <Field key={field.key} label={field.label} hint={field.hint ?? (field.type === 'int' ? `${field.min}–${field.max}` : undefined)} error={errors[field.key]}>
                 {field.type === 'bool'
                   ? <Select value={f[field.key] ? 'yes' : 'no'} onChange={(v) => setF({ ...f, [field.key]: v === 'yes' })} options={[{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]} />
-                  : <input className="input" inputMode={field.type === 'float' ? 'decimal' : 'numeric'} value={f[field.key] ?? ''} onChange={(e) => setF({ ...f, [field.key]: e.target.value })} />}
+                  : field.type === 'enum'
+                    ? <Select value={f[field.key] ?? field.options[0].value} onChange={(v) => setF({ ...f, [field.key]: v })} options={field.options} />
+                    : <input className="input" inputMode={field.type === 'float' ? 'decimal' : 'numeric'} value={f[field.key] ?? ''} onChange={(e) => setF({ ...f, [field.key]: e.target.value })} />}
               </Field>
             ))}
           </div>

@@ -1,5 +1,6 @@
 // CP-03: master-data administration — validation, permissions, online-only writes through the local-first
 // API, local cache updates from confirmed server responses, and offline reads with division isolation.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../src/services/apiClient.js';
 import { createLocalApi } from '../../src/services/localApi.js';
@@ -90,7 +91,10 @@ describe('master-data form validation (mirrors the Pydantic schemas)', () => {
     const good = { passenger_pnr_required: true, passenger_otp_required: false, pnr_train_day_mapping: false, pnr_coach_match_required: true,
       passenger_feedback_per_coach_day: '', railway_feedback_limit_per_journey: '2', attendance_photo_required: true, attendance_late_grace_days: 1,
       inspection_photo_required: true, complaint_default_sla_hours: 72, attendance_face_verification: false, face_match_threshold: '0.5',
-      attendance_fingerprint_verification: false, fingerprint_match_score: '30', stray: 'x' };
+      attendance_fingerprint_verification: false, fingerprint_match_score: '40', face_liveness_required: true,
+      gps_enforced: true, gps_block_app: false, gps_max_accuracy_m: '100', gps_max_age_seconds: '120',
+      gps_timeout_seconds: '20', gps_max_speed_kmh: '250', vpn_policy: 'block', offline_session_hours: '24',
+      stray: 'x' };
     expect(validatePolicy(good)).toEqual({});
     expect(Object.keys(validatePolicy({ ...good, attendance_late_grace_days: 9, complaint_default_sla_hours: '', railway_feedback_limit_per_journey: 1.5 })).sort())
       .toEqual(['attendance_late_grace_days', 'complaint_default_sla_hours', 'railway_feedback_limit_per_journey']);
@@ -101,11 +105,28 @@ describe('master-data form validation (mirrors the Pydantic schemas)', () => {
     expect(Object.keys(body).sort()).toEqual(POLICY_FIELDS.map((f) => f.key).sort());
     // The fingerprint score is a whole number inside the range the server's schema allows, and is sent
     // as one: a division that cannot tune it here can only have it changed by a code deploy.
-    expect(validatePolicy({ ...good, fingerprint_match_score: '20' })).toEqual({});
-    expect(Object.keys(validatePolicy({ ...good, fingerprint_match_score: '19' }))).toEqual(['fingerprint_match_score']);
-    expect(Object.keys(validatePolicy({ ...good, fingerprint_match_score: '30.5' }))).toEqual(['fingerprint_match_score']);
+    expect(validatePolicy({ ...good, fingerprint_match_score: '30' })).toEqual({});
+    expect(Object.keys(validatePolicy({ ...good, fingerprint_match_score: '29' }))).toEqual(['fingerprint_match_score']);
+    expect(Object.keys(validatePolicy({ ...good, fingerprint_match_score: '40.5' }))).toEqual(['fingerprint_match_score']);
+    // vpn_policy is one of three words, not a number: it has to survive policyPayload as the word.
+    expect(validatePolicy({ ...good, vpn_policy: 'warn' })).toEqual({});
+    expect(Object.keys(validatePolicy({ ...good, vpn_policy: 'sometimes' }))).toEqual(['vpn_policy']);
     expect(body).toMatchObject({ passenger_feedback_per_coach_day: null, railway_feedback_limit_per_journey: 2, face_match_threshold: 0.5,
-      attendance_face_verification: false, attendance_fingerprint_verification: false, fingerprint_match_score: 30 });
+      attendance_face_verification: false, attendance_fingerprint_verification: false, fingerprint_match_score: 40,
+      face_liveness_required: true, gps_block_app: false, gps_max_accuracy_m: 100, vpn_policy: 'block' });
+  });
+
+  // Nine settings the server had always accepted had no entry here, so no administrator could reach
+  // them: fingerprint verification could not be switched on, the live face check could not be demanded,
+  // and the location accuracy that decides whether a record may be made at all could only be changed by
+  // a deploy. A setting the screen does not offer is a setting nobody has.
+  it('offers every setting the server has', () => {
+    const schema = readFileSync(new URL('../../backend/app/schemas/policy.py', import.meta.url), 'utf8');
+    const body = schema.slice(schema.indexOf('class PolicySettings'));
+    const served = [...body.matchAll(/^ {4}([a-z_0-9]+):/gm)].map((m) => m[1]);
+    expect(served.length).toBeGreaterThan(20);
+    expect(served.filter((k) => !POLICY_FIELDS.some((f) => f.key === k))).toEqual([]);
+    expect(POLICY_FIELDS.filter((f) => !served.includes(f.key))).toEqual([]);
   });
 });
 

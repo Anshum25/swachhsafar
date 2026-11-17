@@ -7,7 +7,7 @@
 import { nativeSecurity } from './native.js';
 
 export const DEFAULT_POLICY = {
-  gps_enforced: true, gps_block_app: true, gps_max_age_seconds: 120, gps_max_accuracy_m: 100, gps_timeout_seconds: 20,
+  gps_enforced: true, gps_block_app: false, gps_max_age_seconds: 120, gps_max_accuracy_m: 100, gps_timeout_seconds: 20,
   gps_max_speed_kmh: 250, vpn_policy: 'block', offline_session_hours: 24, face_liveness_required: false,
 };
 

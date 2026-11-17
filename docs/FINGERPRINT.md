@@ -69,15 +69,59 @@ Two rules the native side must keep:
 Per division, in Masters → Division policy:
 
 - `attendance_fingerprint_verification` — accept fingerprint as proof of identity
-- `fingerprint_match_score` — the score at or above which the scanner's matcher is believed (default 30,
-  settable 20–200)
+- `fingerprint_match_score` — the score at or above which the matcher is believed (default 40, settable
+  30–100)
 
-The default is 30, not the 40 it started at. The score is a ratio of minutiae that line up, and a genuine
-finger pressed at a different angle from the one it was registered at overlaps only partly, so clear
-prints from the right person were scoring in the thirties and being refused. A refused scan now names the
-score it got and the score it needed, so a division raises or lowers this against what its own scanners
-actually produce rather than against a guess. Below 20 the server will not go: at some point the matcher
-stops distinguishing people, and a biometric that accepts everyone is worse than no biometric at all.
+The score is the percentage of the smaller print whose minutiae line up, and it is never produced from
+fewer than twelve matched points. It was briefly lowered to 30 to admit prints that were being refused;
+a colleague's finger was then accepted for someone else's attendance. Lowering the threshold was the
+wrong answer to that, and two real faults were behind it — see below. A refused scan names the score it
+got and the score it needed, so a division sets this against what its own scanners produce rather than
+against a guess.
+
+## Why a finger is pressed several times
+
+Registration records `SAMPLES_PER_FINGER` presses of each finger, not one. A single press captures only
+the part of the fingertip that happened to touch the sensor, at the angle it happened to be held;
+verifying later against that one impression fails whenever the finger lands differently, which is most
+of the time. Phones ask for the same finger over and over for exactly this reason. Matching tries every
+stored impression and keeps the best, so a genuine finger reaches the threshold honestly instead of the
+threshold being bent down to meet a single impression.
+
+## What the matcher will and will not do
+
+Comparing fingerprints means counting minutiae that line up once one print is rotated onto the other.
+Two different fingers always line up somewhat, so the rules that keep one person out of another's
+attendance are the tolerances and the floor, not the threshold alone:
+
+- A point counts only within 12 pixels and 15° of where the alignment puts it.
+- Fewer than 12 matched points scores zero, whatever proportion it works out to. That floor is the
+  long-standing forensic one for calling two prints the same finger.
+- Bytes that are not an ISO/IEC 19794-2 record are refused, not guessed at. Minutiae invented from
+  arbitrary bytes line up with other invented minutiae about as readily as a finger does with itself.
+
+Two faults were found here after a colleague's finger was accepted:
+
+1. **The alignment turned the probe the wrong way.** `dTheta` is how much further round the probe was
+   pressed, so the probe has to be turned back by it; the code rotated forward instead. The points
+   scattered, and what was being counted was coincidence rather than agreement. Scores from before this
+   was fixed meant nothing — in either direction.
+2. **The score was inflated and had no floor**: `matched / average_count × 150`, with a 20-pixel, 25°
+   tolerance. Six coincidental points out of thirty scored 30.
+
+`android/app/src/test/.../IsoTemplateMatcherTest.kt` holds the line: a genuine second press scores at or
+above the threshold, and forty different-finger pairs all stay below it.
+
+## When a phone says "no fingerprints for this person"
+
+It almost never means nobody registered them. Templates reach a phone only when all of these hold, and
+the message on the phone names them in this order:
+
+1. the division's policy has `attendance_fingerprint_verification` on,
+2. the fingers are registered (Masters → Users → Finger),
+3. that phone has synced since, while online —
+
+and then only for staff on journeys that phone's user supervises, ending within the last 7 days.
 
 Then register fingers per employee in Masters → Users → **Finger**. At least two, deliberately.
 

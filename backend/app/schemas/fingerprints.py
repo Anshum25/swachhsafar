@@ -12,6 +12,11 @@ from app.schemas.common import ReadModel, StrictModel
 MAX_TEMPLATE_BYTES = 4096
 MIN_FINGERS = 2  # a cut or a bandage must not lock someone out of a shift
 MAX_FINGERS = 10
+# A finger is registered from several presses, not one. A single press records only the part of the
+# fingertip that happened to touch the sensor, at the angle it happened to be held; verifying later
+# against that one impression fails whenever the finger lands differently, which is most of the time.
+MIN_SAMPLES = 1   # what an older device may still send
+MAX_SAMPLES = 6
 
 FINGERS = Literal[
     "right_thumb", "right_index", "right_middle", "right_ring", "right_little",
@@ -20,18 +25,24 @@ FINGERS = Literal[
 
 
 class FingerTemplate(StrictModel):
-    finger: FINGERS
-    template: str = Field(min_length=16, description="Base64 ISO/IEC 19794-2 minutiae template")
+    """One finger, as several impressions of it. Matching tries them all and keeps the best."""
 
-    @field_validator("template")
+    finger: FINGERS
+    templates: list[str] = Field(min_length=MIN_SAMPLES, max_length=MAX_SAMPLES,
+                                 description="Base64 ISO/IEC 19794-2 minutiae templates, one per press")
+
+    @field_validator("templates")
     @classmethod
-    def _decodes(cls, v: str) -> str:
-        try:
-            raw = base64.b64decode(v, validate=True)
-        except Exception as exc:  # noqa: BLE001 - any decoding problem is the same answer to the caller
-            raise ValueError("template must be base64") from exc
-        if not raw or len(raw) > MAX_TEMPLATE_BYTES:
-            raise ValueError(f"template must be between 1 and {MAX_TEMPLATE_BYTES} bytes")
+    def _decode(cls, v: list[str]) -> list[str]:
+        for t in v:
+            if len(t) < 16:
+                raise ValueError("template is too short to be a minutiae record")
+            try:
+                raw = base64.b64decode(t, validate=True)
+            except Exception as exc:  # noqa: BLE001 - any decoding problem is the same answer to the caller
+                raise ValueError("template must be base64") from exc
+            if not raw or len(raw) > MAX_TEMPLATE_BYTES:
+                raise ValueError(f"template must be between 1 and {MAX_TEMPLATE_BYTES} bytes")
         return v
 
 

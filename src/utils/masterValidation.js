@@ -84,7 +84,18 @@ export const POLICY_FIELDS = [
   { key: 'attendance_face_verification', type: 'bool', label: 'Face verification for attendance (blocks attendance when the face does not match)', group: 'Face verification' },
   { key: 'face_match_threshold', type: 'float', min: 0.3, max: 0.7, label: 'Face match strictness (lower is stricter)', hint: '0.3–0.7 · recommended 0.5', group: 'Face verification' },
   { key: 'attendance_fingerprint_verification', type: 'bool', label: 'Accept a fingerprint as proof of identity (an alternative to the face check, never a replacement)', group: 'Fingerprint verification' },
-  { key: 'fingerprint_match_score', type: 'int', min: 20, max: 200, label: 'Fingerprint match score (lower accepts weaker matches)', hint: '20–200 · recommended 30. The scanner shows the score it gave, so lower this only as far as real scans need.', group: 'Fingerprint verification' },
+  { key: 'fingerprint_match_score', type: 'int', min: 30, max: 100, label: 'Fingerprint match score (lower accepts weaker matches)', hint: '30–100 · recommended 40. This is the percentage of the print that must match; below 40 other people start to pass.', group: 'Fingerprint verification' },
+  { key: 'face_liveness_required', type: 'bool', label: 'Demand the live camera check (blink and head turn) even when face verification is off', hint: 'With face verification on, the live check is always used: no photo to take or upload', group: 'Face verification' },
+  // Location. These decide when a record may be made at all, so they are the division's to set rather
+  // than something only a deploy can change: 100 m is right in the open and impossible indoors.
+  { key: 'gps_enforced', type: 'bool', label: 'Require a verified location for attendance, inspections and feedback', group: 'Location' },
+  { key: 'gps_max_accuracy_m', type: 'int', min: 5, max: 5000, label: 'Worst location accuracy accepted (metres)', hint: '5–5000 · 100 outdoors; raise it for indoor or depot use', group: 'Location' },
+  { key: 'gps_max_age_seconds', type: 'int', min: 10, max: 3600, label: 'Oldest location fix accepted (seconds)', hint: '10–3600 · 120 by default', group: 'Location' },
+  { key: 'gps_timeout_seconds', type: 'int', min: 5, max: 120, label: 'How long to wait for a fix (seconds)', hint: '5–120 · 20 by default', group: 'Location' },
+  { key: 'gps_max_speed_kmh', type: 'int', min: 50, max: 1000, label: 'Speed above which consecutive fixes are flagged (km/h)', hint: '50–1000 · trains run below 160', group: 'Location' },
+  { key: 'gps_block_app', type: 'bool', label: 'Keep the whole app shut until there is a usable fix (off: only the records that need location wait)', group: 'Location' },
+  { key: 'vpn_policy', type: 'enum', options: [{ value: 'off', label: 'Ignore' }, { value: 'warn', label: 'Record it' }, { value: 'block', label: 'Refuse the record' }], label: 'When a VPN or proxy is detected', group: 'Device security' },
+  { key: 'offline_session_hours', type: 'int', min: 1, max: 24, label: 'How long a device may work offline after its last online check (hours)', hint: '1–24', group: 'Device security' },
 ];
 
 export function validatePolicy(f) {
@@ -93,6 +104,8 @@ export function validatePolicy(f) {
     const v = f[field.key];
     if (field.type === 'bool') {
       if (typeof v !== 'boolean') e[field.key] = `${field.label}: choose yes or no.`;
+    } else if (field.type === 'enum') {
+      if (!field.options.some((o) => o.value === v)) e[field.key] = `${field.label}: choose one of the listed options.`;
     } else if (v === null || v === '' || v === undefined) {
       if (!field.nullable) e[field.key] = `${field.label} is required.`;
     } else if (field.type === 'float') {
@@ -109,6 +122,7 @@ export function policyPayload(f) {
   return Object.fromEntries(POLICY_FIELDS.map((field) => {
     const v = f[field.key];
     if (field.type === 'bool') return [field.key, !!v];
+    if (field.type === 'enum') return [field.key, v];
     return [field.key, v === '' || v == null ? null : Number(v)];
   }));
 }
