@@ -46,6 +46,19 @@ export async function scannerStatus(plugin = scanner()) {
   }
 }
 
+// How long the native side is given beyond its own timeout before the app stops waiting on it.
+export const SCAN_GRACE_MS = 5_000;
+
+// Rejects with a `timeout` ScanError if `promise` has not settled in time. The native call is left to
+// finish on its own; its answer is simply no longer waited for.
+function withTimeout(promise, ms) {
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error('The scanner did not answer.'), { code: 'timeout' })), ms);
+  });
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
+}
+
 export class ScanError extends Error {
   constructor(code, message) {
     super(message);
@@ -63,11 +76,17 @@ const SCAN_ERRORS = {
 export const scanMessage = (code, fallback) => SCAN_ERRORS[code] ?? fallback ?? 'The fingerprint could not be read.';
 
 // One capture: { template, format, quality, finger }. Throws ScanError, which callers show as-is.
+//
+// `timeoutMs` is handed to the native side, but it is also enforced here, with a grace margin. A native
+// capture goes out to the scanner vendor's own activity, and anything that activity does not come back
+// from -- a missing companion app, a result that cannot be unparcelled, a driver that never answers --
+// would otherwise leave the promise pending for ever, and the screen waiting on a spinner that can never
+// stop. A scan that has not answered in time is a failed scan, and is reported as one so it can be retried.
 export async function captureFinger({ finger, timeoutMs = 15_000 } = {}, plugin = scanner()) {
   if (!plugin) throw new ScanError('no_scanner', scanMessage('no_scanner'));
   let out;
   try {
-    out = await plugin.capture({ timeoutMs });
+    out = await withTimeout(plugin.capture({ timeoutMs }), timeoutMs + SCAN_GRACE_MS);
   } catch (e) {
     throw new ScanError(e?.code ?? 'failed', scanMessage(e?.code, e?.message));
   }

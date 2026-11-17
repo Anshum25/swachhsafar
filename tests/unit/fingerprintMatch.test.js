@@ -5,7 +5,7 @@
 // with that score, and that a scan which could not be compared is never treated as a match.
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_MATCH_SCORE, decideFingerprint, fingerprintFields } from '../../src/fingerprint/fingerprintMatch.js';
-import { ScanError, captureFinger, matchFinger, scannerStatus } from '../../src/fingerprint/scanner.js';
+import { SCAN_GRACE_MS, ScanError, captureFinger, matchFinger, scannerStatus } from '../../src/fingerprint/scanner.js';
 
 const PROFILE = {
   matcher: 'acpl-sdk-v1',
@@ -68,6 +68,25 @@ describe('scanner', () => {
     await expect(captureFinger({}, poor)).rejects.toThrow(/Wipe the sensor/);
     const slow = plugin({ capture: async () => { throw Object.assign(new Error('x'), { code: 'timeout' }); } });
     await expect(captureFinger({}, slow)).rejects.toThrow(/Place the finger flat/);
+  });
+
+  // The bug this pins down: the native capture goes out to the scanner vendor's own activity, and when
+  // that activity never comes back the promise stayed pending for ever -- the tile span on its spinner
+  // and Register stayed disabled, with no way out of the dialog but closing it.
+  it('gives up on a capture the scanner never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      const silent = plugin({ capture: () => new Promise(() => {}) });
+      const scan = captureFinger({ finger: 'right_index', timeoutMs: 1000 }, silent);
+      const seen = scan.catch((e) => e);
+      await vi.advanceTimersByTimeAsync(1000 + SCAN_GRACE_MS);
+      const err = await seen;
+      expect(err).toBeInstanceOf(ScanError);
+      expect(err.code).toBe('timeout');
+      expect(err.message).toMatch(/Place the finger flat/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('asks the scanner to compare, and treats any failure as no result', async () => {

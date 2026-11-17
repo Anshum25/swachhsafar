@@ -10,6 +10,7 @@ import android.os.Build
 import android.util.Base64
 import androidx.activity.result.ActivityResult
 import com.acpl.ACPL_L1_Data
+import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -106,11 +107,38 @@ class SwachhFingerprintPlugin : Plugin() {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
 
-        startActivityForResult(call, intent, "captureResultCallback")
+        // The companion app is installed, but that is no promise it answers to this action: an older
+        // build, or a different edition of it, simply has no such activity. Launching it anyway throws,
+        // and a throw here leaves the call unanswered -- which the web layer can only show as a spinner
+        // that never stops. So the intent is checked first, and every failure answers the call.
+        if (intent.resolveActivity(pm) == null) {
+            call.reject(
+                "Scanner Support tools is installed but does not accept $ACTION_CAPTURE. Update it from ACPL.",
+                "no_scanner",
+            )
+            return
+        }
+
+        try {
+            startActivityForResult(call, intent, "captureResultCallback")
+        } catch (e: Exception) {
+            call.reject(e.message ?: "The scanner app could not be opened.", "no_scanner")
+        }
     }
 
+    // Every path out of this callback answers the call -- resolve or reject, never neither. An unanswered
+    // call is a promise that stays pending in the web layer for ever, so even an unexpected exception
+    // (an ACPL_L1_Data the installed app marshals differently, say) is reported rather than thrown away.
     @ActivityCallback
     private fun captureResultCallback(call: PluginCall, result: ActivityResult) {
+        try {
+            captureResult(call, result)
+        } catch (e: Exception) {
+            call.reject(e.message ?: "The scanner's result could not be read.", "poor_quality")
+        }
+    }
+
+    private fun captureResult(call: PluginCall, result: ActivityResult) {
         if (result.resultCode == Activity.RESULT_CANCELED) {
             call.reject("Scan cancelled", "cancelled")
             return
@@ -174,39 +202,47 @@ class SwachhFingerprintPlugin : Plugin() {
             return
         }
 
-        executor.execute {
-            try {
-                val probe = Base64.decode(templateB64, Base64.DEFAULT)
-                var bestScore = 0.0
-                var bestFinger: String? = null
+        // Same rule as capture: the call is answered even if the worker cannot be queued at all (the
+        // executor is shut down while the activity is going away), rather than left pending.
+        try {
+            executor.execute { matchOnWorker(call, candidatesArr, templateB64) }
+        } catch (e: Exception) {
+            call.reject(e.message ?: "The matcher is not available.", "no_scanner")
+        }
+    }
 
-                for (i in 0 until candidatesArr.length()) {
-                    val obj = candidatesArr.getJSONObject(i)
-                    val finger = obj.optString("finger")
-                    val candB64 = obj.optString("template")
-                    if (!candB64.isNullOrEmpty()) {
-                        val candBytes = Base64.decode(candB64, Base64.DEFAULT)
-                        val score = IsoTemplateMatcher.match(probe, candBytes)
-                        if (score > bestScore) {
-                            bestScore = score
-                            bestFinger = finger
-                        }
-                        // Early exit once a solid match is found
-                        if (bestScore >= 60.0) {
-                            break
-                        }
+    private fun matchOnWorker(call: PluginCall, candidatesArr: JSArray, templateB64: String) {
+        try {
+            val probe = Base64.decode(templateB64, Base64.DEFAULT)
+            var bestScore = 0.0
+            var bestFinger: String? = null
+
+            for (i in 0 until candidatesArr.length()) {
+                val obj = candidatesArr.getJSONObject(i)
+                val finger = obj.optString("finger")
+                val candB64 = obj.optString("template")
+                if (!candB64.isNullOrEmpty()) {
+                    val candBytes = Base64.decode(candB64, Base64.DEFAULT)
+                    val score = IsoTemplateMatcher.match(probe, candBytes)
+                    if (score > bestScore) {
+                        bestScore = score
+                        bestFinger = finger
+                    }
+                    // Early exit once a solid match is found
+                    if (bestScore >= 60.0) {
+                        break
                     }
                 }
-
-                val ret = JSObject().apply {
-                    put("score", bestScore)
-                    bestFinger?.let { put("finger", it) }
-                    put("matcher", MATCHER_ID)
-                }
-                call.resolve(ret)
-            } catch (e: Exception) {
-                call.reject("Matching error: ${e.message}", "no_scanner")
             }
+
+            val ret = JSObject().apply {
+                put("score", bestScore)
+                bestFinger?.let { put("finger", it) }
+                put("matcher", MATCHER_ID)
+            }
+            call.resolve(ret)
+        } catch (e: Exception) {
+            call.reject("Matching error: ${e.message}", "no_scanner")
         }
     }
 

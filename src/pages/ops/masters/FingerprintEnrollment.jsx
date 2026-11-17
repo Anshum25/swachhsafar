@@ -6,7 +6,7 @@
 //
 // At least two fingers are registered on purpose: a cut, a bandage or a wet hand must not leave someone
 // unable to be marked present for a whole shift.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useResource, useSession } from '../../../app/session.jsx';
 import { useNotify } from '../../../app/Layout.jsx';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
@@ -15,18 +15,26 @@ import { ConfirmDialog, Dialog, ErrorNote, fmtDateTime } from '../../../componen
 import { FINGERS, TEMPLATE_FORMAT, captureFinger, fingerLabel, scannerStatus } from '../../../fingerprint/scanner.js';
 import { MIN_FINGERS } from '../../../fingerprint/fingerprintMatch.js';
 
-function FingerSlot({ finger, slot, onScan, disabled }) {
+// A slot is empty, waiting on the scanner, failed or registered. While it waits, the tile is the button
+// that stops waiting: a scanner that has gone quiet must never be able to strand the tile on a spinner.
+function FingerSlot({ finger, slot, onScan, onCancel, disabled }) {
   const done = !!slot?.template;
+  const busy = !!slot?.busy;
   return (
     <div className="space-y-1">
-      <button type="button" onClick={onScan} disabled={disabled || slot?.busy}
-        aria-label={`Scan ${finger.label}${done ? ' (registered)' : ''}`}
+      <button type="button" onClick={busy ? onCancel : onScan} disabled={disabled && !busy}
+        aria-label={busy ? `Stop waiting for ${finger.label}` : `Scan ${finger.label}${done ? ' (registered)' : ''}`}
         data-testid={`finger-${finger.id}`}
-        className={`relative grid aspect-square w-full place-items-center gap-1 overflow-hidden rounded-2xl border-2 ${
-          done ? 'border-emerald-500 bg-emerald-50/60' : slot?.error ? 'border-red-400' : 'border-dashed border-brand-300 bg-brand-50/50'}`}>
+        className={`relative grid aspect-square w-full place-items-center gap-1 overflow-hidden rounded-2xl border-2 transition duration-150 active:scale-[0.97] disabled:opacity-60 ${
+          done ? 'border-emerald-500 bg-emerald-50/60' : slot?.error ? 'border-red-400 bg-red-50/50' : 'border-dashed border-brand-300 bg-brand-50/50'}`}>
         <FingerprintIcon className={`h-7 w-7 ${done ? 'text-emerald-600' : 'text-brand-700'}`} />
         <span className="px-1 text-center text-[11px] font-semibold leading-tight text-slate-700">{finger.label}</span>
-        {slot?.busy && <span className="absolute inset-0 grid place-items-center bg-white/70"><Spinner className="h-6 w-6" /></span>}
+        {busy && (
+          <span className="absolute inset-0 grid place-items-center gap-1 bg-white/85">
+            <Spinner className="h-6 w-6" />
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Tap to stop</span>
+          </span>
+        )}
         {done && <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-emerald-500 text-white"><CheckIcon className="h-4 w-4" /></span>}
       </button>
       {slot?.error && <p className="text-[11px] leading-tight text-red-700">{slot.error}</p>}
@@ -46,6 +54,7 @@ export default function FingerprintEnrollDialog({ user, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [removing, setRemoving] = useState(false);
+  const scanToken = useRef({});
 
   useEffect(() => {
     let cancelled = false;
@@ -53,19 +62,37 @@ export default function FingerprintEnrollDialog({ user, onClose }) {
     return () => { cancelled = true; };
   }, []);
 
+  // Each scan carries a token. Only the newest scan for a finger may write its slot, so a capture that
+  // was given up on (or restarted) cannot come back later and overwrite what is on screen.
   async function scan(finger) {
+    const token = (scanToken.current[finger.id] ?? 0) + 1;
+    scanToken.current[finger.id] = token;
     setSlots((s) => ({ ...s, [finger.id]: { busy: true } }));
+    const write = (slot) => setSlots((s) => (scanToken.current[finger.id] === token ? { ...s, [finger.id]: slot } : s));
     try {
       const out = await captureFinger({ finger: finger.id });
-      setSlots((s) => ({ ...s, [finger.id]: { template: out.template, quality: out.quality } }));
+      write({ template: out.template, quality: out.quality });
     } catch (e) {
-      setSlots((s) => ({ ...s, [finger.id]: { error: e.message } }));
+      write({ error: e.message });
     }
+  }
+
+  // Stop waiting on a scan. The scanner is left to finish in its own time; its answer is simply dropped.
+  function cancelScan(finger) {
+    scanToken.current[finger.id] = (scanToken.current[finger.id] ?? 0) + 1;
+    setSlots((s) => ({ ...s, [finger.id]: { error: 'Scan stopped. Tap to try again.' } }));
   }
 
   const captured = FINGERS.filter((f) => slots[f.id]?.template).map((f) => ({ finger: f.id, template: slots[f.id].template }));
   const enough = captured.length >= MIN_FINGERS;
   const ready = online && consent && enough && device.connected && !busy;
+  // A greyed-out button that does not say what it is waiting for is just a dead end, and the three
+  // things it waits for (a scanner, the consent box, two good scans) are not guessable from the tile grid.
+  const blocker = !device.connected ? 'Connect the scanner to register.'
+    : !online ? 'Registering fingerprints needs a connection.'
+    : !consent ? 'Tick the consent box above to register.'
+    : !enough ? `Scan ${MIN_FINGERS - captured.length} more finger${MIN_FINGERS - captured.length === 1 ? '' : 's'} to register.`
+    : null;
 
   async function save() {
     setBusy(true);
@@ -120,10 +147,12 @@ export default function FingerprintEnrollDialog({ user, onClose }) {
             Scan at least {MIN_FINGERS} fingers (e.g. Right & Left Index). Any additional fingers are optional.
           </p>
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-            {FINGERS.map((f) => <FingerSlot key={f.id} finger={f} slot={slots[f.id]} disabled={!device.connected} onScan={() => scan(f)} />)}
+            {FINGERS.map((f) => <FingerSlot key={f.id} finger={f} slot={slots[f.id]} disabled={!device.connected}
+              onScan={() => scan(f)} onCancel={() => cancelScan(f)} />)}
           </div>
         </div>
         <ErrorNote error={error ?? status.error} />
+        {blocker && <p className="text-sm text-slate-600" data-testid="fingerprint-blocker">{blocker}</p>}
         <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
           {s?.enrolled
             ? <button type="button" className="btn-secondary h-12 justify-center text-red-700" disabled={!online} onClick={() => setRemoving(true)}>Remove</button>
