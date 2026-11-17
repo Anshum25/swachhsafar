@@ -17,8 +17,14 @@ def template(seed: int = 1) -> str:
     return base64.b64encode(bytes((seed + i) % 251 for i in range(320))).decode()
 
 
-def fingers(*names):
-    return [{"finger": n, "template": template(i + 1)} for i, n in enumerate(names or ("right_index", "left_index"))]
+# A finger is registered from several presses, not one: a single press records only the part of the
+# fingertip that happened to touch the sensor (see docs/FINGERPRINT.md).
+SAMPLES = 4
+
+
+def fingers(*names, samples: int = SAMPLES):
+    return [{"finger": n, "templates": [template(i * 10 + j + 1) for j in range(samples)]}
+            for i, n in enumerate(names or ("right_index", "left_index"))]
 
 
 def enroll(world, who="jan", by="admin", **over):
@@ -36,12 +42,19 @@ def test_registration_requires_consent_permission_and_two_fingers(world, db):
     # One finger is refused on purpose: a cut or a bandage would otherwise lock someone out of a shift.
     assert enroll(world, fingers=fingers("right_index")).status_code == 422
     assert enroll(world, fingers=fingers("right_index", "right_index")).status_code == 422  # same finger twice
-    assert enroll(world, fingers=[{"finger": "right_index", "template": "not base64!!"},
-                                  {"finger": "left_index", "template": template()}]).status_code == 422
+    assert enroll(world, fingers=[{"finger": "right_index", "templates": ["not base64!!"]},
+                                  {"finger": "left_index", "templates": [template()]}]).status_code == 422
     # An image-sized payload is not a minutiae template.
     big = base64.b64encode(b"x" * 5000).decode()
-    assert enroll(world, fingers=[{"finger": "right_index", "template": big},
-                                  {"finger": "left_index", "template": template()}]).status_code == 422
+    assert enroll(world, fingers=[{"finger": "right_index", "templates": [big]},
+                                  {"finger": "left_index", "templates": [template()]}]).status_code == 422
+    # A press that is not sent at all, and more presses of one finger than are ever taken.
+    assert enroll(world, fingers=[{"finger": "right_index", "templates": []},
+                                  {"finger": "left_index", "templates": [template()]}]).status_code == 422
+    assert enroll(world, fingers=fingers("right_index", "left_index", samples=9)).status_code == 422
+    # One press per finger is still accepted: a device registered before multi-press enrolment existed
+    # must not be refused by a server it was working with yesterday.
+    assert enroll(world, fingers=fingers(samples=1)).status_code == 200
     assert enroll(world, by="sup").status_code == 403  # supervisors cannot register fingerprints
 
     r = enroll(world)
