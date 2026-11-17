@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- USB device filter for the SwachhFingerprint plugin.
+     Matches the Access Computech (ACPL/Startek) AST300 scanner by vendor ID so the
+     system auto-opens this app when the scanner is plugged in via USB OTG. -->
+<resources>
+    <!-- Access Computech Ltd. — Vendor ID 0x34FC (13561 decimal) -->
+    <usb-device vendor-id="13561" />
+</resources>
+
