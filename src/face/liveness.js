@@ -10,11 +10,13 @@
 export const LIVENESS_DEFAULTS = {
   timeoutMs: 25_000,
   minFaceSize: 0.22,      // face width / frame width
-  blinkClose: 0.68,       // EAR below this fraction of the open-eye baseline counts as closed
+  blinkClose: 0.72,       // EAR below this fraction of the open-eye baseline counts as closed
   blinkOpen: 0.88,        // and back above this fraction as re-opened
-  blinkMaxMs: 1500,
-  turnYaw: 0.22,          // nose offset (inter-eye distances) that counts as turned
-  frontYaw: 0.09,         // and back within this as facing the camera
+  blinkMaxMs: 3000,       // a slow blink, which is what people are asked for, at ten frames a second
+  turnYaw: 0.22,          // how far the head must move from neutral to count as turned
+  frontYaw: 0.12,         // and back within this of neutral as facing the camera again
+  neutralFrames: 4,       // frames averaged to learn where this person's neutral actually is
+  baselineFrames: 3,      // open-eye measurements needed before a blink can be judged against them
 };
 
 export const PROMPTS = {
@@ -31,11 +33,23 @@ export function createLiveness({ now = () => Date.now(), random = Math.random, o
   const order = random() < 0.5 ? ['blink', 'turn'] : ['turn', 'blink'];
   const started = now();
   let step = 0;
-  let baseline = null;
+  let baseline = null;       // the open-eye EAR this person actually has
+  let baselineSeen = 0;
+  let neutral = null;        // where "facing the camera" is for this person, on this phone
+  let neutralSum = 0;
+  let neutralSeen = 0;
   let closedAt = null;
   let turned = false;
   let multi = 0;
   let frames = 0;
+
+  // How far this frame is from the person's own neutral. Measuring the nose against the midpoint of the
+  // eyes in absolute terms does not work: plenty of noses do not sit there, and nobody's does when the
+  // phone is held a little to one side, which is how a phone is held. Judged absolutely, those people
+  // were never once counted as facing the camera -- so the open-eye baseline was never learned, the
+  // blink could never be measured against it, and the prompt sat on "Blink slowly" for ever.
+  const offset = (m) => Math.abs(m.yaw - (neutral ?? 0));
+  const frontal = (m) => (neutral == null ? Math.abs(m.yaw) < o.turnYaw : offset(m) < o.frontYaw);
 
   // Returns { status: 'running'|'passed'|'failed', prompt, reason?, challenge }.
   function feed(m) {
@@ -49,14 +63,32 @@ export function createLiveness({ now = () => Date.now(), random = Math.random, o
     }
     if (m.count === 0) return { status: 'running', prompt: PROMPTS.position, challenge: order[step] };
     if (m.size < o.minFaceSize) return { status: 'running', prompt: PROMPTS.closer, challenge: order[step] };
-    if (Math.abs(m.yaw) < o.frontYaw) baseline = baseline == null ? m.ear : Math.max(baseline * 0.98, m.ear * 0.3 + baseline * 0.7);
+    if (!Number.isFinite(m.ear) || !Number.isFinite(m.yaw)) {
+      return { status: 'running', prompt: PROMPTS.position, challenge: order[step] };
+    }
+
+    // Neutral is learned from the first few frames, while the person is simply looking at the phone.
+    if (neutral == null && Math.abs(m.yaw) < o.turnYaw) {
+      neutralSum += m.yaw;
+      neutralSeen += 1;
+      if (neutralSeen >= o.neutralFrames) neutral = neutralSum / neutralSeen;
+    }
+
+    // The open-eye baseline is the recent high-water mark, and is never updated during a blink: letting
+    // it follow the eye down moves the "closed" line down with it, so the blink measures against itself
+    // and never registers. It decays slowly so that moving nearer or further still re-levels it.
+    if (frontal(m) && closedAt == null) {
+      baseline = baseline == null ? m.ear : Math.max(m.ear, baseline * 0.99);
+      baselineSeen += 1;
+    }
+
     if (step >= order.length) {
-      return Math.abs(m.yaw) < o.frontYaw && baseline && m.ear > baseline * o.blinkOpen
+      return frontal(m) && baseline && m.ear > baseline * o.blinkOpen
         ? { status: 'passed', prompt: PROMPTS.hold, frames }
         : { status: 'running', prompt: PROMPTS.hold, challenge: null };
     }
     const challenge = order[step];
-    if (challenge === 'blink' && baseline) {
+    if (challenge === 'blink' && baseline && baselineSeen >= o.baselineFrames) {
       if (closedAt == null && m.ear < baseline * o.blinkClose) closedAt = t;
       else if (closedAt != null && m.ear > baseline * o.blinkOpen) {
         if (t - closedAt <= o.blinkMaxMs) step += 1;
@@ -64,8 +96,8 @@ export function createLiveness({ now = () => Date.now(), random = Math.random, o
       }
     }
     if (challenge === 'turn') {
-      if (!turned && Math.abs(m.yaw) > o.turnYaw) turned = true;
-      else if (turned && Math.abs(m.yaw) < o.frontYaw) { step += 1; turned = false; }
+      if (!turned && offset(m) > o.turnYaw) turned = true;
+      else if (turned && frontal(m)) { step += 1; turned = false; }
     }
     return { status: 'running', prompt: step < order.length ? PROMPTS[order[step]] : PROMPTS.hold, challenge: order[step] ?? null, done: step };
   }

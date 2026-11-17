@@ -57,7 +57,9 @@ export default function LiveFaceCapture({ onDone, name }) {
       const r = run.feed(m);
       setPrompt(r.prompt ?? '');
       if (r.done != null) setProgress(r.done);
-      if (r.status === 'running') { setTimeout(loop, 90); return; }
+      // As fast as the detector will go. Detection itself paces this loop; the extra 90ms wait that
+      // used to be here could drop a whole blink between two measurements.
+      if (r.status === 'running') { setTimeout(loop, 0); return; }
       if (r.status === 'failed') {
         stop();
         setPhase('failed');
