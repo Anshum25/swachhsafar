@@ -6,6 +6,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stampLines } from '../../src/utils/capture.js';
 import { _clearGeocodeCache, reverseGeocode } from '../../src/services/geocode.js';
+import { reverseGeocodeInBrowser } from '../../src/services/googleMaps.js';
+
+// The browser Maps key is the fallback for the server lookup; the real one needs a referrer-restricted
+// key and a loaded Maps JS API, neither of which exists in a unit test.
+vi.mock('../../src/services/googleMaps.js', () => ({ reverseGeocodeInBrowser: vi.fn(async () => null) }));
 
 const AT = new Date('2026-11-16T09:30:00+05:30');
 const FIX = { latitude: 23.259933, longitude: 77.412615, gps_accuracy_m: 12.4 };
@@ -40,6 +45,7 @@ describe('address lookup', () => {
   const api = (impl) => ({ get: impl, calls: 0 });
   beforeEach(() => {
     _clearGeocodeCache();
+    vi.mocked(reverseGeocodeInBrowser).mockClear();
     vi.stubGlobal('navigator', { onLine: true });
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -67,6 +73,20 @@ describe('address lookup', () => {
     let called = false;
     expect(await reverseGeocode(api(async () => { called = true; return {}; }), FIX)).toBeNull();
     expect(called).toBe(false);
+  });
+
+  it('falls back to the browser Maps key when the server has no geocoding of its own', async () => {
+    reverseGeocodeInBrowser.mockResolvedValueOnce('Platform 3, Bhopal Junction');
+    const server = { get: async () => ({ address: null, source: 'disabled' }) };
+    expect(await reverseGeocode(server, FIX)).toBe('Platform 3, Bhopal Junction');
+    // Cached like any other answer: the browser key is not asked twice for the same platform.
+    expect(await reverseGeocode(server, FIX)).toBe('Platform 3, Bhopal Junction');
+    expect(reverseGeocodeInBrowser).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask the browser when the server said there is nothing at those coordinates', async () => {
+    expect(await reverseGeocode({ get: async () => ({ address: null, source: 'lookup' }) }, FIX)).toBeNull();
+    expect(reverseGeocodeInBrowser).not.toHaveBeenCalled();
   });
 
   it('remembers "no address here" but retries after an outage', async () => {

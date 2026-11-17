@@ -86,7 +86,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
           )
             : <LiveFaceCapture name={target.staff.name} onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
         ) : <PhotoCapture value={photo} onChange={setPhoto} required stamp={stampLines({ ...gps, address })} />}
-        <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} />
+        <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
         <FaceCheckNote check={face} name={target.staff.name} />
         {gate.notice}
       </div>
@@ -169,7 +169,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         <form onSubmit={submit} className="space-y-3">
           <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Stage</p>
             <Segmented label="Stage" value={stage} onChange={(v) => { setStage(v); setPicked({}); }} options={stages} /></div>
-          <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} />
+          <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase text-slate-500">Staff due for {STAGES[stage - 1]} ({chosen.length}/{members.length} selected)</p>
             <button type="button" className="btn-link text-xs" onClick={() => setPicked(Object.fromEntries(members.map((m) => [m.employee_id, true])))}>Select all</button>
