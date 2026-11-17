@@ -85,6 +85,10 @@
       disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-link { @apply text-sm font-semibold text-brand-700 underline-offset-2 hover:underline; }
+  /* Horizontal strips (tab rows) scroll by swipe; the bar itself would only add noise. */
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
   .icon-btn { @apply grid h-10 w-10 shrink-0 place-items-center rounded-xl text-brand-900 transition hover:bg-brand-50 active:scale-95; }
 }
 

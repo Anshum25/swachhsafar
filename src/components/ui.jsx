@@ -315,16 +315,52 @@ export function Table({ columns, rows, onRowClick, rowKey = (r) => r.id }) {
   );
 }
 
-// Equal-width pill tabs (reference: Active · Schedule · History).
+// Pill tabs that never clip a label: with a few tabs they share the width equally, and once the labels
+// stop fitting (Master data has eight) the row scrolls sideways instead of truncating to "Tr…".
+// The selected tab is always scrolled into view, and a fade on each scrollable edge shows there is more.
 export function Tabs({ tabs, value, onChange }) {
+  const strip = useRef(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  const measure = () => {
+    const el = strip.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setEdges({ left: el.scrollLeft > 4, right: el.scrollLeft < max - 4 });
+  };
+
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return undefined;
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tabs.length]);
+
+  // Keep the selected pill visible when the tab changes from elsewhere (or on first paint).
+  useEffect(() => {
+    const el = strip.current?.querySelector('[aria-selected="true"]');
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }, [value]);
+
   return (
-    <div className="mb-4 grid auto-cols-fr grid-flow-col gap-1 rounded-full bg-white p-1 shadow-card ring-1 ring-line/70" role="tablist">
-      {tabs.map((t) => (
-        <button key={t.value} type="button" role="tab" aria-selected={value === t.value} onClick={() => onChange(t.value)}
-          className={`min-w-0 truncate rounded-full px-1 py-2 text-center text-[13px] font-semibold transition duration-200 ${value === t.value ? 'bg-brand-700 text-white shadow-[0_3px_10px_rgba(7,89,214,0.3)]' : 'text-brand-900 hover:bg-brand-50'}`}>
-          {t.label}
-        </button>
-      ))}
+    <div className="relative mb-4">
+      <div ref={strip} onScroll={measure} role="tablist"
+        className="no-scrollbar flex snap-x snap-mandatory gap-1 overflow-x-auto rounded-full bg-white p-1 shadow-card ring-1 ring-line/70">
+        {tabs.map((t) => (
+          <button key={t.value} type="button" role="tab" aria-selected={value === t.value} onClick={() => onChange(t.value)}
+            className={`snap-start whitespace-nowrap rounded-full px-4 py-2 text-[13px] font-semibold transition duration-200 ${
+              tabs.length > 4 ? 'shrink-0' : 'flex-1 basis-0 text-center'
+            } ${value === t.value
+              ? 'bg-brand-700 text-white shadow-[0_3px_10px_rgba(7,89,214,0.3)]'
+              : 'text-brand-900 hover:bg-brand-50 active:scale-[0.97]'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div aria-hidden="true" className={`pointer-events-none absolute inset-y-1 left-1 w-8 rounded-l-full bg-gradient-to-r from-white to-transparent transition-opacity duration-200 ${edges.left ? 'opacity-100' : 'opacity-0'}`} />
+      <div aria-hidden="true" className={`pointer-events-none absolute inset-y-1 right-1 w-8 rounded-r-full bg-gradient-to-l from-white to-transparent transition-opacity duration-200 ${edges.right ? 'opacity-100' : 'opacity-0'}`} />
     </div>
   );
 }
