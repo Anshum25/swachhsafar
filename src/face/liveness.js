@@ -10,8 +10,9 @@
 export const LIVENESS_DEFAULTS = {
   timeoutMs: 25_000,
   minFaceSize: 0.22,      // face width / frame width
-  blinkClose: 0.72,       // EAR below this fraction of the open-eye baseline counts as closed
-  blinkOpen: 0.88,        // and back above this fraction as re-opened
+  blinkDip: 0.14,         // how far the eye ratio must fall below its open level to count as closed
+  jitterDips: 3,          // ...or this many times the measurement's own noise, whichever is larger
+  blinkRecover: 0.45,     // and must climb back this much of that fall to count as re-opened
   blinkMaxMs: 3000,       // a slow blink, which is what people are asked for, at ten frames a second
   turnYaw: 0.22,          // how far the head must move from neutral to count as turned
   frontYaw: 0.12,         // and back within this of neutral as facing the camera again
@@ -39,6 +40,8 @@ export function createLiveness({ now = () => Date.now(), random = Math.random, o
   let neutralSum = 0;
   let neutralSeen = 0;
   let closedAt = null;
+  let lastEar = null;
+  let jitter = null;      // how much the measurement moves by itself, frame to frame
   let turned = false;
   let multi = 0;
   let frames = 0;
@@ -55,7 +58,11 @@ export function createLiveness({ now = () => Date.now(), random = Math.random, o
   function feed(m) {
     frames += 1;
     const t = now();
-    if (t - started > o.timeoutMs) return { status: 'failed', reason: 'timeout', prompt: null };
+    // Which challenge ran out of time, so the person is told what was not seen rather than that
+    // something unnamed did not happen.
+    if (t - started > o.timeoutMs) {
+      return { status: 'failed', reason: 'timeout', pending: order[step] ?? null, prompt: null };
+    }
     if (m.count > 1) {
       multi += 1;
       if (multi >= 3) return { status: 'failed', reason: 'multiple_faces', prompt: PROMPTS.one_face };
@@ -80,17 +87,31 @@ export function createLiveness({ now = () => Date.now(), random = Math.random, o
     if (frontal(m) && closedAt == null) {
       baseline = baseline == null ? m.ear : Math.max(m.ear, baseline * 0.99);
       baselineSeen += 1;
+      // What the measurement does on its own, frame to frame, with the eye held open. It is the yardstick
+      // for whether a fall is the eye closing or the detector wobbling.
+      if (lastEar != null) {
+        const moved = Math.abs(m.ear - lastEar);
+        jitter = jitter == null ? moved : jitter * 0.8 + moved * 0.2;
+      }
     }
+    lastEar = m.ear;
+
+    // How far the eye ratio has to fall for the fall to be a blink. The landmark model draws a closed
+    // eye from a small crop of the frame and does not draw it fully shut, so the fall is around a fifth,
+    // not the two thirds a face measured properly would give: a fixed deep threshold is one a person can
+    // never satisfy, however hard they blink. What separates a blink from the detector's own wobble is
+    // not depth but that the fall is far larger than the wobble -- so it is measured against both.
+    const dip = baseline == null ? null : Math.max(baseline * o.blinkDip, (jitter ?? 0) * o.jitterDips);
 
     if (step >= order.length) {
-      return frontal(m) && baseline && m.ear > baseline * o.blinkOpen
+      return frontal(m) && baseline && m.ear > baseline - (dip ?? 0) * o.blinkRecover
         ? { status: 'passed', prompt: PROMPTS.hold, frames }
         : { status: 'running', prompt: PROMPTS.hold, challenge: null };
     }
     const challenge = order[step];
     if (challenge === 'blink' && baseline && baselineSeen >= o.baselineFrames) {
-      if (closedAt == null && m.ear < baseline * o.blinkClose) closedAt = t;
-      else if (closedAt != null && m.ear > baseline * o.blinkOpen) {
+      if (closedAt == null && m.ear <= baseline - dip) closedAt = t;
+      else if (closedAt != null && m.ear >= baseline - dip * o.blinkRecover) {
         if (t - closedAt <= o.blinkMaxMs) step += 1;
         closedAt = null;
       }

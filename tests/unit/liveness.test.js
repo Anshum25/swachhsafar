@@ -82,6 +82,8 @@ describe('the liveness challenge', () => {
     const r = run(live, steady(300));
     expect(r.status).toBe('failed');
     expect(r.reason).toBe('timeout');
+    // And says which challenge was never seen, so the person is told what to do differently.
+    expect(r.pending).toBe('blink');
   });
 
   it('refuses a second face in view, and asks for one first', () => {
@@ -103,6 +105,27 @@ describe('the liveness challenge', () => {
     const slow = [frame({ ear: 0.18 }), ...steady(6, { ear: 0.09 }), frame({ ear: 0.19 }), frame({ ear: 0.30 })];
     const r = run(live, [...steady(5), ...slow, ...steady(3), ...turn(), ...steady(4)]);
     expect(r.status).toBe('passed');
+  });
+
+  // What a phone actually measures. The eye landmarks come from a small crop of the frame, so a closed
+  // eye is not drawn fully closed: the ratio dips by a fifth or so, not by two thirds. Demanding a deep
+  // drop means a person blinks, and blinks, and is never seen to have blinked.
+  it('counts the shallow blink a phone actually measures', () => {
+    const live = liveness('blink');
+    const shallow = [frame({ ear: 0.27 }), frame({ ear: 0.243 }), frame({ ear: 0.238 }),
+      frame({ ear: 0.26 }), frame({ ear: 0.295 }), frame({ ear: 0.30 })];
+    const r = run(live, [...steady(5), ...shallow, ...steady(3), ...turn(), ...steady(4)]);
+    expect(r.status).toBe('passed');
+  });
+
+  // The other side of that: a still photograph measures a ratio that wobbles only with the detector's
+  // own noise, and no amount of wobble may be mistaken for a blink.
+  it('does not mistake measurement noise in a still photo for a blink', () => {
+    const live = liveness('blink');
+    const noisy = Array.from({ length: 320 }, (_, i) => frame({ ear: 0.30 + (i % 3 - 1) * 0.004 }));
+    const r = run(live, noisy);
+    expect(r.status).toBe('failed');
+    expect(r.reason).toBe('timeout');
   });
 
   it('works with the turn asked for first', () => {

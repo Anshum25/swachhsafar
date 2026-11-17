@@ -59,7 +59,9 @@ const ear = (p) => (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3])
 // yaw: nose tip offset from the eyes' midpoint, in inter-eye distances (0 = facing the camera).
 export async function analyseFrame(video) {
   const faceapi = await loadFaceEngine();
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+  // 320 rather than 224: the eye corners this reads are what a blink is measured from, and a closed eye
+  // drawn from too small a crop barely looks closed at all.
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
   const faces = await faceapi.detectAllFaces(video, options).withFaceLandmarks();
   if (faces.length !== 1) return { count: faces.length };
   const pts = faces[0].landmarks.positions;

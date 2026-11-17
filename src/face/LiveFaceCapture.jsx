@@ -63,7 +63,10 @@ export default function LiveFaceCapture({ onDone, name }) {
       if (r.status === 'failed') {
         stop();
         setPhase('failed');
-        setError(r.reason === 'multiple_faces' ? 'More than one face was in view.' : 'The live check timed out.');
+        setError(r.reason === 'multiple_faces' ? 'More than one face was in view.'
+          : r.pending === 'blink' ? 'No blink was seen. Look straight at the camera, hold still, then close both eyes for a moment and open them.'
+            : r.pending === 'turn' ? 'No head turn was seen. Turn your head to one side, then back to the camera.'
+              : 'The live check timed out.');
         onDone({ liveness: 'failed', photo: null, reason: r.reason });
         return;
       }
