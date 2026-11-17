@@ -82,6 +82,21 @@ npx vite build && npx cap sync android     # the web build must exist before Gra
 cd android && ./gradlew assembleRelease
 ```
 
+### The version number
+
+`versionName` and `versionCode` are not written in `android/app/build.gradle`: it reads `package.json`.
+Raise the version there, nowhere else.
+
+`versionCode` is that version plus the CI run number — `2.0.3` on run 418 is `20003418`. Android refuses
+to install an APK whose `versionCode` has not risen above the installed one, and several releases a day
+share a version name, so the run number is what makes each release installable over the last. A version
+bump raises the base by at least 1000, so the code rises across a bump as well as within one. A local
+build has no run number and gets `…000`, which is fine for a build nobody publishes.
+
+`deploy/scripts/receive-release.sh` refuses an APK whose `versionCode` has not risen above the published
+one, as `publish-apk.sh` already did: such an APK downloads, fails to install, and leaves the phone
+offering the same update for ever.
+
 Output: `android/app/build/outputs/apk/release/app-release-unsigned.apk`. Release builds are minified,
 resource-shrunk and not debuggable, and Gradle holds **no** signing configuration: signing happens outside
 Gradle so no key material is ever in the repository.

@@ -1,6 +1,22 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 
+// The version is package.json's, read here rather than repeated: the number in the app's footer, the one
+// the APK reports to Android and the one published in latest.json are then one number that cannot drift.
+def swachhVersionName = new groovy.json.JsonSlurper().parse(file('../../package.json')).version
+// versionCode has to rise with every release Android is asked to install over the last one, and a version
+// name alone cannot do that: several releases a day share it. So it is the version plus the CI run
+// number, which only ever increases. A version bump raises the base by at least 1000, so the code rises
+// across a bump as well as within one. 2.0.3 build 418 -> 20_003_418, far below Android's 2_100_000_000.
+def swachhVersionParts = (swachhVersionName =~ /(\d+)\.(\d+)\.(\d+)/)
+if (!swachhVersionParts) {
+    throw new GradleException("package.json version '${swachhVersionName}' is not major.minor.patch")
+}
+def swachhVersionCode = (swachhVersionParts[0][1].toInteger() * 10000
+        + swachhVersionParts[0][2].toInteger() * 100
+        + swachhVersionParts[0][3].toInteger()) * 1000 +
+        (project.findProperty('swachhBuild') ?: '0').toString().toInteger()
+
 android {
     namespace = "in.itfarmer.swachhsafar"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -8,8 +24,8 @@ android {
         applicationId "in.itfarmer.swachhsafar"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 202
-        versionName "2.0.2"
+        versionCode swachhVersionCode
+        versionName swachhVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

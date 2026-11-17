@@ -118,7 +118,9 @@ jobs:
             echo "and paste the whole single line, with nothing added around it."
             exit 1
           fi
-          cd android && ./gradlew assembleRelease
+          # versionCode is the version in package.json plus this run's number (android/app/build.gradle),
+          # so every release Android is offered has a higher code than the one it replaces.
+          cd android && ./gradlew assembleRelease -PswachhBuild=${{ github.run_number }}
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
           "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:ANDROID_KEYSTORE_PASSWORD \

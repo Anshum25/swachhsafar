@@ -68,6 +68,19 @@ log "frontend live: $rel"
 # page shows it, and the installed app compares its `sha` with its own build to offer an update.
 if [[ -s "$work/app.apk" ]]; then
   install -d -m 755 "$DOWNLOADS"
+  # An APK whose versionCode has not risen is one Android refuses to install over the release already
+  # out there: it would download, fail to install, and leave the phone offering the same update for
+  # ever. publish-apk.sh refuses such an APK by hand; the same rule applies to what CI sends. The web
+  # release above is already live and latest.json is untouched, so what stays published is the last APK
+  # that was valid.
+  if [[ -s "$work/apk.json" && -f "$DOWNLOADS/latest.json" ]]; then
+    new_code=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("version_code",0))' "$work/apk.json")
+    old_code=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("version_code",0))' "$DOWNLOADS/latest.json")
+    (( new_code > old_code )) || {
+      log "refused: APK versionCode $new_code is not higher than the published $old_code; APK not published"
+      exit 1
+    }
+  fi
   name="swachh-safar-${SHA:0:7}.apk"
   install -m 644 "$work/app.apk" "$DOWNLOADS/$name"
   ln -sfn "$name" "$DOWNLOADS/swachh-safar-latest.apk"
