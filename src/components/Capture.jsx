@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CameraIcon, PinIcon, Spinner } from './Icons.jsx';
 import { compressImage, getPosition } from '../utils/capture.js';
 import { reverseGeocode } from '../services/geocode.js';
+import LocationMap from './LocationMap.jsx';
 import { useSession } from '../app/session.jsx';
 import { validateMedia } from '../database/mediaStore.js';
 import { startVoiceRecording, voiceFormat } from '../utils/voiceRecording.js';
@@ -65,8 +66,10 @@ const GUARD_ERRORS = {
 };
 // `auto`: fetch the fix as soon as the form opens, so the usual case needs no tap at all. The button stays
 // for a retry or a refresh. `onAddress` receives the street address once it is known (null when there is
-// none: offline, or no geocoding configured).
-export function GpsCapture({ value, onChange, auto = false, onAddress }) {
+// none: offline, or no geocoding configured). `map`: also show the fix on a Google map under the row --
+// a glance is enough to tell the platform you are standing on from a stale fix. The map is never
+// required; it simply is not there when it cannot load (see LocationMap).
+export function GpsCapture({ value, onChange, auto = false, onAddress, map = false }) {
   const sec = useSecurity();
   const api = useSession()?.api;
   const [busy, setBusy] = useState(false);
@@ -120,25 +123,28 @@ export function GpsCapture({ value, onChange, auto = false, onAddress }) {
   }, [auto]);
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-canvas px-3.5 py-2.5 ring-1 ring-line">
-      <div className="flex min-w-0 items-center gap-2 text-[13px]">
-        <PinIcon className={`h-5 w-5 shrink-0 ${value ? 'text-success' : 'text-slate-400'}`} />
-        {value ? (
-          // The address is what a person recognises; the coordinates stay, smaller, because they are the
-          // evidence and the address is only a lookup of them.
-          <span className="min-w-0" data-testid="gps-value">
-            {address && <span className="block truncate font-medium text-ink" title={address}>{address}</span>}
-            <span className={address ? 'block text-xs text-slate-500' : ''}>
-              {value.latitude.toFixed(5)}, {value.longitude.toFixed(5)} <span className="text-slate-500">±{Math.round(value.gps_accuracy_m)} m</span>
+    <div className={map ? 'space-y-2' : undefined}>
+      <div className="flex items-center justify-between gap-3 rounded-xl bg-canvas px-3.5 py-2.5 ring-1 ring-line">
+        <div className="flex min-w-0 items-center gap-2 text-[13px]">
+          <PinIcon className={`h-5 w-5 shrink-0 ${value ? 'text-success' : 'text-slate-400'}`} />
+          {value ? (
+            // The address is what a person recognises; the coordinates stay, smaller, because they are the
+            // evidence and the address is only a lookup of them.
+            <span className="min-w-0" data-testid="gps-value">
+              {address && <span className="block truncate font-medium text-ink" title={address}>{address}</span>}
+              <span className={address ? 'block text-xs text-slate-500' : ''}>
+                {value.latitude.toFixed(5)}, {value.longitude.toFixed(5)} <span className="text-slate-500">±{Math.round(value.gps_accuracy_m)} m</span>
+              </span>
             </span>
-          </span>
-        ) : (
-          <span className="text-slate-500">{busy ? 'Getting location…' : error ?? 'Location not captured'}</span>
-        )}
+          ) : (
+            <span className="text-slate-500">{busy ? 'Getting location…' : error ?? 'Location not captured'}</span>
+          )}
+        </div>
+        <button type="button" className="btn-secondary" onClick={locate} disabled={busy}>
+          {busy && <Spinner />} {value ? 'Refresh' : 'Get GPS'}
+        </button>
       </div>
-      <button type="button" className="btn-secondary" onClick={locate} disabled={busy}>
-        {busy && <Spinner />} {value ? 'Refresh' : 'Get GPS'}
-      </button>
+      {map && <LocationMap value={value} />}
     </div>
   );
 }
