@@ -18,8 +18,21 @@ const check = (fetchImpl, sha = BUILT) =>
 describe('APK update check', () => {
   it('offers the download when the published release is a different commit', async () => {
     expect(await check(answer({ sha: PUBLISHED, version_name: '2.1.0' }))).toEqual({
-      available: true, version: '2.1.0', url: '/downloads/swachh-safar-latest.apk',
+      available: true, version: '2.1.0', build: PUBLISHED.slice(0, 7), url: '/downloads/swachh-safar-latest.apk',
     });
+  });
+
+  // The alias is one name for a file that keeps changing, cached for hours; the release's own file is
+  // not. Handing back a cached older APK under the alias installs something that changes nothing and
+  // leaves the banner up, so the release's own url wins whenever it publishes one.
+  it("downloads the release's own file rather than the latest alias", async () => {
+    const release = { sha: PUBLISHED, version_name: '2.1.0', url: '/downloads/swachh-safar-bbbbbbb.apk' };
+    expect(await check(answer(release))).toMatchObject({ url: expect.stringContaining('/downloads/swachh-safar-bbbbbbb.apk') });
+    // Anything that is not a download path on this server is ignored: the banner never sends a phone
+    // somewhere a release file said to go.
+    for (const url of ['https://elsewhere.example/app.apk', '/etc/passwd', 42]) {
+      expect(await check(answer({ ...release, url }))).toMatchObject({ url: '/downloads/swachh-safar-latest.apk' });
+    }
   });
 
   it('says nothing when the published release is this build', async () => {
@@ -28,7 +41,7 @@ describe('APK update check', () => {
 
   it('offers the download even when the release states no version name', async () => {
     expect(await check(answer({ sha: PUBLISHED }))).toEqual({
-      available: true, version: null, url: '/downloads/swachh-safar-latest.apk',
+      available: true, version: null, build: PUBLISHED.slice(0, 7), url: '/downloads/swachh-safar-latest.apk',
     });
   });
 

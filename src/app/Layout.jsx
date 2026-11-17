@@ -14,6 +14,7 @@ import { MODULES } from './modules.js';
 import { DEMO_MODE } from '../services/demoApi.js';
 import { AppUpdateBanner, InstallBanner, UpdateBanner } from '../components/PwaPanels.jsx';
 import { requestPersistence } from '../pwa/pwaState.js';
+import { BUILD_SHA } from '../pwa/appUpdate.js';
 
 const ToastContext = createContext(() => {});
 export const useNotify = () => useContext(ToastContext);
@@ -34,6 +35,11 @@ export const NAV = MODULES.filter((m) => !m.menuOnly).map((m) => ({ ...m, Icon: 
 export const MODULE_ICONS = ICONS;
 // eslint-disable-next-line no-undef
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+// Every APK so far carries the same version name, so the version alone cannot say which build is
+// installed -- and "the app still offers an update after I installed it" is exactly the question that
+// needs answering. The build id is the commit the bundle was made from; it is what the update check
+// compares, and what /downloads/latest.json publishes, so the two can be read against each other.
+const BUILD_ID = BUILD_SHA ? BUILD_SHA.slice(0, 7) : '';
 
 export const visibleNav = (can) => NAV.filter((n) => !n.any.length || n.any.some(can));
 const isOn = (p, path) => (p === '/' ? path === '/' : path === p || path.startsWith(`${p}/`));
@@ -166,7 +172,9 @@ function MenuContent({ path, onPick, showBrand = true }) {
       </div>
       <div className="shrink-0">
         <RailScene compact className="block h-auto w-full" />
-        <p className="bg-[#c6dcfa] pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-xs font-medium text-brand-900">App Version: {APP_VERSION}</p>
+        <p className="bg-[#c6dcfa] pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-xs font-medium text-brand-900" data-testid="app-version">
+          App Version: {APP_VERSION}{BUILD_ID ? ` · ${BUILD_ID}` : ''}
+        </p>
       </div>
     </div>
   );

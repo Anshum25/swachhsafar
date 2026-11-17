@@ -35,5 +35,10 @@ export async function checkAppUpdate({
   }
   const published = typeof latest?.sha === 'string' ? latest.sha : '';
   if (!published || published === sha) return none;
-  return { available: true, version: latest.version_name ?? null, url: downloadUrl };
+  // The download is the release's own file (…/swachh-safar-<sha>.apk), not the swachh-safar-latest.apk
+  // alias. The alias is one name for a file that keeps changing, served with a four-hour cache, so a
+  // phone can be handed the previous APK under it -- which installs, changes nothing, and leaves this
+  // banner up with no way to tell why. A per-build name is safe to cache and says which build it is.
+  const file = typeof latest.url === 'string' && latest.url.startsWith('/downloads/') ? serverUrl(latest.url) : downloadUrl;
+  return { available: true, version: latest.version_name ?? null, build: published.slice(0, 7), url: file };
 }

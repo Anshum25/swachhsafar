@@ -74,7 +74,12 @@ function useAppUpdate() {
 
 // "Download" opens the server's download link, which installs over this app. Records live in the app's own
 // storage and are kept across the update.
-const updateText = (update) => `New version available${update.version ? ` (${update.version})` : ''}. Records stored on this phone are kept.`;
+// The build id is named here and under the menu, so "is the one I installed the one being offered?" is a
+// question that can be answered by looking, rather than by installing again and hoping.
+const updateText = (update) => {
+  const what = [update.version, update.build].filter(Boolean).join(' · ');
+  return `New version available${what ? ` (${what})` : ''}. Records stored on this phone are kept.`;
+};
 
 export function AppUpdateBanner() {
   const update = useAppUpdate();
