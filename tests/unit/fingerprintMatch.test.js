@@ -69,6 +69,37 @@ describe('how many presses a finger is registered from', () => {
   });
 });
 
+// A score of zero means one of two completely different things: a different finger, or a template that
+// held no minutiae this matcher could read. Reporting the second as a mismatch sends everyone off to
+// adjust a threshold that was never the problem -- which is exactly what happened.
+describe('a score of zero', () => {
+  it('is reported as an unreadable template when nothing could be read, not as a mismatch', () => {
+    const unreadable = decideFingerprint({
+      result: { score: 0, matcher: 'acpl-sdk-v1', probeMinutiae: 0, candidateMinutiae: 24 },
+      profile: PROFILE,
+    });
+    expect(unreadable).toMatchObject({ matched: false, reason: 'unreadable_template', score: null });
+    const alsoUnreadable = decideFingerprint({
+      result: { score: 0, matcher: 'acpl-sdk-v1', probeMinutiae: 31, candidateMinutiae: 0 },
+      profile: PROFILE,
+    });
+    expect(alsoUnreadable.reason).toBe('unreadable_template');
+  });
+
+  it('is still a plain mismatch when both templates were read and simply did not agree', () => {
+    const d = decideFingerprint({
+      result: { score: 0, matcher: 'acpl-sdk-v1', probeMinutiae: 28, candidateMinutiae: 31 },
+      profile: PROFILE,
+    });
+    expect(d).toMatchObject({ matched: false, reason: 'mismatch', score: 0 });
+  });
+
+  // An older device reports no counts at all; it must not be treated as unreadable on that basis.
+  it('is a mismatch when the matcher does not report what it read', () => {
+    expect(decideFingerprint({ result: { score: 0, matcher: 'acpl-sdk-v1' }, profile: PROFILE }).reason).toBe('mismatch');
+  });
+});
+
 describe('the default match score', () => {
   it('is the same number the server schema defaults to', () => {
     const schema = readFileSync(new URL('../../backend/app/schemas/policy.py', import.meta.url), 'utf8');
@@ -144,7 +175,7 @@ describe('scanner', () => {
 
   it('asks the scanner to compare, and treats any failure as no result', async () => {
     expect(await matchFinger({ template: 'AAEC', profile: PROFILE }, plugin()))
-      .toEqual({ score: 88, finger: 'right_index', matcher: 'acpl-sdk-v1' });
+      .toMatchObject({ score: 88, finger: 'right_index', matcher: 'acpl-sdk-v1' });
     expect(await matchFinger({ template: 'AAEC', profile: PROFILE }, plugin({ match: async () => { throw new Error('nope'); } }))).toBeNull();
     expect(await matchFinger({ template: 'AAEC', profile: PROFILE }, plugin({ match: async () => ({}) }))).toBeNull();
     expect(await matchFinger({ template: null, profile: PROFILE }, plugin())).toBeNull();

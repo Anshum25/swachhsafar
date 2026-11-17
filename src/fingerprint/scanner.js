@@ -108,7 +108,10 @@ export async function matchFinger({ template, profile }, plugin = scanner()) {
   try {
     const r = await plugin.match({ template, candidates: profile.fingers, format: profile.format });
     if (typeof r?.score !== 'number') return null;
-    return { score: r.score, finger: r.finger ?? null, matcher: r.matcher ?? profile.matcher };
+    return { score: r.score, finger: r.finger ?? null, matcher: r.matcher ?? profile.matcher,
+      // How much of each template the matcher could read. Zero means it could not read one at all,
+      // which is a different problem from the wrong finger and has a different fix.
+      probeMinutiae: r.probeMinutiae ?? null, candidateMinutiae: r.candidateMinutiae ?? null };
   } catch {
     return null;
   }

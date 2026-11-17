@@ -73,6 +73,8 @@ export function FingerprintCheckNote({ check, name }) {
       `${name}'s fingerprints were registered with a different scanner and cannot be compared with this one. They must be registered again.`],
     unreadable: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
       'The scanner could not compare that finger. Try again, or use the photo check.'],
+    unreadable_template: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
+      `${name}'s registered fingerprints are in a form this scanner cannot read, so nothing can be compared — this is not a wrong finger. Register them again on this app version, then sync. Use the photo check meanwhile.`],
   }[check.status] ?? [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
     check.message ?? 'The fingerprint could not be read.'];
   return (

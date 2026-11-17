@@ -99,6 +99,12 @@ attendance are the tolerances and the floor, not the threshold alone:
   long-standing forensic one for calling two prints the same finger.
 - Bytes that are not an ISO/IEC 19794-2 record are refused, not guessed at. Minutiae invented from
   arbitrary bytes line up with other invented minutiae about as readily as a finger does with itself.
+- The minutiae block is **located**, not assumed. The record begins "FMR" and the 4-byte finger view
+  header comes somewhere after it — at offset 28 in ISO/IEC 19794-2:2005, elsewhere in the dialects
+  vendors ship — and its **last** byte is the number of minutiae. Reading that count from byte 27, the
+  reserved byte that is always zero, made every template parse to no minutiae at all and every
+  comparison score 0. The parser now tries the known layouts and takes the one whose minutiae fit the
+  record and sit inside the image its header declares.
 
 Two faults were found here after a colleague's finger was accepted:
 
@@ -110,7 +116,14 @@ Two faults were found here after a colleague's finger was accepted:
    tolerance. Six coincidental points out of thirty scored 30.
 
 `android/app/src/test/.../IsoTemplateMatcherTest.kt` holds the line: a genuine second press scores at or
-above the threshold, and forty different-finger pairs all stay below it.
+above the threshold, forty different-finger pairs all stay below it, and a record is parsed from each of
+the layouts vendors use. Those tests once built their records with the same wrong offset the parser
+read, so they agreed with each other and proved nothing; the builder now writes a real record.
+
+A score of zero means one of two different things, and the app no longer conflates them: a different
+finger, or a template that held no minutiae the matcher could read. The matcher reports how much it read
+from each side, and a template it could not read is reported as such — with the fix being to register
+again, not to lower the threshold.
 
 ## When a phone says "no fingerprints for this person"
 

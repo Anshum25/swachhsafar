@@ -38,6 +38,15 @@ object IsoTemplateMatcher {
     /** Fewer matched points than this is not evidence of anything, whatever proportion it works out to. */
     const val MIN_MATCHED_MINUTIAE = 12
 
+    /** Where the 4-byte finger view header sits, by dialect: ISO 19794-2:2005 first, then the others. */
+    private val VIEW_HEADER_OFFSETS = intArrayOf(28, 26, 30, 32, 24, 34)
+
+    /** Minutiae coordinates are 14-bit, and no sensor is anywhere near this wide. */
+    private const val MAX_COORD = 16_383
+
+    /** A record with a header and one minutia cannot be shorter than this. */
+    private const val MIN_RECORD_BYTES = 30
+
     data class Minutia(
         val x: Double,
         val y: Double,
@@ -47,26 +56,64 @@ object IsoTemplateMatcher {
     )
 
     /**
-     * Parses an ISO/IEC 19794-2 record into its minutiae, or returns none when the bytes are not one.
+     * Parses a finger minutiae record into its minutiae, or returns none when the bytes are not one.
      *
-     * Layout: a 24-byte record header beginning "FMR", then a 4-byte finger view header whose last byte
-     * is the number of minutiae, then 6 bytes per minutia (type + x, reserved + y, angle, quality).
+     * The record begins "FMR", and somewhere after that comes a 4-byte finger view header whose last
+     * byte is the number of minutiae, followed by 6 bytes per minutia (type + x, reserved + y, angle,
+     * quality). Where exactly depends on the dialect: ISO/IEC 19794-2:2005 puts the view header at 28,
+     * ANSI/INCITS 378 and several vendors put it elsewhere, and this app does not get to choose which
+     * one the scanner's SDK emits.
+     *
+     * So the block is located rather than assumed. An earlier version assumed offset 28 and read the
+     * count from byte 27 -- the reserved byte, which is zero -- so every template parsed to no minutiae
+     * at all and every comparison scored 0.
      */
     fun parseIso19794(bytes: ByteArray): List<Minutia> {
-        if (bytes.size < 28) return emptyList()
-        // "FMR". Without it these are not ISO 19794-2 bytes, and nothing read out of them would mean what
-        // it means in a real record.
+        if (bytes.size < MIN_RECORD_BYTES) return emptyList()
+        // "FMR". Without it these are not finger minutiae bytes, and nothing read out of them would mean
+        // what it means in a real record.
         if (bytes[0].toInt() != 0x46 || bytes[1].toInt() != 0x4D || bytes[2].toInt() != 0x52) return emptyList()
 
-        var count = bytes[27].toInt() and 0xFF
-        val minutiaeStart = 28
-        if (minutiaeStart + count * 6 > bytes.size) {
-            count = (bytes.size - minutiaeStart) / 6
-        }
-        if (count <= 0) return emptyList()
+        // The header declares the image it came from; minutiae outside it are a misread layout.
+        val declaredW = read16(bytes, 18)
+        val declaredH = read16(bytes, 20)
+        val maxX = if (declaredW in 1..MAX_COORD) declaredW else MAX_COORD
+        val maxY = if (declaredH in 1..MAX_COORD) declaredH else MAX_COORD
 
+        var best: List<Minutia> = emptyList()
+        var bestFit = false
+        for (viewHeader in VIEW_HEADER_OFFSETS) {
+            val countAt = viewHeader + 3
+            val start = viewHeader + 4
+            if (countAt >= bytes.size || start >= bytes.size) continue
+            val count = bytes[countAt].toInt() and 0xFF
+            if (count < 1) continue
+            val end = start + count * 6
+            if (end > bytes.size) continue
+
+            val minutiae = readMinutiae(bytes, start, count)
+            // Every point has to sit inside the image the header describes, and they must not all be the
+            // same point: both are what a layout read at the wrong offset looks like.
+            if (minutiae.size != count) continue
+            if (minutiae.any { it.x > maxX || it.y > maxY }) continue
+            if (minutiae.distinctBy { it.x to it.y }.size < (count + 1) / 2) continue
+
+            // An exact fit -- the minutiae ending the record, bar the 2-byte extended data length -- is
+            // the layout this record is actually in; anything else is only a candidate.
+            val fits = bytes.size - end in 0..2
+            if (fits) return minutiae.sortedByDescending { it.quality }
+            if (!bestFit && minutiae.size > best.size) best = minutiae
+        }
+        // Strongest first: those are the ones used as alignment anchors.
+        return best.sortedByDescending { it.quality }
+    }
+
+    private fun read16(bytes: ByteArray, at: Int): Int =
+        if (at + 1 < bytes.size) ((bytes[at].toInt() and 0xFF) shl 8) or (bytes[at + 1].toInt() and 0xFF) else -1
+
+    private fun readMinutiae(bytes: ByteArray, start: Int, count: Int): List<Minutia> {
         val buf = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
-        buf.position(minutiaeStart)
+        buf.position(start)
         val minutiae = ArrayList<Minutia>(count)
         for (i in 0 until count) {
             if (buf.remaining() < 6) break
@@ -81,8 +128,7 @@ object IsoTemplateMatcher {
             val theta = (angleByte.toDouble() / 256.0) * (2.0 * Math.PI)
             minutiae.add(Minutia(x, y, theta, type, qualityByte))
         }
-        // Strongest first: those are the ones used as alignment anchors.
-        return minutiae.sortedByDescending { it.quality }
+        return minutiae
     }
 
     /**

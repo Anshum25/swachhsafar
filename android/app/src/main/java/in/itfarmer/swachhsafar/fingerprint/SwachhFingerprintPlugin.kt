@@ -268,6 +268,12 @@ class SwachhFingerprintPlugin : Plugin() {
     private fun matchOnWorker(call: PluginCall, candidatesArr: JSArray, templateB64: String) {
         try {
             val probe = Base64.decode(templateB64, Base64.DEFAULT)
+            // How many minutiae each side actually yielded. A score of zero means one of two completely
+            // different things -- a different finger, or a template this app could not read -- and
+            // without these the two are indistinguishable from the outside, which is how a parser that
+            // read no minutiae at all went unnoticed behind "no match".
+            val probeMinutiae = IsoTemplateMatcher.parseIso19794(probe).size
+            var candidateMinutiae = 0
             var bestScore = 0.0
             var bestFinger: String? = null
 
@@ -279,6 +285,7 @@ class SwachhFingerprintPlugin : Plugin() {
                 val finger = obj.optString("finger")
                 for (candB64 in templatesOf(obj)) {
                     val candBytes = Base64.decode(candB64, Base64.DEFAULT)
+                    candidateMinutiae = maxOf(candidateMinutiae, IsoTemplateMatcher.parseIso19794(candBytes).size)
                     val score = IsoTemplateMatcher.match(probe, candBytes)
                     if (score > bestScore) {
                         bestScore = score
@@ -294,6 +301,8 @@ class SwachhFingerprintPlugin : Plugin() {
                 put("score", bestScore)
                 bestFinger?.let { put("finger", it) }
                 put("matcher", MATCHER_ID)
+                put("probeMinutiae", probeMinutiae)
+                put("candidateMinutiae", candidateMinutiae)
             }
             call.resolve(ret)
         } catch (e: Exception) {

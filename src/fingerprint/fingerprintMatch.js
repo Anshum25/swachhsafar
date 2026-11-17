@@ -20,6 +20,9 @@ export const SAMPLES_PER_FINGER = 4;
 //   not_enrolled  nothing registered for this employee on this device
 //   wrong_matcher registered by a different scanner SDK: the scores are not comparable
 //   unreadable    the scanner could not compare (no result at all)
+//   unreadable_template  it compared, but one of the templates held no minutiae it could read: the
+//                 registration or the scan is in a form this matcher does not understand, which is not
+//                 the same as the wrong person and is not fixed by lowering the score
 //   mismatch      compared, but below the division's score
 export function decideFingerprint({ result, profile, threshold = DEFAULT_MATCH_SCORE } = {}) {
   const none = { matched: false, score: null, finger: null, matcher: profile?.matcher ?? null };
@@ -30,6 +33,11 @@ export function decideFingerprint({ result, profile, threshold = DEFAULT_MATCH_S
   }
   const score = typeof result.score === 'number' ? result.score : null;
   if (score == null) return { ...none, reason: 'unreadable' };
+  // A template that yielded no minutiae cannot produce a score that means anything, and reporting it as
+  // a mismatch sends everyone off to adjust a threshold that was never the problem.
+  if (result.probeMinutiae === 0 || result.candidateMinutiae === 0) {
+    return { ...none, reason: 'unreadable_template' };
+  }
   const matched = score >= threshold;
   return { matched, reason: matched ? 'matched' : 'mismatch', score, finger: result.finger ?? null,
     matcher: result.matcher ?? profile.matcher ?? null };
