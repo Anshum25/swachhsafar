@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { loadGoogleMaps, mapsConfigured } from '../services/googleMaps.js';
+import { loadGoogleMaps, mapsConfigured, onMapsAuthFailure } from '../services/googleMaps.js';
 
 // Where the record is being captured, on a map, so whoever marks attendance can see at a glance that the
 // fix is the platform they are standing on and not a stale one from the shed an hour ago.
@@ -58,7 +58,10 @@ export default function LocationMap({ value, label = 'Capture location', classNa
       }
       setState('ready');
     });
-    return () => { cancelled = true; };
+    // The refusal of a key arrives after the map has been built (Google calls gm_authFailure late), so the
+    // map takes itself away then rather than sitting there as Google's grey error overlay.
+    const off = onMapsAuthFailure(() => { if (!cancelled) setState('off'); });
+    return () => { cancelled = true; off(); };
     // Created on the first fix; later fixes move it in the effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [has]);
