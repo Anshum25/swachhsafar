@@ -91,6 +91,12 @@ export const LogoutIcon = (p) => (
 export const UserIcon = (p) => (
   <Icon {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" /></Icon>
 );
+export const FingerprintIcon = (p) => (
+  <Icon {...p}>
+    <path d="M12 11c0 4-.4 6.3-1.3 8.2" /><path d="M8.5 19.5A14 14 0 0 0 9.6 12a2.4 2.4 0 0 1 4.8 0c0 2.6-.2 4.6-.7 6.4" />
+    <path d="M16.6 17.8A22 22 0 0 0 17 12a5 5 0 0 0-9.3-2.6" /><path d="M5 13.6A11 11 0 0 1 5 12a7 7 0 0 1 11.6-5.3" />
+  </Icon>
+);
 export const LockIcon = (p) => (
   <Icon {...p}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></Icon>
 );

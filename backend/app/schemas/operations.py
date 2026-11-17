@@ -19,6 +19,11 @@ class AttendanceIn(Captured):
     # Face verification result computed on the device (distance to the closest registered descriptor).
     face_distance: float | None = Field(default=None, ge=0, le=4)
     face_model: str | None = Field(default=None, max_length=40)
+    # Fingerprint verification result from the scanner's own matcher, when that is how this capture was
+    # verified. The score's scale belongs to the matcher, so it is recorded with it.
+    fingerprint_score: int | None = Field(default=None, ge=0, le=10_000)
+    fingerprint_matcher: str | None = Field(default=None, max_length=40)
+    fingerprint_finger: str | None = Field(default=None, max_length=20)
     # When the location fix was taken (device clock), and the capture conditions the app reports.
     gps_timestamp: AwareDatetime | None = None
     security: CaptureSecurity | None = None
@@ -30,6 +35,11 @@ class GroupMember(StrictModel):
     photo_media_id: uuid.UUID | None = None
     face_distance: float | None = Field(default=None, ge=0, le=4)
     face_model: str | None = Field(default=None, max_length=40)
+    # Fingerprint verification result from the scanner's own matcher, when that is how this capture was
+    # verified. The score's scale belongs to the matcher, so it is recorded with it.
+    fingerprint_score: int | None = Field(default=None, ge=0, le=10_000)
+    fingerprint_matcher: str | None = Field(default=None, max_length=40)
+    fingerprint_finger: str | None = Field(default=None, max_length=20)
     liveness: Literal["passed", "failed", "not_required", "unavailable"] | None = None
 
 
@@ -73,6 +83,9 @@ class AttendanceOut(ReadModel):
     group_submission_id: uuid.UUID | None
     face_distance: float | None = None
     face_model: str | None = None
+    fingerprint_score: int | None = None
+    fingerprint_matcher: str | None = None
+    fingerprint_finger: str | None = None
     created_by_id: uuid.UUID
     verification_status: VerificationStatus
     verified_by_id: uuid.UUID | None

@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.schemas.faces import FaceEnrollIn, FaceStatusOut
-from app.services import faces
+from app.schemas.fingerprints import FingerprintEnrollIn, FingerprintStatusOut
+from app.services import faces, fingerprints
 from app.db import get_db
 from app.errors import Forbidden
 from app.models import AuditLog, UserStatus
@@ -140,6 +141,23 @@ def get_face(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = D
 def put_face(user_id: uuid.UUID, body: FaceEnrollIn, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     """Register (or replace) the employee's face descriptors. Requires the employee's recorded consent."""
     return faces.enroll(db, p, user_id, body)
+
+
+@users_router.get("/{user_id}/fingerprint", response_model=FingerprintStatusOut)
+def get_fingerprint(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    return fingerprints.status(db, p, user_id)
+
+
+@users_router.put("/{user_id}/fingerprint", response_model=FingerprintStatusOut)
+def put_fingerprint(user_id: uuid.UUID, body: FingerprintEnrollIn, db: Session = Depends(get_db),
+                    p: Principal = Depends(get_principal)):
+    """Register (or replace) the employee's fingerprint templates. Requires the employee's recorded consent."""
+    return fingerprints.enroll(db, p, user_id, body)
+
+
+@users_router.delete("/{user_id}/fingerprint", status_code=status.HTTP_204_NO_CONTENT)
+def delete_fingerprint(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    fingerprints.revoke(db, p, user_id)
 
 
 @users_router.delete("/{user_id}/face", status_code=status.HTTP_204_NO_CONTENT)

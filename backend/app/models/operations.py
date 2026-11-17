@@ -68,6 +68,11 @@ class Attendance(CapturedRecord, Base):
     group_submission_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     face_distance: Mapped[float | None] = mapped_column(Float)
     face_model: Mapped[str | None] = mapped_column(String(40))
+    # How the fingerprint check went, when that is how this attendance was verified. The score is the
+    # scanner SDK's own, so `fingerprint_matcher` records whose scale it is.
+    fingerprint_score: Mapped[int | None] = mapped_column(Integer)
+    fingerprint_matcher: Mapped[str | None] = mapped_column(String(40))
+    fingerprint_finger: Mapped[str | None] = mapped_column(String(20))
 
 
 class Inspection(CapturedRecord, Base):

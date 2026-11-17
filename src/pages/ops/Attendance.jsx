@@ -13,6 +13,8 @@ import { CameraSolidIcon, CheckBoldIcon, CheckIcon, LockSolidIcon, RefreshIcon, 
 import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp, stampLines } from '../../utils/capture.js';
 import { FaceCheckNote, faceFields, useFaceCheck } from '../../face/FaceCheck.jsx';
+import { FingerprintButton, FingerprintCheckNote, useFingerprintCheck } from '../../fingerprint/FingerprintCheck.jsx';
+import { fingerprintFields } from '../../fingerprint/fingerprintMatch.js';
 import LiveFaceCapture from '../../face/LiveFaceCapture.jsx';
 import { FACE_MODEL } from '../../face/faceMatch.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
@@ -50,9 +52,20 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const liveOn = faceOn && policy.data?.face_liveness_required === true;
   const [liveness, setLiveness] = useState(liveOn ? null : 'not_required');
   const face = useFaceCheck({ photo, employeeId: target.staff.employee_id, enabled: faceOn, threshold: policy.data?.face_match_threshold ?? 0.5 });
-  const faceOk = !faceOn || face.status === 'matched';
+  // Fingerprint is an alternative to the face check, never a replacement: the scanner can be absent or
+  // broken, so a matched fingerprint satisfies the division instead of the face, and nothing more is
+  // demanded of a phone that has no scanner.
+  const fingerprintOn = policy.data?.attendance_fingerprint_verification === true;
+  const finger = useFingerprintCheck({ employeeId: target.staff.employee_id, enabled: fingerprintOn,
+    threshold: policy.data?.fingerprint_match_score ?? 40 });
+  const fingerOk = fingerprintOn && finger.status === 'matched';
+  const faceOk = fingerOk || !faceOn || face.status === 'matched';
+  // A photo is what the face check compares against; a fingerprint capture does not need one of its own.
+  const photoNeeded = (policy.data?.attendance_photo_required !== false || faceOn) && !fingerOk;
   const gate = useSecurityGate('attendance');
-  const liveOk = !liveOn || liveness === 'passed';
+  // Liveness is a property of the face photo, so a capture proved by fingerprint is not asked for it --
+  // matching the server, which only requires it of a capture verified by face.
+  const liveOk = fingerOk || !liveOn || liveness === 'passed';
 
   async function submit(e) {
     e.preventDefault();
@@ -62,8 +75,9 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
       type: 'attendance.create',
       payload: {
         id: crypto.randomUUID(), journey_id: journey.id, employee_id: target.staff.employee_id, stage: target.stage,
-        device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId, ...faceFields(face),
-        ...gate.evidence({ liveness: liveOn ? liveness : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
+        device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId,
+        ...(fingerOk ? fingerprintFields(finger) : faceFields(face)),
+        ...gate.evidence({ liveness: liveOn && !fingerOk ? liveness : 'not_required', faceModel: faceOn && !fingerOk ? FACE_MODEL : null }),
       },
       media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
     });
@@ -74,7 +88,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
 
   return (
     <Dialog open title={`${target.staff.name} · ${STAGES[target.stage - 1]}`} onClose={onClose} onSubmit={submit}
-      footer={<SubmitBar busy={busy} disabled={!gps || !photo || policy.loading || !faceOk || !liveOk || !gate.allowed} label="Mark attendance" onCancel={onClose} flush />}>
+      footer={<SubmitBar busy={busy} disabled={!gps || (photoNeeded && !photo) || policy.loading || !faceOk || !liveOk || !gate.allowed} label="Mark attendance" onCancel={onClose} flush />}>
       <div className="space-y-3">
         <p className="text-center text-xs font-medium text-muted">{target.staff.emp_id} · Stage {target.stage} of 5 · {journey.train_no}</p>
         {liveOn ? (
@@ -87,7 +101,9 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
             : <LiveFaceCapture name={target.staff.name} onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
         ) : <PhotoCapture value={photo} onChange={setPhoto} required stamp={stampLines({ ...gps, address })} />}
         <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
+        <FingerprintButton check={finger} name={target.staff.name} />
         <FaceCheckNote check={face} name={target.staff.name} />
+        <FingerprintCheckNote check={finger} name={target.staff.name} />
         {gate.notice}
       </div>
     </Dialog>

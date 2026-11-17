@@ -228,6 +228,7 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
         ...(changes.question_banks ?? []).flatMap((b) => masters.bankStatements(b, t.now)),
         ...(changes.inventory_items ?? []).flatMap((i) => masters.itemStatements(i, t.now)),
         ...(Array.isArray(changes.face_profiles) ? masters.faceProfileStatements(changes.face_profiles, t.now) : []),
+        ...(Array.isArray(changes.fingerprint_profiles) ? masters.fingerprintProfileStatements(changes.fingerprint_profiles, t.now) : []),
       ]);
       let journeysStored = 0;
       let failures = masterOk ? 0 : 1;

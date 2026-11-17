@@ -20,9 +20,33 @@ export const mapsConfigured = () => !!MAPS_KEY;
 let loading = null;
 // Set when Google reports the key itself was refused (bad key, referrer not allowed, billing off). The
 // script stays loaded but every map would render as an error tile, so callers show coordinates instead.
+//
+// Google calls gm_authFailure *after* the load callback has already run, so this cannot be checked once at
+// load time and forgotten: a map is built, and only then does the refusal arrive. Listeners are told when
+// it does, so the map can take itself away instead of leaving Google's "this page can't load Google Maps
+// correctly" overlay in the middle of the attendance dialog.
 let authFailed = false;
+const authListeners = new Set();
 
 export const mapsAuthFailed = () => authFailed;
+
+/** Calls `fn` if (or when) Google refuses the key. Returns an unsubscribe function. */
+export function onMapsAuthFailure(fn) {
+  if (authFailed) {
+    fn();
+    return () => {};
+  }
+  authListeners.add(fn);
+  return () => authListeners.delete(fn);
+}
+
+function failAuth() {
+  authFailed = true;
+  for (const fn of [...authListeners]) {
+    authListeners.delete(fn);
+    try { fn(); } catch { /* a listener that throws must not stop the others */ }
+  }
+}
 
 /**
  * Resolves with the `google.maps` namespace, or null when it cannot be had. Loads the script once per
@@ -30,6 +54,9 @@ export const mapsAuthFailed = () => authFailed;
  */
 export function loadGoogleMaps() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+  // Armed before anything else, and on every path: a key can be refused for an API that was already
+  // loaded (by an earlier map, or by anything else on the page), and that refusal has to reach us too.
+  window.gm_authFailure = failAuth;
   if (window.google?.maps) return Promise.resolve(authFailed ? null : window.google.maps);
   if (loading) return loading;
   if (!MAPS_KEY) return Promise.resolve(null);
@@ -49,8 +76,6 @@ export function loadGoogleMaps() {
     };
     const timer = setTimeout(() => finish(null), LOAD_TIMEOUT_MS);
 
-    // Google calls this when the key is rejected; without it a refused key shows Google's own error tile.
-    window.gm_authFailure = () => { authFailed = true; };
     window[callback] = () => finish(authFailed ? null : window.google?.maps ?? null);
 
     const script = document.createElement('script');
@@ -68,14 +93,30 @@ export function loadGoogleMaps() {
  * The address of a fix from the Maps JS geocoder, or null. Used only as a fallback for the server lookup
  * (src/services/geocode.js), so a division whose server has no geocoding key still gets an address on the
  * photo stamp from the browser key.
+ *
+ * Note this is the *JavaScript* geocoder, not the Geocoding web service: a referrer-restricted key is
+ * refused outright by the REST endpoint ("API keys with referer restrictions cannot be used with this
+ * API"), which is why this cannot be done from our server with the same key.
  */
-export async function reverseGeocodeInBrowser({ latitude, longitude } = {}) {
+export async function reverseGeocodeInBrowser({ latitude, longitude } = {}, { timeoutMs = 8000 } = {}) {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') return null;
+  if (authFailed) return null;
   const maps = await loadGoogleMaps();
-  if (!maps?.Geocoder) return null;
+  if (!maps?.Geocoder || authFailed) return null;
   try {
-    const { results } = await new maps.Geocoder().geocode({ location: { lat: latitude, lng: longitude } });
-    const first = (results ?? [])[0];
+    // A geocode under a refused key never settles at all -- Google answers the auth failure instead, and
+    // the promise is simply left hanging. Without this race the caller waits for ever and the photo stamp
+    // reads "Address pending" until the dialog is closed.
+    const answer = await Promise.race([
+      new maps.Geocoder().geocode({ location: { lat: latitude, lng: longitude } }),
+      new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(null), timeoutMs);
+        const off = onMapsAuthFailure(() => { clearTimeout(timer); resolve(null); });
+        // Whichever arrives first, stop listening for the other.
+        setTimeout(off, timeoutMs);
+      }),
+    ]);
+    const first = (answer?.results ?? [])[0];
     return typeof first?.formatted_address === 'string' && first.formatted_address.trim()
       ? first.formatted_address.trim() : null;
   } catch {
@@ -84,4 +125,4 @@ export async function reverseGeocodeInBrowser({ latitude, longitude } = {}) {
   }
 }
 
-export const _resetGoogleMaps = () => { loading = null; authFailed = false; }; // tests only
+export const _resetGoogleMaps = () => { loading = null; authFailed = false; authListeners.clear(); }; // tests only
