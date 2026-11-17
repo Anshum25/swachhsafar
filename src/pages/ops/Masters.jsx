@@ -8,8 +8,9 @@ import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
 import DivisionPolicy from './masters/DivisionPolicy.jsx';
 import FaceEnrollDialog from './masters/FaceEnrollment.jsx';
+import FingerprintEnrollDialog from './masters/FingerprintEnrollment.jsx';
 import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, Select, SubmitBar, Table, Tabs, label } from '../../components/ui.jsx';
-import { PlusIcon, UserIcon } from '../../components/Icons.jsx';
+import { FingerprintIcon, PlusIcon, UserIcon } from '../../components/Icons.jsx';
 
 // "B1 AC, S1, S2" -> [{code:'B1', classification:'AC'}, ...]; coaches default to Non-AC.
 export function parseCoaches(text) {
@@ -175,6 +176,7 @@ function Users({ divisionId }) {
   const res = useResource('/users', { division_id: divisionId, q, page_size: 200 });
   const [creating, setCreating] = useState(false);
   const [faceFor, setFaceFor] = useState(null);
+  const [fingerFor, setFingerFor] = useState(null);
   const [signInFor, setSignInFor] = useState(null);
   async function toggle(u) {
     try {
@@ -205,13 +207,18 @@ function Users({ divisionId }) {
               ? <button type="button" onClick={() => toggle(u)}><Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge></button>
               : <Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge> },
             ...(manage ? [{ key: 'face', label: '', render: (u) => (
-              <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setFaceFor(u); }}
-                aria-label={`Face registration for ${u.name}`}><UserIcon /> Face</button>
+              <div className="flex gap-1.5">
+                <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setFaceFor(u); }}
+                  aria-label={`Face registration for ${u.name}`}><UserIcon /> Face</button>
+                <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setFingerFor(u); }}
+                  aria-label={`Fingerprint registration for ${u.name}`}><FingerprintIcon className="h-4 w-4" /> Finger</button>
+              </div>
             ) }] : []),
           ]} />
         )}
       </DataState>
       {faceFor && <FaceEnrollDialog user={faceFor} onClose={() => setFaceFor(null)} />}
+      {fingerFor && <FingerprintEnrollDialog user={fingerFor} onClose={() => setFingerFor(null)} />}
       <Dialog open={!!signInFor} title="Create sign-in" onClose={() => setSignInFor(null)}>
         {signInFor && <SignInForm user={signInFor} onClose={() => setSignInFor(null)} onSaved={res.reload} />}
       </Dialog>

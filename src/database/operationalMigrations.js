@@ -667,4 +667,23 @@ const V10 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10];
+// v11: registered fingerprint templates for offline attendance verification (/sync/changes
+// fingerprint_profiles). Only the staff this device verifies, only for divisions with fingerprint
+// verification on; replaced in full on every pull. Minutiae templates only: fingerprint images are never
+// stored, here or anywhere. Additive only.
+const V11 = {
+  version: 11,
+  name: 'fingerprint profiles',
+  statements: [
+    `CREATE TABLE fingerprint_profiles (
+        user_id TEXT PRIMARY KEY,
+        division_id TEXT NOT NULL,
+        format TEXT NOT NULL,
+        matcher TEXT NOT NULL,
+        fingers TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11];

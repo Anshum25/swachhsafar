@@ -5,7 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.errors import AppError, BusinessRuleViolation, Conflict, Forbidden, NotFound
-from app.models import Attendance, AttendanceStage, FaceEnrollment, Journey, MediaKind, StaffAllocation, VerificationStatus
+from app.models import (Attendance, AttendanceStage, FaceEnrollment, FingerprintEnrollment, Journey, MediaKind,
+                        StaffAllocation, VerificationStatus)
 from app.schemas.common import PageParams
 from app.schemas.operations import AttendanceIn, GroupAttendanceIn, ReviewIn
 from app.security.principal import Principal
@@ -29,6 +30,44 @@ def _check_face(db: Session, policy, body: AttendanceIn) -> None:
     if body.face_distance > policy.face_match_threshold:
         raise BusinessRuleViolation("The attendance photo does not match the employee's registered face",
                                     code="face_mismatch", details={"distance": body.face_distance, "threshold": policy.face_match_threshold})
+
+
+def _check_fingerprint(db: Session, policy, body: AttendanceIn) -> None:
+    """Division accepts fingerprint verification: the employee must have registered fingerprints and the
+    device must have matched a finger against them with the same matcher, at or above the division's score."""
+    enrollment = db.get(FingerprintEnrollment, body.employee_id)
+    if enrollment is None:
+        raise BusinessRuleViolation("No registered fingerprints for this employee; an administrator must register them first",
+                                    code="fingerprint_not_enrolled")
+    if body.fingerprint_matcher != enrollment.matcher:
+        raise BusinessRuleViolation("Fingerprint verification is required for attendance in this division",
+                                    code="fingerprint_not_verified")
+    if body.fingerprint_score < policy.fingerprint_match_score:
+        raise BusinessRuleViolation("The fingerprint does not match the employee's registered fingerprints",
+                                    code="fingerprint_mismatch",
+                                    details={"score": body.fingerprint_score, "required": policy.fingerprint_match_score})
+
+
+def _check_identity(db: Session, policy, body: AttendanceIn) -> str | None:
+    """How this capture proved who it is, when the division asks for proof at all.
+
+    Face and fingerprint are alternatives, never a replacement for one another: the scanner is a separate
+    piece of hardware that can be absent or broken, and a phone without it must still be able to mark
+    attendance. A capture that offers a fingerprint is judged on the fingerprint; otherwise on the face.
+    Returns "fingerprint", "face" or None (the division asks for neither).
+    """
+    face_on = policy.attendance_face_verification
+    fingerprint_on = policy.attendance_fingerprint_verification
+    if not face_on and not fingerprint_on:
+        return None
+    if fingerprint_on and body.fingerprint_score is not None:
+        _check_fingerprint(db, policy, body)
+        return "fingerprint"
+    if face_on:
+        _check_face(db, policy, body)
+        return "face"
+    raise BusinessRuleViolation("Fingerprint verification is required for attendance in this division",
+                                code="fingerprint_not_verified")
 
 
 def _may_submit_for(p: Principal, j: Journey, employee_id: uuid.UUID) -> bool:
@@ -60,12 +99,13 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
         raise BusinessRuleViolation(f"Stage {body.stage - 1} must be recorded first", code="stage_order",
                                     details={"recorded_stages": sorted(previous)})
 
-    if policy.attendance_face_verification:
-        _check_face(db, policy, body)
+    verified_by = _check_identity(db, policy, body)
+    # Liveness is a property of the face photo, so it is only asked of a capture verified by face. A photo
+    # is still required whenever the face check is what proved identity.
     evidence = security.check_capture(db, p, policy, body, kind="attendance",
-                                      liveness_required=policy.attendance_face_verification and policy.face_liveness_required)
+                                      liveness_required=verified_by == "face" and policy.face_liveness_required)
     photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO,
-                           j.division_id, p.id, required=policy.attendance_photo_required or policy.attendance_face_verification,
+                           j.division_id, p.id, required=policy.attendance_photo_required or verified_by == "face",
                            label="Attendance photo")
     record = Attendance(**body.model_dump(exclude={"photo_media_id", "security", "gps_timestamp"}), **evidence,
                         photo_media_id=photo_id, division_id=j.division_id,
@@ -90,6 +130,8 @@ def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dic
         item = AttendanceIn(id=m.id, journey_id=body.journey_id, employee_id=m.employee_id, stage=body.stage,
                             photo_media_id=m.photo_media_id, group_submission_id=body.group_submission_id,
                             face_distance=m.face_distance, face_model=m.face_model,
+                            fingerprint_score=m.fingerprint_score, fingerprint_matcher=m.fingerprint_matcher,
+                            fingerprint_finger=m.fingerprint_finger,
                             device_timestamp=body.device_timestamp, latitude=body.latitude, longitude=body.longitude,
                             gps_accuracy_m=body.gps_accuracy_m, gps_timestamp=body.gps_timestamp,
                             security=body.security.model_copy(update={"liveness": m.liveness}) if body.security else None)

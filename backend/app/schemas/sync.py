@@ -63,3 +63,4 @@ class ChangesOut(StrictModel):
     complaint_categories: list[dict]
     journeys: list[dict]
     face_profiles: list[dict] = []
+    fingerprint_profiles: list[dict] = []

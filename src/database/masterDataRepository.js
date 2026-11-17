@@ -162,6 +162,23 @@ export function createMasterDataRepository(db) {
       return row ? { ...row, descriptors: parseJson(row.descriptors, []) } : null;
     },
 
+    // The complete set of fingerprint profiles from /sync/changes: replaces what this device held, so a
+    // registration removed on the server disappears from the phone at the next pull.
+    fingerprintProfileStatements(profiles, now) {
+      return [
+        { sql: 'DELETE FROM fingerprint_profiles', params: [] },
+        ...profiles.map((f) => insertStatement('fingerprint_profiles', {
+          user_id: f.user_id, division_id: f.division_id, format: f.format, matcher: f.matcher,
+          fingers: JSON.stringify(f.fingers), updated_at: f.updated_at ?? now,
+        })),
+      ];
+    },
+
+    async getFingerprintProfile(userId) {
+      const [row] = await db.query('SELECT * FROM fingerprint_profiles WHERE user_id = ?', [userId]);
+      return row ? { ...row, fingers: parseJson(row.fingers, []) } : null;
+    },
+
     async getPolicy(divisionId) {
       const [row] = await db.query('SELECT settings FROM operating_policies WHERE division_id = ?', [divisionId]);
       return { ...DEFAULT_POLICY, ...parseJson(row?.settings, {}) };

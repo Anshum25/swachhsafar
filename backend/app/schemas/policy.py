@@ -24,6 +24,12 @@ class PolicySettings(StrictModel):
     # employee's registered face descriptors; a distance above the threshold blocks the attendance.
     attendance_face_verification: bool = False
     face_match_threshold: float = Field(default=0.5, ge=0.3, le=0.7)
+    # Fingerprint verification needs a scanner, so it is an alternative to the face check, never a
+    # replacement: a phone without the scanner still marks attendance by face.
+    attendance_fingerprint_verification: bool = False
+    # Score at or above which the scanner's own matcher is taken as a match. The scale is the SDK's, not
+    # ours; the default follows the usual 1:1 verification threshold for ISO minutiae matchers.
+    fingerprint_match_score: int = Field(default=40, ge=20, le=200)
 
     # ---- device security (enforced by the app; recorded and re-checked by the server where it can) ----
     # Location: a fix must be at most this old and this accurate for location-dependent actions
