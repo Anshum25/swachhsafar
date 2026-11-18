@@ -76,6 +76,14 @@ export const XIcon = (p) => (
 export const CameraIcon = (p) => (
   <Icon {...p}><path d="M4 8h3l2-3h6l2 3h3v11H4Z" /><circle cx="12" cy="13" r="3.5" /></Icon>
 );
+// Camera with arrows around it: switch between the front and back cameras.
+export const FlipCameraIcon = (p) => (
+  <Icon {...p}>
+    <path d="M4 8h3l2-3h6l2 3h3v11H4Z" />
+    <path d="M9.5 12.5a2.8 2.8 0 0 1 5-1.6M14.5 15.5a2.8 2.8 0 0 1-5 1.6" />
+    <path d="M14.8 10.9h-1.9M9.2 17.1h1.9" />
+  </Icon>
+);
 export const PinIcon = (p) => (
   <Icon {...p}><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></Icon>
 );

@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { analyseFrame, describeFrame, loadFaceEngine } from './faceEngine.js';
 import { createLiveness } from './liveness.js';
 import { distance } from './faceMatch.js';
-import { CameraIcon, CheckIcon, RefreshIcon, Spinner } from '../components/Icons.jsx';
+import { CameraIcon, CheckIcon, FlipCameraIcon, RefreshIcon, Spinner } from '../components/Icons.jsx';
 
 const SAME_PERSON = 0.5; // descriptor distance between the first and last frame
 const CAMERA_ERRORS = {
@@ -36,6 +36,12 @@ const PRESENCE_YAW = 0.3;
 
 export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
   const video = useRef(null);
+  // Which camera. The front one is right for a person marking their own attendance; a supervisor
+  // marking someone else's is holding the phone the other way round and needs the back one.
+  const [facing, setFacing] = useState('user');
+  // Each start gets a number. A loop from an earlier camera is in the middle of awaiting a frame when
+  // the camera is switched, and would otherwise come back and carry on beside the new one.
+  const runId = useRef(0);
   const [phase, setPhase] = useState('idle'); // idle | starting | running | passed | failed
   const [prompt, setPrompt] = useState('');
   const [progress, setProgress] = useState(0);
@@ -45,10 +51,17 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
 
   const stop = () => {
     stopped.current = true;
+    runId.current += 1;
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
   };
   useEffect(() => stop, []);
+  function flip() {
+    const next = facing === 'user' ? 'environment' : 'user';
+    setFacing(next);
+    start(next);
+  }
+
   // Presence mode starts itself. The person opened this dialog to mark attendance; making them tap
   // "start the camera" first is a step that exists only because the challenge needed explaining.
   useEffect(() => {
@@ -58,14 +71,14 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
 
   // Waits for a face to be held in the oval, then takes the still. No challenge, no shutter: by the time
   // someone has read a prompt it has usually already happened.
-  function presenceLoop() {
+  function presenceLoop(run) {
     let steady = 0;
     let heldSince = null;
     const deadline = Date.now() + 25_000;
     const look = async () => {
-      if (stopped.current || !video.current) return;
+      if (stopped.current || !video.current || run !== runId.current) return;
       const m = await analyseFrame(video.current).catch(() => ({ count: 0 }));
-      if (stopped.current || !video.current) return;
+      if (stopped.current || !video.current || run !== runId.current) return;
       const t = Date.now();
       if (t > deadline) {
         stop();
@@ -110,13 +123,18 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
     look();
   }
 
-  async function start() {
+  async function start(useCamera = facing) {
     setError(null);
     setPhase('starting');
     setProgress(0);
+    setPrompt('');
+    stop();                       // whatever was running stops owning the run
     stopped.current = false;
+    const myRun = (runId.current += 1);
     try {
-      stream.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      stream.current = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: useCamera, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      if (myRun !== runId.current) { stream.current?.getTracks().forEach((t) => t.stop()); return; }
       video.current.srcObject = stream.current;
       await video.current.play();
       await loadFaceEngine();
@@ -128,13 +146,13 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       return;
     }
     setPhase('running');
-    if (mode === 'presence') return presenceLoop();
+    if (mode === 'presence') return presenceLoop(myRun);
     const run = createLiveness();
     let first = null;
     const loop = async () => {
-      if (stopped.current || !video.current) return;
+      if (stopped.current || !video.current || myRun !== runId.current) return;
       const m = await analyseFrame(video.current).catch(() => ({ count: 0 }));
-      if (stopped.current || !video.current) return;
+      if (stopped.current || !video.current || myRun !== runId.current) return;
       if (!first && m.count === 1 && Math.abs(m.yaw) < 0.09) first = await describeFrame(video.current).catch(() => null);
       const r = run.feed(m);
       setPrompt(r.prompt ?? '');
@@ -175,7 +193,16 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
   return (
     <div className="space-y-2" data-testid="live-face">
       <div className={`relative mx-auto aspect-[3/4] w-full max-w-[15rem] overflow-hidden rounded-2xl bg-brand-950 ${phase === 'idle' ? 'hidden' : ''}`}>
-        <video ref={video} playsInline muted className="h-full w-full -scale-x-100 object-cover" />
+        {/* Mirrored for the front camera only: that is how people expect to see themselves, and a
+            mirrored view of what the back camera sees just reads as broken. */}
+        <video ref={video} playsInline muted className={`h-full w-full object-cover ${facing === 'user' ? '-scale-x-100' : ''}`} />
+        {phase !== 'idle' && (
+          <button type="button" onClick={flip} data-testid="flip-camera"
+            aria-label={facing === 'user' ? 'Use the back camera' : 'Use the front camera'}
+            className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur transition active:scale-95">
+            <FlipCameraIcon className="h-5 w-5" />
+          </button>
+        )}
         <span className="pointer-events-none absolute inset-[12%] rounded-[50%] border-2 border-dashed border-white/80" />
         {phase === 'running' && mode === 'presence' && (
           <span aria-hidden="true"
@@ -203,7 +230,7 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
         <p className="text-center text-sm text-muted">Opening the camera…</p>
       )}
       {phase === 'idle' && mode !== 'presence' && (
-        <button type="button" onClick={start}
+        <button type="button" onClick={() => start()}
           className="mx-auto flex aspect-[1.2] w-full max-w-[11.5rem] flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-400 bg-brand-100/70 text-brand-700 transition hover:bg-brand-100 active:scale-[0.98]">
           <CameraIcon className="mb-1 h-9 w-9" />
           <span className="text-[15px] font-bold">Start live check</span>
@@ -218,7 +245,12 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       {phase === 'failed' && (
         <div className="text-center">
           <p className="text-sm text-red-700" role="alert">{error}</p>
-          <button type="button" className="btn-secondary mt-2 h-9" onClick={start}><RefreshIcon /> Try again</button>
+          <div className="mt-2 flex justify-center gap-2">
+            <button type="button" className="btn-secondary h-9" onClick={() => start()}><RefreshIcon /> Try again</button>
+            <button type="button" className="btn-secondary h-9" onClick={flip}>
+              <FlipCameraIcon className="h-4 w-4" /> {facing === 'user' ? 'Back camera' : 'Front camera'}
+            </button>
+          </div>
         </div>
       )}
     </div>
