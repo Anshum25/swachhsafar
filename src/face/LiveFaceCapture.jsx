@@ -28,17 +28,12 @@ const CAMERA_ERRORS = {
 
 // How a face has to sit before `presence` mode takes the still: one face, filling enough of the frame,
 // roughly facing the camera, for several frames in a row so it is not caught mid-turn or blurred.
-// How long the face has to be held in the oval before the still is taken. Counted in time, not frames:
-// three frames is a second on a slow phone and a third of a second on a fast one, so the capture
-// happened before the person had settled -- and a face caught mid-movement is the one the match then
-// fails on. A second and a half is long enough to hold still for deliberately and short enough not to
-// be a wait.
-const PRESENCE_HOLD_MS = 1500;
-const PRESENCE_FRAMES = 3;   // and never on fewer frames than this, however fast the phone is
-const PRESENCE_YAW = 0.3;
-// How long to wait for the blink people make on their own before asking for one. Spontaneous blinks
-// come every few seconds, so most captures never show the prompt at all.
-const PRESENCE_ASK_AFTER_MS = 2500;
+// Kept fast and responsive (600ms) so users do not experience fatigue or jitter resets.
+const PRESENCE_HOLD_MS = 600;
+const PRESENCE_FRAMES = 2;   // verified on at least two consecutive detections
+const PRESENCE_YAW = 0.35;
+// How long to wait for spontaneous blink before prompting.
+const PRESENCE_ASK_AFTER_MS = 1000;
 // The eyes are read from the pixels on their own timer, much faster than the detector runs. A blink
 // lasts about two tenths of a second: the detector produces frames further apart than that on a phone,
 // so a blink watched for only when the detector comes back is a blink that is usually missed entirely.
@@ -85,10 +80,32 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
   // someone has read a prompt it has usually already happened.
   function presenceLoop(run) {
     const owns = () => !stopped.current && video.current && run === runId.current;
-    // The blink is judged by the same state machine the challenge uses -- one place decides what counts
-    // as a blink -- but it is fed how open the eyes are, read from the pixels, instead of a ratio
-    // between landmarks that hardly moves when someone blinks.
-    const blinkCheck = createLiveness({ challenges: ['blink'], options: { timeoutMs: 30_000 } });
+    // Dual blink verification: pixel-level variance sampler (high speed 45ms) AND
+    // facial landmark eye aspect ratio (robust against lighting / glasses).
+    const blinkCheck = createLiveness({
+      challenges: ['blink'],
+      options: {
+        timeoutMs: 30_000,
+        turnYaw: 0.35,
+        frontYaw: 0.30,
+        blinkDip: 0.13,
+        jitterDips: 1.8,
+        blinkRecover: 0.65,
+        baselineFrames: 2,
+      },
+    });
+    const landmarkBlinkCheck = createLiveness({
+      challenges: ['blink'],
+      options: {
+        timeoutMs: 30_000,
+        turnYaw: 0.35,
+        frontYaw: 0.30,
+        blinkDip: 0.16,
+        jitterDips: 1.8,
+        blinkRecover: 0.65,
+        baselineFrames: 2,
+      },
+    });
     let blinked = false;
     let eyes = null;        // where the eyes are, from the most recent detection
     let placed = null;      // the most recent detection's position measurements
@@ -107,11 +124,9 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
         if (openness != null) {
           const r = blinkCheck.feed({ count: 1, size: placed.size, yaw: placed.yaw, ear: openness });
           if (r.status === 'passed') blinked = true;
-          // Display only, and deliberately simple: enough for someone to see that the app is watching
-          // their eyes and reacting to them, which is the difference between "it is not working" and
-          // "it is working and I have not blinked yet".
-          openMax = Math.max(openness, openMax * 0.995);
-          setEyesShut(openness < openMax * 0.8);
+          // Display only: feedback to show app sees the eye closure
+          openMax = Math.max(openness, openMax * 0.992);
+          setEyesShut(openness < openMax * 0.84);
         }
       }
       setTimeout(sample, EYE_SAMPLE_MS);
@@ -154,9 +169,25 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       } else {
         steady += 1;
         heldSince ??= t;
-        setProgress(Math.min(1, (t - heldSince) / PRESENCE_HOLD_MS));
-        // Nobody is told to blink until their own blink is overdue.
-        setPrompt(blinked || t - startedAt < PRESENCE_ASK_AFTER_MS ? 'Hold still' : 'Blink');
+        const heldDuration = t - heldSince;
+        setProgress(Math.min(1, heldDuration / PRESENCE_HOLD_MS));
+
+        // Landmark-based blink backup check
+        if (m.count === 1 && m.ear != null && !blinked) {
+          const lr = landmarkBlinkCheck.feed(m);
+          if (lr.status === 'passed') blinked = true;
+        }
+
+        const held = heldDuration >= PRESENCE_HOLD_MS && steady >= PRESENCE_FRAMES;
+        if (held && !blinked) {
+          setPrompt('Blink');
+        } else if (blinked) {
+          setPrompt('Hold still');
+        } else if (t - startedAt >= PRESENCE_ASK_AFTER_MS) {
+          setPrompt('Blink');
+        } else {
+          setPrompt('Hold still');
+        }
       }
 
       const held = heldSince != null && t - heldSince >= PRESENCE_HOLD_MS && steady >= PRESENCE_FRAMES;

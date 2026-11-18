@@ -10,14 +10,14 @@
 export const LIVENESS_DEFAULTS = {
   timeoutMs: 25_000,
   minFaceSize: 0.22,      // face width / frame width
-  blinkDip: 0.22,         // how far the eye measure must fall below its open level to count as closed
-  jitterDips: 3,          // ...or this many times the measurement's own noise, whichever is larger
-  blinkRecover: 0.45,     // and must climb back this much of that fall to count as re-opened
+  blinkDip: 0.16,         // how far the eye measure must fall below its open level to count as closed (responsive on phones)
+  jitterDips: 2.0,        // ...or this many times the measurement's own noise, whichever is larger
+  blinkRecover: 0.60,     // and must climb back this much of that fall to count as re-opened
   blinkMaxMs: 3000,       // a slow blink, which is what people are asked for, at ten frames a second
-  turnYaw: 0.22,          // how far the head must move from neutral to count as turned
-  frontYaw: 0.12,         // and back within this of neutral as facing the camera again
-  neutralFrames: 4,       // frames averaged to learn where this person's neutral actually is
-  baselineFrames: 3,      // open-eye measurements needed before a blink can be judged against them
+  turnYaw: 0.25,          // how far the head must move from neutral to count as turned
+  frontYaw: 0.18,         // and back within this of neutral as facing the camera again
+  neutralFrames: 3,       // frames averaged to learn where this person's neutral actually is
+  baselineFrames: 2,      // open-eye measurements needed before a blink can be judged against them
 };
 
 export const PROMPTS = {
@@ -114,13 +114,20 @@ export function createLiveness({ now = () => Date.now(), random = Math.random, o
     if (challenge === 'blink' && baseline && baselineSeen >= o.baselineFrames) {
       if (closedAt == null && m.ear <= baseline - dip) closedAt = t;
       else if (closedAt != null && m.ear >= baseline - dip * o.blinkRecover) {
-        if (t - closedAt <= o.blinkMaxMs) step += 1;
+        if (t - closedAt <= o.blinkMaxMs) {
+          step += 1;
+          if (step >= order.length) return { status: 'passed', prompt: PROMPTS.hold, frames };
+        }
         closedAt = null;
       }
     }
     if (challenge === 'turn') {
       if (!turned && offset(m) > o.turnYaw) turned = true;
-      else if (turned && frontal(m)) { step += 1; turned = false; }
+      else if (turned && frontal(m)) {
+        step += 1;
+        turned = false;
+        if (step >= order.length) return { status: 'passed', prompt: PROMPTS.hold, frames };
+      }
     }
     return { status: 'running', prompt: step < order.length ? PROMPTS[order[step]] : PROMPTS.hold, challenge: order[step] ?? null, done: step };
   }

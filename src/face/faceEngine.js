@@ -89,8 +89,8 @@ function eyeBox(points) {
   const y0 = Math.min(...ys); const y1 = Math.max(...ys);
   const w = Math.max(1, x1 - x0);
   const h = Math.max(1, y1 - y0);
-  const padX = w * 0.18;
-  const padY = h * 0.75;   // generously, because a closed eye is a much shorter box than an open one
+  const padX = w * 0.20;
+  const padY = h * 0.30;   // Keep tightly on eyelid/eye slit to avoid eyebrow contrast masking the blink closure
   return { x: x0 - padX, y: y0 - padY, w: w + padX * 2, h: h + padY * 2 };
 }
 
