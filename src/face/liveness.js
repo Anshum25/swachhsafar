@@ -10,7 +10,7 @@
 export const LIVENESS_DEFAULTS = {
   timeoutMs: 25_000,
   minFaceSize: 0.22,      // face width / frame width
-  blinkDip: 0.14,         // how far the eye ratio must fall below its open level to count as closed
+  blinkDip: 0.22,         // how far the eye measure must fall below its open level to count as closed
   jitterDips: 3,          // ...or this many times the measurement's own noise, whichever is larger
   blinkRecover: 0.45,     // and must climb back this much of that fall to count as re-opened
   blinkMaxMs: 3000,       // a slow blink, which is what people are asked for, at ten frames a second

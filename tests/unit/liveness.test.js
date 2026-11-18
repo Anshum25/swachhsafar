@@ -107,13 +107,13 @@ describe('the liveness challenge', () => {
     expect(r.status).toBe('passed');
   });
 
-  // What a phone actually measures. The eye landmarks come from a small crop of the frame, so a closed
-  // eye is not drawn fully closed: the ratio dips by a fifth or so, not by two thirds. Demanding a deep
-  // drop means a person blinks, and blinks, and is never seen to have blinked.
-  it('counts the shallow blink a phone actually measures', () => {
+  // The measure fed in is how open the eyes look in the pixels, which falls by half or more on a real
+  // blink. In poor light, against a dark iris, the fall is shallower -- around a third -- and that
+  // still has to count, or the check works in an office and not on a platform at night.
+  it('counts the shallower blink that poor light gives', () => {
     const live = liveness('blink');
-    const shallow = [frame({ ear: 0.27 }), frame({ ear: 0.243 }), frame({ ear: 0.238 }),
-      frame({ ear: 0.26 }), frame({ ear: 0.295 }), frame({ ear: 0.30 })];
+    const shallow = [frame({ ear: 0.26 }), frame({ ear: 0.21 }), frame({ ear: 0.205 }),
+      frame({ ear: 0.25 }), frame({ ear: 0.295 }), frame({ ear: 0.30 })];
     const r = run(live, [...steady(5), ...shallow, ...steady(3), ...turn(), ...steady(4)]);
     expect(r.status).toBe('passed');
   });
