@@ -47,13 +47,14 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const policy = useResource(`/divisions/${journey.division_id}/policy`);
   const faceOn = policy.data?.attendance_face_verification === true;
-  // With face verification, the photo comes from the live check (blink + head turn) unless the division
-  // turned liveness off (default on).
-  // Face verification means the live check, always. Matching a face against a still photo only proves
-  // that a photo of that face was in front of the lens, and a photo can be held up to it; the blink and
-  // head turn are what makes it proof of the person. A division that wants no camera challenge turns
-  // face verification off rather than keeping a check that can be satisfied with a photograph.
-  const liveOn = faceOn || policy.data?.face_liveness_required === true;
+  // Two separate questions. `cameraOn`: the photo is taken by the app from the live camera, never
+  // chosen from the gallery -- that holds wherever the face is matched, because a face check against a
+  // picture the user picked proves nothing at all. `liveOn`: the blink-and-turn challenge before the
+  // still, which is what a photograph held up to the lens cannot pass, and which a division asks for
+  // with face_liveness_required. Without it the capture is immediate: face in the oval, still taken,
+  // about a second, nothing to tap.
+  const cameraOn = faceOn || policy.data?.face_liveness_required === true;
+  const liveOn = policy.data?.face_liveness_required === true;
   const [liveness, setLiveness] = useState(liveOn ? null : 'not_required');
   const face = useFaceCheck({ photo, employeeId: target.staff.employee_id, enabled: faceOn, threshold: policy.data?.face_match_threshold ?? 0.5 });
   // Fingerprint is an alternative to the face check, never a replacement: the scanner can be absent or
@@ -95,14 +96,18 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
       footer={<SubmitBar busy={busy} disabled={!gps || (photoNeeded && !photo) || policy.loading || !faceOk || !liveOk || !gate.allowed} label="Mark attendance" onCancel={onClose} flush />}>
       <div className="space-y-3">
         <p className="text-center text-xs font-medium text-muted">{target.staff.emp_id} · Stage {target.stage} of 5 · {journey.train_no}</p>
-        {liveOn ? (
+        {cameraOn ? (
           photo ? (
             <div className="relative overflow-hidden rounded-2xl ring-1 ring-line">
-              <img src={photo} alt="Live check photo" className="max-h-60 w-full object-cover" />
-              <button type="button" className="btn-secondary absolute bottom-2 right-2" onClick={() => { setPhoto(null); setLiveness(null); }}>Redo live check</button>
+              <img src={photo} alt={liveOn ? 'Live check photo' : 'Captured face'} className="max-h-60 w-full object-cover" />
+              <button type="button" className="btn-secondary absolute bottom-2 right-2"
+                onClick={() => { setPhoto(null); setLiveness(liveOn ? null : 'not_required'); }}>
+                {liveOn ? 'Redo live check' : 'Retake'}
+              </button>
             </div>
           )
-            : <LiveFaceCapture name={target.staff.name} onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
+            : <LiveFaceCapture name={target.staff.name} mode={liveOn ? 'challenge' : 'presence'}
+                onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
         ) : <PhotoCapture value={photo} onChange={setPhoto} required stamp={stampLines({ ...gps, address })} />}
         <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
         <FingerprintButton check={finger} name={target.staff.name} />

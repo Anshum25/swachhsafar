@@ -1,5 +1,15 @@
-// Live face capture for attendance: front camera, liveness challenge (blink + head turn), then a still photo
-// of the same person. Runs fully on the device (works offline); video frames are never stored or sent.
+// Live face capture for attendance. Runs fully on the device (works offline); video frames are never
+// stored or sent, and only the still it ends on is kept.
+//
+// Two modes, and they prove different things:
+//
+// - `presence` (the default): the camera opens itself and takes the still as soon as one face is held
+//   steady in the oval, about a second. There is nothing to tap and nothing to upload. It proves a face
+//   was in front of the lens -- NOT that the person was: a photograph held up to the camera passes it.
+// - `challenge`: blink and head turn before the still, which a photograph does not pass. A division
+//   turns it on with `face_liveness_required`.
+//
+// See docs/SECURITY.md: neither is a certified presentation-attack detector.
 import { useEffect, useRef, useState } from 'react';
 import { analyseFrame, describeFrame, loadFaceEngine } from './faceEngine.js';
 import { createLiveness } from './liveness.js';
@@ -13,7 +23,12 @@ const CAMERA_ERRORS = {
   NotReadableError: 'The camera is in use by another app. Close it and try again.',
 };
 
-export default function LiveFaceCapture({ onDone, name }) {
+// How a face has to sit before `presence` mode takes the still: one face, filling enough of the frame,
+// roughly facing the camera, for several frames in a row so it is not caught mid-turn or blurred.
+const PRESENCE_FRAMES = 3;
+const PRESENCE_YAW = 0.3;
+
+export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
   const video = useRef(null);
   const [phase, setPhase] = useState('idle'); // idle | starting | running | passed | failed
   const [prompt, setPrompt] = useState('');
@@ -28,6 +43,50 @@ export default function LiveFaceCapture({ onDone, name }) {
     stream.current = null;
   };
   useEffect(() => stop, []);
+  // Presence mode starts itself. The person opened this dialog to mark attendance; making them tap
+  // "start the camera" first is a step that exists only because the challenge needed explaining.
+  useEffect(() => {
+    if (mode === 'presence') start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  // Waits for a face to be held in the oval, then takes the still. No challenge, no shutter: by the time
+  // someone has read a prompt it has usually already happened.
+  function presenceLoop() {
+    let steady = 0;
+    const deadline = Date.now() + 20_000;
+    const look = async () => {
+      if (stopped.current || !video.current) return;
+      const m = await analyseFrame(video.current).catch(() => ({ count: 0 }));
+      if (stopped.current || !video.current) return;
+      if (Date.now() > deadline) {
+        stop();
+        setPhase('failed');
+        setError('No face was found. Hold the phone at arm’s length with the face inside the oval, in good light.');
+        onDone({ liveness: 'not_required', photo: null, reason: 'no_face' });
+        return;
+      }
+      if (m.count > 1) { steady = 0; setPrompt('Only one person should be in view'); }
+      else if (m.count === 0) { steady = 0; setPrompt('Fit the face inside the oval'); }
+      else if (m.size < 0.22) { steady = 0; setPrompt('Move a little closer'); }
+      else if (Math.abs(m.yaw) > PRESENCE_YAW) { steady = 0; setPrompt('Look at the camera'); }
+      else steady += 1;
+      setProgress(Math.min(steady, PRESENCE_FRAMES));
+
+      if (steady < PRESENCE_FRAMES) { setTimeout(look, 0); return; }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.current.videoWidth || 640;
+      canvas.height = video.current.videoHeight || 480;
+      canvas.getContext('2d').drawImage(video.current, 0, 0);
+      stop();
+      setPhase('passed');
+      // `not_required`: this mode does not claim liveness, and a record must never say it was proved
+      // when it was not. The face itself is still matched against the registered descriptors.
+      onDone({ liveness: 'not_required', photo: canvas.toDataURL('image/jpeg', 0.85), reason: null });
+    };
+    look();
+  }
 
   async function start() {
     setError(null);
@@ -47,6 +106,7 @@ export default function LiveFaceCapture({ onDone, name }) {
       return;
     }
     setPhase('running');
+    if (mode === 'presence') return presenceLoop();
     const run = createLiveness();
     let first = null;
     const loop = async () => {
@@ -100,12 +160,15 @@ export default function LiveFaceCapture({ onDone, name }) {
         )}
         {phase === 'starting' && <span className="absolute inset-0 grid place-items-center text-white"><Spinner className="h-6 w-6" /></span>}
       </div>
-      {phase === 'running' && (
+      {phase === 'running' && mode !== 'presence' && (
         <div className="flex justify-center gap-1.5" aria-label={`Step ${progress + 1} of 2`}>
           {[0, 1].map((i) => <span key={i} className={`h-1.5 w-8 rounded-full ${i < progress ? 'bg-success' : 'bg-line'}`} />)}
         </div>
       )}
-      {phase === 'idle' && (
+      {phase === 'starting' && mode === 'presence' && (
+        <p className="text-center text-sm text-muted">Opening the camera…</p>
+      )}
+      {phase === 'idle' && mode !== 'presence' && (
         <button type="button" onClick={start}
           className="mx-auto flex aspect-[1.2] w-full max-w-[11.5rem] flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-400 bg-brand-100/70 text-brand-700 transition hover:bg-brand-100 active:scale-[0.98]">
           <CameraIcon className="mb-1 h-9 w-9" />
@@ -113,7 +176,11 @@ export default function LiveFaceCapture({ onDone, name }) {
           <span className="px-2 text-center text-xs font-medium text-muted">{name}: blink and turn your head</span>
         </button>
       )}
-      {phase === 'passed' && <p className="flex items-center justify-center gap-2 text-sm font-semibold text-success"><CheckIcon className="h-4 w-4" /> Live check passed</p>}
+      {phase === 'passed' && (
+        <p className="flex items-center justify-center gap-2 text-sm font-semibold text-success">
+          <CheckIcon className="h-4 w-4" /> {mode === 'presence' ? 'Face captured' : 'Live check passed'}
+        </p>
+      )}
       {phase === 'failed' && (
         <div className="text-center">
           <p className="text-sm text-red-700" role="alert">{error}</p>

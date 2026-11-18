@@ -85,7 +85,7 @@ export const POLICY_FIELDS = [
   { key: 'face_match_threshold', type: 'float', min: 0.3, max: 0.7, label: 'Face match strictness (lower is stricter)', hint: '0.3–0.7 · recommended 0.5', group: 'Face verification' },
   { key: 'attendance_fingerprint_verification', type: 'bool', label: 'Accept a fingerprint as proof of identity (an alternative to the face check, never a replacement)', group: 'Fingerprint verification' },
   { key: 'fingerprint_match_score', type: 'int', min: 30, max: 100, label: 'Fingerprint match score (lower accepts weaker matches)', hint: '30–100 · recommended 40. This is the percentage of the print that must match; below 40 other people start to pass.', group: 'Fingerprint verification' },
-  { key: 'face_liveness_required', type: 'bool', label: 'Demand the live camera check (blink and head turn) even when face verification is off', hint: 'With face verification on, the live check is always used: no photo to take or upload', group: 'Face verification' },
+  { key: 'face_liveness_required', type: 'bool', label: 'Ask for a blink and head turn before the face is matched', hint: 'Off: the camera captures as soon as the face is in the oval, about a second. On: slower, but a photograph held up to the camera cannot pass it.', group: 'Face verification' },
   // Location. These decide when a record may be made at all, so they are the division's to set rather
   // than something only a deploy can change: 100 m is right in the open and impossible indoors.
   { key: 'gps_enforced', type: 'bool', label: 'Require a verified location for attendance, inspections and feedback', group: 'Location' },

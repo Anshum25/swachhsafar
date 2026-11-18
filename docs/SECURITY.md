@@ -12,6 +12,25 @@ Swachh Safar is an operational railway inspection, monitoring, attendance, and f
 
 ---
 
+## The face check, and what it proves
+
+The photo matched against an employee's registered face is always taken by the app from the live camera.
+A photo chosen from the gallery is never accepted where the face is being matched: a face check against
+a picture the user picked proves nothing.
+
+Beyond that there are two modes, and they prove different things:
+
+- **Presence** (default): the camera opens itself and takes the still as soon as one face is held in the
+  oval, about a second, with nothing to tap. It proves a face was in front of the lens. It does **not**
+  prove the person was: a printed photo, or a photo on another phone, held up to the camera passes it.
+- **Challenge** (`face_liveness_required`): a blink and a head turn first. A still photograph does not
+  pass it. It is slower, and it is the only one of the two that resists an absent employee being marked
+  present with a photo of them.
+
+Neither is a certified presentation-attack detector (ISO/IEC 30107-3), and neither resists a replayed
+video or a mask. A division that needs attendance to be hard to fake should turn the challenge on, or
+use the fingerprint scanner, which is not spoofable with a picture.
+
 ## 2. Policy Enforcement Engine
 
 Operational actions are centrally classified:
