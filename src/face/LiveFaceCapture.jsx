@@ -25,7 +25,13 @@ const CAMERA_ERRORS = {
 
 // How a face has to sit before `presence` mode takes the still: one face, filling enough of the frame,
 // roughly facing the camera, for several frames in a row so it is not caught mid-turn or blurred.
-const PRESENCE_FRAMES = 3;
+// How long the face has to be held in the oval before the still is taken. Counted in time, not frames:
+// three frames is a second on a slow phone and a third of a second on a fast one, so the capture
+// happened before the person had settled -- and a face caught mid-movement is the one the match then
+// fails on. A second and a half is long enough to hold still for deliberately and short enough not to
+// be a wait.
+const PRESENCE_HOLD_MS = 1500;
+const PRESENCE_FRAMES = 3;   // and never on fewer frames than this, however fast the phone is
 const PRESENCE_YAW = 0.3;
 
 export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
@@ -54,26 +60,42 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
   // someone has read a prompt it has usually already happened.
   function presenceLoop() {
     let steady = 0;
-    const deadline = Date.now() + 20_000;
+    let heldSince = null;
+    const deadline = Date.now() + 25_000;
     const look = async () => {
       if (stopped.current || !video.current) return;
       const m = await analyseFrame(video.current).catch(() => ({ count: 0 }));
       if (stopped.current || !video.current) return;
-      if (Date.now() > deadline) {
+      const t = Date.now();
+      if (t > deadline) {
         stop();
         setPhase('failed');
         setError('No face was found. Hold the phone at arm’s length with the face inside the oval, in good light.');
         onDone({ liveness: 'not_required', photo: null, reason: 'no_face' });
         return;
       }
-      if (m.count > 1) { steady = 0; setPrompt('Only one person should be in view'); }
-      else if (m.count === 0) { steady = 0; setPrompt('Fit the face inside the oval'); }
-      else if (m.size < 0.22) { steady = 0; setPrompt('Move a little closer'); }
-      else if (Math.abs(m.yaw) > PRESENCE_YAW) { steady = 0; setPrompt('Look at the camera'); }
-      else steady += 1;
-      setProgress(Math.min(steady, PRESENCE_FRAMES));
+      // Anything wrong starts the hold again: the point of waiting is that the face was still for the
+      // whole of it, not that it passed through the right position once.
+      let wrong = null;
+      if (m.count > 1) wrong = 'Only one person should be in view';
+      else if (m.count === 0) wrong = 'Fit the face inside the oval';
+      else if (m.size < 0.22) wrong = 'Move a little closer';
+      else if (Math.abs(m.yaw) > PRESENCE_YAW) wrong = 'Look at the camera';
 
-      if (steady < PRESENCE_FRAMES) { setTimeout(look, 0); return; }
+      if (wrong) {
+        steady = 0;
+        heldSince = null;
+        setPrompt(wrong);
+        setProgress(0);
+      } else {
+        steady += 1;
+        heldSince ??= t;
+        setPrompt('Hold still');
+        setProgress(Math.min(1, (t - heldSince) / PRESENCE_HOLD_MS));
+      }
+
+      const held = heldSince != null && t - heldSince >= PRESENCE_HOLD_MS && steady >= PRESENCE_FRAMES;
+      if (!held) { setTimeout(look, 0); return; }
 
       const canvas = document.createElement('canvas');
       canvas.width = video.current.videoWidth || 640;
@@ -155,6 +177,11 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       <div className={`relative mx-auto aspect-[3/4] w-full max-w-[15rem] overflow-hidden rounded-2xl bg-brand-950 ${phase === 'idle' ? 'hidden' : ''}`}>
         <video ref={video} playsInline muted className="h-full w-full -scale-x-100 object-cover" />
         <span className="pointer-events-none absolute inset-[12%] rounded-[50%] border-2 border-dashed border-white/80" />
+        {phase === 'running' && mode === 'presence' && (
+          <span aria-hidden="true"
+            className={`pointer-events-none absolute inset-[12%] rounded-[50%] border-4 transition-colors duration-200 ${progress > 0 ? 'border-success' : 'border-transparent'}`}
+            style={{ clipPath: `inset(${100 - Math.round(progress * 100)}% 0 0 0)` }} />
+        )}
         {phase === 'running' && (
           <p className="absolute inset-x-2 bottom-2 rounded-lg bg-black/60 px-2 py-1.5 text-center text-sm font-semibold text-white" aria-live="assertive">{prompt}</p>
         )}
@@ -163,6 +190,13 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       {phase === 'running' && mode !== 'presence' && (
         <div className="flex justify-center gap-1.5" aria-label={`Step ${progress + 1} of 2`}>
           {[0, 1].map((i) => <span key={i} className={`h-1.5 w-8 rounded-full ${i < progress ? 'bg-success' : 'bg-line'}`} />)}
+        </div>
+      )}
+      {phase === 'running' && mode === 'presence' && (
+        <div className="mx-auto h-1.5 w-full max-w-[15rem] overflow-hidden rounded-full bg-line"
+          role="progressbar" aria-label="Hold the face still" aria-valuenow={Math.round(progress * 100)}>
+          <span className="block h-full rounded-full bg-success transition-[width] duration-150"
+            style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
       )}
       {phase === 'starting' && mode === 'presence' && (
