@@ -53,9 +53,9 @@ class PolicySettings(StrictModel):
     # How long a device may keep working offline after its last online check of the user's session.
     # Strictly capped at 24 hours maximum.
     offline_session_hours: int = Field(default=24, ge=1, le=24)
-    # A live-camera challenge (blink + head turn) before the face is matched. Off, the app still takes
-    # the photo itself from the live camera -- never one chosen from the gallery -- but captures as soon
-    # as the face is in the oval, which is about a second and is what staff marking a shift asked for.
-    # That proves a face was in front of the lens, not that the person was: a photograph held up to the
-    # camera passes it, and only the challenge stops that.
+    # A head turn as well as the blink, before the face is matched. The blink is not optional and is not
+    # configurable: wherever a face is matched, the app watches for one before taking the still, because
+    # a photograph of a face -- on paper or on another phone's screen -- does not blink, and without that
+    # anyone could be marked present with a picture of them. The blink is passive, so most captures never
+    # show a prompt. The head turn costs a few seconds more and also defeats a short recorded video.
     face_liveness_required: bool = False

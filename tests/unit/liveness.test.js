@@ -128,6 +128,33 @@ describe('the liveness challenge', () => {
     expect(r.reason).toBe('timeout');
   });
 
+  // The quick capture path: the blink alone, watched for without asking. A face held in front of the
+  // camera on another phone's screen is the attack this exists to stop -- it never blinks, so it never
+  // passes, however long it is held there and however well it fills the oval.
+  describe('the blink on its own, as the quick capture uses it', () => {
+    const blinkOnly = () => createLiveness({ now: clock().now, challenges: ['blink'] });
+
+    it('passes on a blink, with nothing else asked of the person', () => {
+      const r = run(blinkOnly(), [...steady(5), ...blink(), ...steady(3)]);
+      expect(r.status).toBe('passed');
+    });
+
+    it('never passes a photograph of a face, however long it is held there', () => {
+      const r = run(blinkOnly(), steady(300));
+      expect(r.status).toBe('failed');
+      expect(r.reason).toBe('timeout');
+      expect(r.pending).toBe('blink');
+    });
+
+    it('never passes a photo on a screen that is moved about but does not blink', () => {
+      // Held by hand: the face drifts and changes size, and the eye ratio wobbles with the detector.
+      const waved = Array.from({ length: 300 }, (_, i) => frame({
+        yaw: Math.sin(i / 7) * 0.1, size: 0.3 + Math.sin(i / 11) * 0.05, ear: 0.3 + (i % 3 - 1) * 0.005,
+      }));
+      expect(run(blinkOnly(), waved).status).toBe('failed');
+    });
+  });
+
   it('works with the turn asked for first', () => {
     const live = liveness('turn');
     const r = run(live, [...steady(5), ...turn(), ...steady(3), ...blink(), ...steady(4)]);

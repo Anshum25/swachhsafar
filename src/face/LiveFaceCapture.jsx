@@ -3,11 +3,14 @@
 //
 // Two modes, and they prove different things:
 //
-// - `presence` (the default): the camera opens itself and takes the still as soon as one face is held
-//   steady in the oval, about a second. There is nothing to tap and nothing to upload. It proves a face
-//   was in front of the lens -- NOT that the person was: a photograph held up to the camera passes it.
-// - `challenge`: blink and head turn before the still, which a photograph does not pass. A division
-//   turns it on with `face_liveness_required`.
+// - `presence` (the default): the camera opens itself, and the still is taken once a face has been held
+//   in the oval AND has blinked. Nothing is asked of the person up front -- people blink every few
+//   seconds without being told to, so most of the time this just happens while they hold the phone up,
+//   and the prompt only appears if it does not. A photograph of a face, on paper or on another phone's
+//   screen, never blinks, so it cannot be used to mark someone present.
+// - `challenge`: a head turn as well as the blink, which also defeats a video of the person played to
+//   the camera from a distance where the turn is not in the clip. A division turns it on with
+//   `face_liveness_required`.
 //
 // See docs/SECURITY.md: neither is a certified presentation-attack detector.
 import { useEffect, useRef, useState } from 'react';
@@ -33,6 +36,9 @@ const CAMERA_ERRORS = {
 const PRESENCE_HOLD_MS = 1500;
 const PRESENCE_FRAMES = 3;   // and never on fewer frames than this, however fast the phone is
 const PRESENCE_YAW = 0.3;
+// How long to wait for the blink people make on their own before asking for one. Spontaneous blinks
+// come every few seconds, so most captures never show the prompt at all.
+const PRESENCE_ASK_AFTER_MS = 2500;
 
 export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
   const video = useRef(null);
@@ -74,7 +80,12 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
   function presenceLoop(run) {
     let steady = 0;
     let heldSince = null;
-    const deadline = Date.now() + 25_000;
+    // The blink is watched for by the same state machine the challenge uses, so there is one place
+    // where "was that a blink" is decided and one place where it is tested.
+    const blinkCheck = createLiveness({ challenges: ['blink'], options: { timeoutMs: 25_000 } });
+    let blinked = false;
+    const startedAt = Date.now();
+    const deadline = startedAt + 25_000;
     const look = async () => {
       if (stopped.current || !video.current || run !== runId.current) return;
       const m = await analyseFrame(video.current).catch(() => ({ count: 0 }));
@@ -83,8 +94,10 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       if (t > deadline) {
         stop();
         setPhase('failed');
-        setError('No face was found. Hold the phone at arm’s length with the face inside the oval, in good light.');
-        onDone({ liveness: 'not_required', photo: null, reason: 'no_face' });
+        setError(heldSince != null || blinked
+          ? 'No blink was seen, so this could not be confirmed as a live person. Look at the camera and blink. A photo of a face cannot be used here.'
+          : 'No face was found. Hold the phone at arm’s length with the face inside the oval, in good light.');
+        onDone({ liveness: 'failed', photo: null, reason: blinked ? 'no_face' : 'no_blink' });
         return;
       }
       // Anything wrong starts the hold again: the point of waiting is that the face was still for the
@@ -95,6 +108,9 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       else if (m.size < 0.22) wrong = 'Move a little closer';
       else if (Math.abs(m.yaw) > PRESENCE_YAW) wrong = 'Look at the camera';
 
+      // The blink is watched for throughout, including while the face is being lined up.
+      if (!blinked && m.count === 1) blinked = blinkCheck.feed(m).status === 'passed';
+
       if (wrong) {
         steady = 0;
         heldSince = null;
@@ -103,12 +119,13 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       } else {
         steady += 1;
         heldSince ??= t;
-        setPrompt('Hold still');
         setProgress(Math.min(1, (t - heldSince) / PRESENCE_HOLD_MS));
+        // Nobody is told to blink until their own blink is overdue.
+        setPrompt(blinked || t - startedAt < PRESENCE_ASK_AFTER_MS ? 'Hold still' : 'Blink');
       }
 
       const held = heldSince != null && t - heldSince >= PRESENCE_HOLD_MS && steady >= PRESENCE_FRAMES;
-      if (!held) { setTimeout(look, 0); return; }
+      if (!held || !blinked) { setTimeout(look, 0); return; }
 
       const canvas = document.createElement('canvas');
       canvas.width = video.current.videoWidth || 640;
@@ -116,9 +133,9 @@ export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
       canvas.getContext('2d').drawImage(video.current, 0, 0);
       stop();
       setPhase('passed');
-      // `not_required`: this mode does not claim liveness, and a record must never say it was proved
-      // when it was not. The face itself is still matched against the registered descriptors.
-      onDone({ liveness: 'not_required', photo: canvas.toDataURL('image/jpeg', 0.85), reason: null });
+      // A blink was seen, so this says so: the record carries what was actually proved, no more and
+      // no less.
+      onDone({ liveness: 'passed', photo: canvas.toDataURL('image/jpeg', 0.85), reason: null });
     };
     look();
   }

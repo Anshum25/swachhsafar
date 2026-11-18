@@ -18,18 +18,21 @@ The photo matched against an employee's registered face is always taken by the a
 A photo chosen from the gallery is never accepted where the face is being matched: a face check against
 a picture the user picked proves nothing.
 
-Beyond that there are two modes, and they prove different things:
+**A blink is always required** before the still is taken. It is not a setting. A photograph of a face —
+on paper or on another phone's screen — does not blink, and without that anyone could be marked present
+with a picture of them, which was briefly possible and is the reason this is written down.
 
-- **Presence** (default): the camera opens itself and takes the still as soon as one face is held in the
-  oval, about a second, with nothing to tap. It proves a face was in front of the lens. It does **not**
-  prove the person was: a printed photo, or a photo on another phone, held up to the camera passes it.
-- **Challenge** (`face_liveness_required`): a blink and a head turn first. A still photograph does not
-  pass it. It is slower, and it is the only one of the two that resists an absent employee being marked
-  present with a photo of them.
+The blink is watched for passively: people blink every few seconds unprompted, so most captures just
+happen while the phone is held up, and "Blink" only appears if one is overdue. The still is taken on the
+blink, with the face held in the oval.
 
-Neither is a certified presentation-attack detector (ISO/IEC 30107-3), and neither resists a replayed
-video or a mask. A division that needs attendance to be hard to fake should turn the challenge on, or
-use the fingerprint scanner, which is not spoofable with a picture.
+`face_liveness_required` adds **a head turn** on top. That costs a few seconds more and also defeats a
+short recorded video played to the camera, which a blink alone does not.
+
+What neither does: this is not a certified presentation-attack detector (ISO/IEC 30107-3). A video of
+the person blinking, played to the camera, passes the blink check, and nothing here resists a mask. A
+division that needs attendance to be hard to fake should turn the head turn on as well, or use the
+fingerprint scanner, which no picture or video can satisfy.
 
 ## 2. Policy Enforcement Engine
 

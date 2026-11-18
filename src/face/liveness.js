@@ -29,9 +29,11 @@ export const PROMPTS = {
   hold: 'Hold still, facing the camera',
 };
 
-export function createLiveness({ now = () => Date.now(), random = Math.random, options = {} } = {}) {
+// `challenges` picks what has to be seen. The default asks for both, in a random order. ['blink'] is the
+// passive path: nothing is demanded of the person beyond the blink they were going to make anyway.
+export function createLiveness({ now = () => Date.now(), random = Math.random, options = {}, challenges } = {}) {
   const o = { ...LIVENESS_DEFAULTS, ...options };
-  const order = random() < 0.5 ? ['blink', 'turn'] : ['turn', 'blink'];
+  const order = challenges ?? (random() < 0.5 ? ['blink', 'turn'] : ['turn', 'blink']);
   const started = now();
   let step = 0;
   let baseline = null;       // the open-eye EAR this person actually has

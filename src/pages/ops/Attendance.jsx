@@ -47,15 +47,13 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const policy = useResource(`/divisions/${journey.division_id}/policy`);
   const faceOn = policy.data?.attendance_face_verification === true;
-  // Two separate questions. `cameraOn`: the photo is taken by the app from the live camera, never
-  // chosen from the gallery -- that holds wherever the face is matched, because a face check against a
-  // picture the user picked proves nothing at all. `liveOn`: the blink-and-turn challenge before the
-  // still, which is what a photograph held up to the lens cannot pass, and which a division asks for
-  // with face_liveness_required. Without it the capture is immediate: face in the oval, still taken,
-  // about a second, nothing to tap.
+  // `cameraOn`: the photo is taken by the app from the live camera, never chosen from the gallery, and
+  // a blink has to be seen before it is taken -- a photograph of a face, on paper or on another phone,
+  // does not blink, and without that anyone could mark anyone else present with a picture of them.
+  // `liveOn`: a head turn as well, which a division asks for with face_liveness_required.
   const cameraOn = faceOn || policy.data?.face_liveness_required === true;
   const liveOn = policy.data?.face_liveness_required === true;
-  const [liveness, setLiveness] = useState(liveOn ? null : 'not_required');
+  const [liveness, setLiveness] = useState(cameraOn ? null : 'not_required');
   const face = useFaceCheck({ photo, employeeId: target.staff.employee_id, enabled: faceOn, threshold: policy.data?.face_match_threshold ?? 0.5 });
   // Fingerprint is an alternative to the face check, never a replacement: the scanner can be absent or
   // broken, so a matched fingerprint satisfies the division instead of the face, and nothing more is
@@ -70,7 +68,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   const gate = useSecurityGate('attendance');
   // Liveness is a property of the face photo, so a capture proved by fingerprint is not asked for it --
   // matching the server, which only requires it of a capture verified by face.
-  const liveOk = fingerOk || !liveOn || liveness === 'passed';
+  const liveOk = fingerOk || !cameraOn || liveness === 'passed';
 
   async function submit(e) {
     e.preventDefault();
@@ -82,7 +80,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
         id: crypto.randomUUID(), journey_id: journey.id, employee_id: target.staff.employee_id, stage: target.stage,
         device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId,
         ...(fingerOk ? fingerprintFields(finger) : faceFields(face)),
-        ...gate.evidence({ liveness: liveOn && !fingerOk ? liveness : 'not_required', faceModel: faceOn && !fingerOk ? FACE_MODEL : null }),
+        ...gate.evidence({ liveness: cameraOn && !fingerOk ? liveness : 'not_required', faceModel: faceOn && !fingerOk ? FACE_MODEL : null }),
       },
       media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
     });
@@ -99,10 +97,10 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
         {cameraOn ? (
           photo ? (
             <div className="relative overflow-hidden rounded-2xl ring-1 ring-line">
-              <img src={photo} alt={liveOn ? 'Live check photo' : 'Captured face'} className="max-h-60 w-full object-cover" />
+              <img src={photo} alt="Live check photo" className="max-h-60 w-full object-cover" />
               <button type="button" className="btn-secondary absolute bottom-2 right-2"
-                onClick={() => { setPhoto(null); setLiveness(liveOn ? null : 'not_required'); }}>
-                {liveOn ? 'Redo live check' : 'Retake'}
+                onClick={() => { setPhoto(null); setLiveness(cameraOn ? null : 'not_required'); }}>
+                Retake
               </button>
             </div>
           )
