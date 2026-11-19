@@ -97,10 +97,16 @@ def upgrade() -> None:
     added_token_hash = not _has_column("auth_sessions", "token_hash")
     if added_token_hash:
         op.add_column("auth_sessions", sa.Column("token_hash", sa.String(64), nullable=True))
-    if not _has_unique("auth_sessions", "uq_auth_sessions_token_hash"):
-        op.create_unique_constraint("uq_auth_sessions_token_hash", "auth_sessions", ["token_hash"])
-    # Relaxing NOT NULL is harmless to repeat.
-    op.alter_column("auth_sessions", "firebase_uid", existing_type=sa.String(128), nullable=True)
+    # SQLite cannot ALTER a table to add a constraint or to relax NOT NULL, and raises outright rather
+    # than doing nothing. Alembic's batch mode copies the table, applies the change and moves it back;
+    # on PostgreSQL the same wrapper emits the plain ALTERs, so one path serves both -- which is what
+    # downgrade() below has done all along. Both changes share a block so SQLite rebuilds the table once.
+    needs_unique = not _has_unique("auth_sessions", "uq_auth_sessions_token_hash")
+    with op.batch_alter_table("auth_sessions") as batch:
+        if needs_unique:
+            batch.create_unique_constraint("uq_auth_sessions_token_hash", ["token_hash"])
+        # Relaxing NOT NULL is harmless to repeat.
+        batch.alter_column("firebase_uid", existing_type=sa.String(128), nullable=True)
 
     if added_token_hash:
         # Firebase-era sessions cannot be presented any more (no token hash): record that they ended, and why.

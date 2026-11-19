@@ -39,7 +39,10 @@ def test_records_how_identity_was_established(world, db):
     r, _ = group_punch(world, "jan")
     assert r.status_code == 201
     assert r.json()["identified_by"] == "group_photo"
-    assert db.get(Attendance, r.json()["id"]).identified_by == "group_photo"
+    # uuid.UUID, not the raw string: the primary key is sa.Uuid, and SQLite's binding asks the value for
+    # its .hex, which a str does not have. PostgreSQL's driver accepts either, so a string only fails on
+    # the local single-PC deployment -- the rest of the suite already converts (tests/test_security.py).
+    assert db.get(Attendance, uuid.UUID(r.json()["id"])).identified_by == "group_photo"
     # An ordinary capture in a division asking for no proof claims nothing about how it was identified.
     r2, _ = punch(world, "jan", 2)
     assert r2.json()["identified_by"] is None
@@ -125,6 +128,12 @@ def _group_photo(world, people, ids=None):
 
 
 def _stages(db, user):
+    # End whatever read transaction an earlier assertion left open before looking. The attendance is
+    # written by the API through its own sessions; this one, having already read once, sits inside a
+    # transaction that on SQLite holds the snapshot it started with, so those later writes are invisible
+    # to it. PostgreSQL reads at READ COMMITTED and refreshes per statement, which hides the problem
+    # there. The session never writes, so ending its transaction costs nothing.
+    db.rollback()
     return sorted(db.scalars(select(Attendance.stage).where(Attendance.employee_id == user.id)))
 
 
