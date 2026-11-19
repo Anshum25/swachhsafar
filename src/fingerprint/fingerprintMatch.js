@@ -45,7 +45,12 @@ export function decideFingerprint({ result, profile, threshold = DEFAULT_MATCH_S
   }
   const matched = score >= threshold;
   return { matched, reason: matched ? 'matched' : 'mismatch', score, finger: result.finger ?? null,
-    matcher: result.matcher ?? profile.matcher ?? null };
+    matcher: result.matcher ?? profile.matcher ?? null,
+    // Why a refused finger was refused: how many points lined up, out of how many, and the floor.
+    diagnostic: {
+      build: result.matcherBuild ?? null, points: result.matched ?? null, of: result.comparable ?? null,
+      floor: result.minMatched ?? null, probe: result.probeMinutiae ?? null, candidate: result.candidateMinutiae ?? null,
+    } };
 }
 
 // What the attendance record carries about the check, or {} when it was not verified this way. Only ever

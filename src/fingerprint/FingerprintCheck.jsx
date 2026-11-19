@@ -81,7 +81,15 @@ export function FingerprintCheckNote({ check, name }) {
     // "no", and there is no way to tell a wrong person from a threshold set too high for these scanners --
     // which is exactly the judgement an administrator has to make in Masters -> Division policy.
     mismatch: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
-      `The fingerprint does not match ${name}${check.score != null ? ` (score ${check.score}, needs ${check.threshold})` : ''}. Try another finger, or use the photo check.`],
+      <>
+        {`The fingerprint does not match ${name}${check.score != null ? ` (score ${check.score}, needs ${check.threshold})` : ''}. Try another finger, or use the photo check.`}
+        {/* A score of 0 means different things; these numbers say which. */}
+        <span className="mt-1 block font-mono text-[10px] leading-snug opacity-80" data-testid="fingerprint-diagnostic">
+          {check.diagnostic?.build == null
+            ? 'Matcher: old app build — install the latest APK.'
+            : `Matcher build ${check.diagnostic.build} · points lined up ${check.diagnostic.points ?? '?'} of ${check.diagnostic.of ?? '?'} (needs ${check.diagnostic.floor ?? '?'}) · points read: scan ${check.diagnostic.probe ?? '?'}, registered ${check.diagnostic.candidate ?? '?'}`}
+        </span>
+      </>],
     not_enrolled: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
       `This device has no fingerprints for ${name}. They reach a phone only after the division's policy has fingerprint verification switched on, the fingers are registered (Masters → Users → Finger), and this phone syncs while online — check all three in that order.`],
     wrong_matcher: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,

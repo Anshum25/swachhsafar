@@ -113,7 +113,8 @@ export async function matchFinger({ template, profile }, plugin = scanner()) {
       // which is a different problem from the wrong finger and has a different fix.
       probeMinutiae: r.probeMinutiae ?? null, candidateMinutiae: r.candidateMinutiae ?? null,
       // Diagnostics (headers only, no minutiae): which matcher build the APK has, and the record headers.
-      matcherBuild: r.matcherBuild ?? null, probeHeader: r.probeHeader ?? null, candidateHeader: r.candidateHeader ?? null };
+      matcherBuild: r.matcherBuild ?? null, matched: r.matched ?? null, comparable: r.comparable ?? null,
+      minMatched: r.minMatched ?? null, probeHeader: r.probeHeader ?? null, candidateHeader: r.candidateHeader ?? null };
   } catch {
     return null;
   }

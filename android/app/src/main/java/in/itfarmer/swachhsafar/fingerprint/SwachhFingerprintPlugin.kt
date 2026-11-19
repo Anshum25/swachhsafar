@@ -43,7 +43,7 @@ class SwachhFingerprintPlugin : Plugin() {
         const val VENDOR_ID = 0x34FC
         // Bumped with each matcher fix, and shown on screen when a template cannot be read, so it is
         // obvious whether the phone runs an APK that has the fix at all.
-        const val MATCHER_BUILD = 3
+        const val MATCHER_BUILD = 4
     }
 
     private lateinit var executor: ExecutorService
@@ -299,6 +299,8 @@ class SwachhFingerprintPlugin : Plugin() {
             var bestScore = 0.0
             var bestFinger: String? = null
             var firstCandidate: ByteArray? = null
+            var bestMatched = 0
+            var bestComparable = 0
 
             // A finger is registered from several presses, so each candidate carries a list of them and
             // the best one counts: the press being verified has to resemble only one of the impressions
@@ -310,7 +312,11 @@ class SwachhFingerprintPlugin : Plugin() {
                     val candBytes = Base64.decode(candB64, Base64.DEFAULT)
                     if (firstCandidate == null) firstCandidate = candBytes
                     candidateMinutiae = maxOf(candidateMinutiae, IsoTemplateMatcher.parseIso19794(candBytes).size)
-                    val score = IsoTemplateMatcher.match(probe, candBytes)
+                    val r = IsoTemplateMatcher.matchDetail(probe, candBytes)
+                    val score = r.score
+                    // The closest the scan came to any registered press, even when that is below the
+                    // matched-points floor and scores 0 -- it is what says why a genuine finger failed.
+                    if (r.matched > bestMatched) { bestMatched = r.matched; bestComparable = r.comparable }
                     if (score > bestScore) {
                         bestScore = score
                         bestFinger = finger
@@ -332,6 +338,9 @@ class SwachhFingerprintPlugin : Plugin() {
                 // record -- the header only (format, version, length, image size, resolution), which
                 // ends before the first minutia, so no biometric data is exposed.
                 put("matcherBuild", MATCHER_BUILD)
+                put("matched", bestMatched)
+                put("comparable", bestComparable)
+                put("minMatched", IsoTemplateMatcher.MIN_MATCHED_MINUTIAE)
                 put("probeHeader", headerHex(probe))
                 firstCandidate?.let { put("candidateHeader", headerHex(it)) }
             }
