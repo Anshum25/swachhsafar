@@ -1,12 +1,13 @@
 """Backend-owned sign-in: Employee ID (or email) + password + CAPTCHA, and mobile + OTP.
 
-Both end in a backend session (auth_sessions) and a Firebase custom token whose claims carry the session id and
-the device id. With AUTH_REQUIRE_BACKEND_SESSION=true, API calls with any other token are refused, so a direct
-Firebase password sign-in (which never saw the CAPTCHA) gives no access.
+Everything lives in PostgreSQL: the password hash in user_credentials, the session in auth_sessions. Both
+sign-in methods end in a session and an opaque bearer token naming it (app/security/tokens.py); no other kind of
+token is accepted by the API.
 
 Error messages are generic ("Employee ID or password is incorrect"; an OTP request always answers the same),
-so the endpoints do not reveal which employee IDs or mobile numbers exist. Every attempt is recorded in
-login_attempts; too many failures for the same account/mobile (or from one IP) lock it for the window."""
+so the endpoints do not reveal which employee IDs or mobile numbers exist, and an unknown account costs the same
+hashing time as a wrong password. Every attempt is recorded in login_attempts; too many failures for the same
+account/mobile (or from one IP) lock it for the window."""
 
 import hashlib
 import hmac
@@ -18,12 +19,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.errors import Forbidden, ServiceUnavailable, TooManyRequests, Unauthenticated
-from app.models import AuthSession, Device, DeviceStatus, LoginAttempt, LoginOtp, User, UserStatus
+from app.errors import BusinessRuleViolation, Forbidden, ServiceUnavailable, TooManyRequests, Unauthenticated
+from app.models import AuthSession, Device, DeviceStatus, LoginAttempt, LoginOtp, User, UserCredential, UserStatus
 from app.providers.external import ProviderUnavailable, SmsProvider
 from app.schemas.security import DeviceIn, OtpLoginRequest, OtpLoginVerify, PasswordLogin
-from app.security import captcha
-from app.security.identity import PasswordVerifier, TokenIssuer
+from app.security import captcha, passwords, tokens
 from app.services.common import audit
 from app.services import security as security_svc
 from app.timeutil import utcnow
@@ -72,44 +72,31 @@ def _device(db: Session, d: DeviceIn, ip: str | None, now: datetime) -> Device:
     return device
 
 
-def _start_session(db: Session, user: User, device: Device, method: str, ip: str | None, issuer: TokenIssuer,
-                   now: datetime) -> dict:
-    if not user.firebase_uid:
-        # First sign-in of an employee without a Firebase account yet (e.g. mobile OTP only): reuse the Firebase
-        # user that has their email if one exists, else a stable uid of our own.
-        user.firebase_uid = (issuer.uid_for_email(user.email) if user.email else None) or f"ss-{user.id}"
+def _start_session(db: Session, user: User, device: Device, method: str, ip: str | None, now: datetime) -> dict:
     device.first_user_id = device.first_user_id or user.id
     device.last_user_id = user.id
-    session = AuthSession(id=uuid.uuid4(), user_id=user.id, device_id=device.id, method=method,
-                          firebase_uid=user.firebase_uid, ip=ip, last_seen_at=now)
+    session = AuthSession(id=uuid.uuid4(), user_id=user.id, device_id=device.id, method=method, ip=ip, last_seen_at=now)
+    issued = tokens.issue(session.id)
+    session.token_hash = issued.token_hash
     db.add(session)
     db.flush()
-    token = issuer.custom_token(user.firebase_uid, {"sid": str(session.id), "did": device.id})
     audit(db, actor_id=user.id, action="auth.sign_in", entity=session, division_id=user.division_id,
           changes={"method": method, "device_id": device.id})
     db.commit()
-    return {"custom_token": token, "session_id": session.id, "device_id": device.id, "method": method}
+    return {"access_token": issued.token, "token_type": "bearer", "session_id": session.id, "device_id": device.id,
+            "method": method}
 
 
-def validate_session(db: Session, claims: dict, user: User) -> AuthSession | None:
-    """Called for every API request. Returns the session (None for a token without one, when allowed)."""
+def authenticate(db: Session, token: str) -> tuple[AuthSession, User]:
+    """Called for every API request with the bearer token: its session, and the employee it belongs to."""
     s = get_settings()
-    sid = claims.get("sid")
-    if not sid:
-        if s.auth_require_backend_session:
-            raise Unauthenticated("Sign in again with your Employee ID or mobile number.", code="backend_login_required")
-        return None
-    try:
-        session = db.get(AuthSession, uuid.UUID(str(sid)))
-    except ValueError:
-        session = None
-    if session is None or session.user_id != user.id:
-        raise Unauthenticated("Your session is not valid. Sign in again.", code="session_invalid")
+    parsed = tokens.parse(token)
+    session = db.get(AuthSession, parsed[0]) if parsed else None
+    if session is None or not tokens.matches(parsed[1], session.token_hash):
+        raise Unauthenticated("Your sign-in is not valid. Sign in again.", code="invalid_token")
     if session.revoked_at is not None:
         raise Unauthenticated("Your session was ended. Sign in again.", code="session_revoked",
                               details={"reason": session.revoke_reason})
-    if claims.get("did") and claims.get("did") != session.device_id:
-        raise Unauthenticated("Your session does not belong to this device. Sign in again.", code="session_device_mismatch")
     now = utcnow()
     device = db.get(Device, session.device_id)
     if device is None or device.status == DeviceStatus.REVOKED:
@@ -118,11 +105,16 @@ def validate_session(db: Session, claims: dict, user: User) -> AuthSession | Non
         session.revoked_at, session.revoke_reason = now, "idle"
         db.commit()
         raise Unauthenticated("Your session expired. Sign in again.", code="session_expired")
+    user = db.get(User, session.user_id)
+    if user is None or user.status == UserStatus.DELETED:
+        raise Forbidden("Account is not provisioned for operations", code="not_provisioned")
+    if user.status != UserStatus.ACTIVE:
+        raise Forbidden("Account is not active", code="account_inactive")
     if now - session.last_seen_at > timedelta(minutes=5):  # bounded write load
         session.last_seen_at = now
         device.last_seen_at = now
         db.commit()
-    return session
+    return session, user
 
 
 def logout(db: Session, user: User, session_id: uuid.UUID | None) -> None:
@@ -162,6 +154,48 @@ def restore_device(db: Session, actor: User, device_id: str) -> Device:
     return device
 
 
+# ---- passwords -------------------------------------------------------------------------------------------
+def set_password(db: Session, user: User, password: str, *, source: str, now: datetime | None = None) -> UserCredential:
+    """Stores a new password for `user` (hashed). The caller commits and audits."""
+    now = now or utcnow()
+    hashed = passwords.hash_password(password)
+    cred = db.get(UserCredential, user.id)
+    if cred is None:
+        cred = UserCredential(user_id=user.id, password_hash=hashed, source=source, password_changed_at=now)
+        db.add(cred)
+    else:
+        cred.password_hash, cred.source, cred.password_changed_at = hashed, source, now
+    db.flush()
+    db.expire(user, ["credential"])
+    return cred
+
+
+def change_password(db: Session, user: User, session_id: uuid.UUID | None, current: str, new: str) -> None:
+    """The signed-in employee changes their own password. Every other session of theirs is ended, so a
+    password someone else knew stops working everywhere, not only for new sign-ins."""
+    now = utcnow()
+    cred = db.get(UserCredential, user.id)
+    _check_lockout(db, f"pwchange:{user.id}", None, ("password_change",), now)
+    if cred is None or not passwords.verify_password(cred.password_hash, current).ok:
+        if cred is None:
+            passwords.burn_time(current)
+        _attempt(db, "password_change", f"pwchange:{user.id}", success=False, user=user, device_id=None, ip=None,
+                 reason="wrong_password", now=now)
+        db.commit()
+        raise Unauthenticated("Your current password is not correct.", code="wrong_password")
+    if current == new:
+        raise BusinessRuleViolation("The new password must be different from the current one.", code="password_unchanged")
+    set_password(db, user, new, source="user", now=now)
+    ended = 0
+    for other in db.scalars(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))):
+        if other.id != session_id:
+            other.revoked_at, other.revoke_reason = now, "password_changed"
+            ended += 1
+    audit(db, actor_id=user.id, action="auth.password.change", entity=user, division_id=user.division_id,
+          changes={"other_sessions_ended": ended})
+    db.commit()
+
+
 # ---- password + CAPTCHA ----------------------------------------------------------------------------------
 def _find_user(db: Session, username: str) -> User | None:
     return db.scalar(select(User).where(
@@ -169,7 +203,7 @@ def _find_user(db: Session, username: str) -> User | None:
         or_(func.lower(User.emp_id) == username, func.lower(User.email) == username)))
 
 
-def login_password(db: Session, body: PasswordLogin, ip: str | None, verifier: PasswordVerifier, issuer: TokenIssuer) -> dict:
+def login_password(db: Session, body: PasswordLogin, ip: str | None) -> dict:
     now = utcnow()
     subject = body.username.strip().lower()
     captcha.verify(db, body.captcha)
@@ -182,23 +216,22 @@ def login_password(db: Session, body: PasswordLogin, ip: str | None, verifier: P
         raise Unauthenticated(message, code=code)
 
     user = _find_user(db, subject)
-    if user is None or not user.email:
-        fail("unknown_user")
-    check = verifier.check(user.email, body.password)
+    cred = db.get(UserCredential, user.id) if user is not None else None
+    if cred is None:
+        passwords.burn_time(body.password)  # same cost as a real check: existence is not revealed by timing
+        fail("unknown_user" if user is None else "no_password", user)
+    check = passwords.verify_password(cred.password_hash, body.password)
     if not check.ok:
-        if check.reason == "throttled":
-            db.rollback()
-            raise TooManyRequests("Too many unsuccessful attempts. Try again later.", code="login_locked")
-        fail(check.reason or "invalid", user)
-    if user.firebase_uid and user.firebase_uid != check.uid:
-        fail("uid_mismatch", user)
-    if not user.firebase_uid and not check.email_verified:
-        fail("email_unverified", user, "Verify your email address (link sent at registration), then sign in again.", "email_unverified")
+        fail("invalid", user)
     if user.status != UserStatus.ACTIVE:
         fail("inactive", user, "Your account is not active. Contact your administrator.", "account_inactive")
-    user.firebase_uid = user.firebase_uid or check.uid
+    if check.needs_rehash:  # imported from Firebase (or older parameters): store it in today's format
+        old_scheme = cred.password_hash.split("$", 1)[0]
+        cred.password_hash = passwords.hash_password(body.password)  # same password: password_changed_at stays
+        audit(db, actor_id=user.id, action="auth.password.rehash", entity=user, division_id=user.division_id,
+              changes={"from": old_scheme, "to": passwords.NATIVE})
     _attempt(db, "password", subject, success=True, user=user, device_id=device.id, ip=ip, reason=None, now=now)
-    return _start_session(db, user, device, "password", ip, issuer, now)
+    return _start_session(db, user, device, "password", ip, now)
 
 
 # ---- mobile OTP --------------------------------------------------------------------------------------------
@@ -265,7 +298,7 @@ def redact_mobile(mobile: str) -> str:
     return f"{mobile[:2]}******{mobile[-2:]}" if len(mobile) >= 4 else "****"
 
 
-def verify_otp(db: Session, body: OtpLoginVerify, ip: str | None, issuer: TokenIssuer) -> dict:
+def verify_otp(db: Session, body: OtpLoginVerify, ip: str | None) -> dict:
     s = get_settings()
     now = utcnow()
     _check_lockout(db, body.mobile, ip, ("otp_request", "otp_verify"), now)
@@ -293,4 +326,4 @@ def verify_otp(db: Session, body: OtpLoginVerify, ip: str | None, issuer: TokenI
     if user is None or user.status != UserStatus.ACTIVE or user.mobile != body.mobile:
         fail("inactive")
     _attempt(db, "otp_verify", body.mobile, success=True, user=user, device_id=device.id, ip=ip, reason=None, now=now)
-    return _start_session(db, user, device, "otp", ip, issuer, now)
+    return _start_session(db, user, device, "otp", ip, now)

@@ -1,4 +1,4 @@
-// CP-02 on a shared device, in Chromium against the production build (fake Firebase project and fake
+// CP-02 on a shared device, in Chromium against the production build (fake sign-in server and fake
 // FastAPI inside the browser; nothing leaves it).
 //
 // Supervisor A captures attendance offline and signs out. Janitor B signs in online on the same device:

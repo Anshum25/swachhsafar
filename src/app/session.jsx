@@ -1,5 +1,6 @@
-// Signed-in session for the operational app: Firebase Auth identity, the backend profile from
-// GET /auth/me (role + per-division permissions), the API client and the offline operations queue.
+// Signed-in session for the operational app: the backend session token (src/security/authToken.js), the
+// profile from GET /auth/me (role + per-division permissions), the API client and the offline operations queue.
+// Sign-in is entirely our own backend's (PostgreSQL); no third-party identity provider is involved.
 //
 // Data access is local-first (demo mode off): one localStore over the device SQLite database backs
 // both the operations queue (captures are saved locally, then synced) and the local-first API (reads
@@ -18,6 +19,7 @@ import { isOnline, subscribeConnectivity, subscribeForeground } from '../service
 import { solveCaptcha } from '../security/captcha.js';
 import { getDevice } from '../security/device.js';
 import { getCachedLease, saveCachedLease, validateOfflineLease } from '../security/lease.js';
+import { clearToken, getAuth, getToken as storedToken, saveAccount, saveToken, subscribeAuth } from '../security/authToken.js';
 
 const SessionContext = createContext(null);
 const LEGACY_ME_CACHE_KEY = 'session_me'; // Phase 1 cache; migrated into authorization_snapshots (v3)
@@ -25,54 +27,70 @@ const DEMO_CAPTURE_REASON = 'Demo mode: records are not saved. Turn off VITE_DEM
 
 export const ROLE_NAMES = { 1: 'Super Admin', 2: 'Admin', 3: 'Manager', 4: 'Supervisor/EHK', 5: 'Janitor', 6: 'Contractor' };
 
-let firebasePromise = null;
-const loadFirebase = () =>
-  (firebasePromise ??= Promise.all([import('firebase/auth'), import('../services/firebase.js')])
-    .then(([authLib, { getFirebaseServices }]) => ({ authLib, auth: getFirebaseServices().auth }))
-    .catch((e) => {
-      firebasePromise = null;
-      throw e;
-    }));
+// The signed-in account as the rest of the app sees it: null when signed out.
+const accountFromAuth = (auth) => (auth
+  ? { token: auth.token, uid: auth.account?.userId ?? null, userId: auth.account?.userId ?? null, email: auth.account?.email ?? null, empId: auth.account?.empId ?? null }
+  : null);
+
+async function postJson(path, body, fallback) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw Object.assign(new Error('Cannot reach the Swachh Safar server. Check the connection.'), { code: 'network_error', status: 0 });
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw Object.assign(new Error(data?.error?.message || fallback.message), { code: data?.error?.code || fallback.code, status: res.status });
+  }
+  return data;
+}
 
 export function SessionProvider({ db, files, children }) {
-  // Demo mode: no Firebase sign-in or /auth/me; a fixed admin profile and sample GET data.
-  const [fbUser, setFbUser] = useState(DEMO_MODE ? { email: DEMO_ME.user.email } : undefined); // undefined = still resolving
+  // Demo mode: no sign-in or /auth/me; a fixed admin profile and sample GET data.
+  const [account, setAccount] = useState(() => (DEMO_MODE ? { email: DEMO_ME.user.email } : accountFromAuth(getAuth())));
   const [me, setMe] = useState(DEMO_MODE ? DEMO_ME : null);
   const [meError, setMeError] = useState(null);
-  const [configError, setConfigError] = useState(null);
+  const configError = null;
   const outbox = useMemo(() => createOutboxRepository(db), [db]);
   const store = useMemo(() => createLocalStore({ db, files }), [db, files]);
   const meRef = useRef(me);
   meRef.current = me;
   const sessionIdRef = useRef(null);
 
+  // Sign-in and sign-out (also from another tab) change the stored token; the session follows it. Only a
+  // change of token (or signing out) re-resolves the session, not the account details filled in by /auth/me.
   useEffect(() => {
     if (DEMO_MODE) return undefined;
-    let off = () => {};
-    loadFirebase()
-      .then(({ authLib, auth }) => {
-        off = authLib.onAuthStateChanged(auth, (u) => setFbUser(u ?? null));
-      })
-      .catch((e) => {
-        setConfigError(e.message);
-        setFbUser(null);
-      });
-    return () => off();
+    let lastToken = storedToken();
+    const sync = (auth) => {
+      if ((auth?.token ?? null) === lastToken) return;
+      lastToken = auth?.token ?? null;
+      setAccount(accountFromAuth(auth));
+    };
+    const onStorage = (e) => { if (e.key === null || e.key === 'swachh_auth_v1') sync(getAuth()); };
+    const off = subscribeAuth(sync);
+    globalThis.addEventListener?.('storage', onStorage);
+    return () => {
+      off();
+      globalThis.removeEventListener?.('storage', onStorage);
+    };
   }, []);
 
-  // Never throws. getIdToken() contacts Firebase to refresh an expired token and fails when the network
-  // is down, when the refresh token has been revoked, or when the account is gone -- and the callers of
-  // this are the sync queue, which must be able to tell "no token" from a crash. It used to reject, and
-  // the rejection escaped the queue's try blocks entirely: sync then did nothing at all, silently, while
-  // the status bar went on showing a stale error from the last pull that did run.
-  const getToken = useCallback(async () => {
-    try {
-      const { auth } = await loadFirebase();
-      return auth.currentUser ? await auth.currentUser.getIdToken() : null;
-    } catch {
-      return null;
-    }
-  }, []);
+  // Reads the bearer token this device holds; null when there is none. It cannot throw -- authToken.js
+  // wraps the storage access and falls back to memory -- which is what the sync queue needs, because it
+  // has to tell "no token" apart from a crash.
+  //
+  // This replaces a Firebase getIdToken() call that could reject (a revoked refresh token, a deleted
+  // account, no network), and did: the rejection escaped the queue's try blocks, so sync went inert in
+  // silence while the status bar kept showing a stale error from the last pull that had run. The queue
+  // still guards the call and still reports `authRequired`, because a token can now be absent or revoked
+  // server-side just as easily -- the failure is gone, the thing it taught us to report is not.
+  const getToken = useCallback(async () => storedToken(), []);
 
   const remote = useMemo(() => (DEMO_MODE ? null : createApiClient({ getToken })), [getToken]);
 
@@ -99,8 +117,9 @@ export function SessionProvider({ db, files, children }) {
     [db, store, remote, getToken],
   );
 
-  const cachedAuthorization = useCallback(async (email) => {
-    const snapshot = await store.identity.findSnapshotByEmail(email).catch(() => null);
+  const cachedAuthorization = useCallback(async ({ userId, email } = {}) => {
+    const snapshot = (await store.identity.findSnapshotByUserId(userId).catch(() => null))
+      ?? await store.identity.findSnapshotByEmail(email).catch(() => null);
     if (snapshot) return snapshot;
     const legacy = await outbox.getMeta(LEGACY_ME_CACHE_KEY).catch(() => null);
     const parsed = legacy ? JSON.parse(legacy) : null;
@@ -114,12 +133,14 @@ export function SessionProvider({ db, files, children }) {
       if (profile.offline_lease) {
         saveCachedLease(profile.offline_lease);
       }
+      saveAccount({ userId: profile.user.id, email: profile.user.email ?? null, empId: profile.user.emp_id });
       setMe(profile);
-      await store.identity.saveAuthorization(profile, { firebaseUid: fbUser?.uid ?? null, now: new Date().toISOString() })
+      await store.identity.saveAuthorization(profile, { now: new Date().toISOString() })
         .catch((e) => console.warn('[session] could not cache authorization', e));
     } catch (e) {
       // Offline: sign in with the authorization cached at the last successful sign-in on this device.
-      const cached = e.status === 0 ? await cachedAuthorization(fbUser?.email) : null;
+      const stored = getAuth()?.account;
+      const cached = e.status === 0 ? await cachedAuthorization({ userId: stored?.userId, email: stored?.email }) : null;
       if (cached) {
         const dev = await getDevice().catch(() => null);
         const lease = getCachedLease();
@@ -139,20 +160,25 @@ export function SessionProvider({ db, files, children }) {
         setMeError(e);
       }
     }
-  }, [remote, store, fbUser, cachedAuthorization]);
+  }, [remote, store, cachedAuthorization]);
 
+  // Re-resolve the profile when the token changes (sign-in, sign-out), not on every account detail update.
+  const signedIn = !!account;
+  const loadMeRef = useRef(loadMe);
+  loadMeRef.current = loadMe;
+  const currentToken = account?.token;
   useEffect(() => {
     if (DEMO_MODE) return;
-    if (fbUser) loadMe();
-    else if (fbUser === null) setMe(null);
-  }, [fbUser, loadMe]);
+    if (signedIn) loadMeRef.current();
+    else setMe(null);
+  }, [signedIn, currentToken]);
 
   // Local session metadata: one row per signed-in app session on this device.
   useEffect(() => {
     if (DEMO_MODE || !me?.user?.id) return undefined;
     let cancelled = false;
     const now = new Date().toISOString();
-    store.identity.startSession({ userId: me.user.id, firebaseUid: fbUser?.uid, email: me.user.email, mode: me.offline ? 'offline' : 'online', now })
+    store.identity.startSession({ userId: me.user.id, email: me.user.email, mode: me.offline ? 'offline' : 'online', now })
       .then((id) => {
         if (cancelled) store.identity.endSession(id, new Date().toISOString());
         else sessionIdRef.current = id;
@@ -163,7 +189,7 @@ export function SessionProvider({ db, files, children }) {
       if (sessionIdRef.current) store.identity.endSession(sessionIdRef.current, new Date().toISOString()).catch(() => {});
       sessionIdRef.current = null;
     };
-  }, [me?.user?.id, me?.offline, fbUser?.uid, me?.user?.email, store]);
+  }, [me?.user?.id, me?.offline, me?.user?.email, store]);
 
   useEffect(() => {
     if (!me) return undefined;
@@ -184,109 +210,72 @@ export function SessionProvider({ db, files, children }) {
     };
   }, [me, queue, store]);
 
+  // Storing the token signs in: the auth subscription above picks it up and loads /auth/me.
+  const startSession = useCallback((loginData) => {
+    setMeError(null);
+    saveToken(loginData.access_token, null);
+  }, []);
+
   const signIn = useCallback(async (username, password, opts = {}) => {
     if (DEMO_MODE) return;
-    const { authLib, auth } = await loadFirebase();
     const { solution } = opts.captchaSolution ? { solution: opts.captchaSolution } : await solveCaptcha();
     const device = await getDevice();
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        username,
-        password,
-        captcha: solution,
-        device: { id: device.id, platform: device.platform, label: device.label },
-      }),
-    });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const code = errData?.error?.code || 'auth/invalid-login-credentials';
-      const msg = errData?.error?.message || 'Employee ID or password is incorrect.';
-      throw Object.assign(new Error(msg), { code, status: res.status });
-    }
-    const loginData = await res.json();
-    await authLib.signInWithCustomToken(auth, loginData.custom_token);
-  }, []);
+    const loginData = await postJson('/auth/login', {
+      username,
+      password,
+      captcha: solution,
+      device: { id: device.id, platform: device.platform, label: device.label },
+    }, { code: 'invalid_credentials', message: 'Employee ID or password is incorrect.' });
+    startSession(loginData);
+  }, [startSession]);
 
   const requestOtp = useCallback(async (mobile, opts = {}) => {
     if (DEMO_MODE) return { expires_in_seconds: 300, resend_after_seconds: 60 };
     const { solution } = opts.captchaSolution ? { solution: opts.captchaSolution } : await solveCaptcha();
     const device = await getDevice();
-    const res = await fetch(`${API_BASE}/auth/otp/request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        mobile,
-        captcha: solution,
-        device: { id: device.id, platform: device.platform, label: device.label },
-      }),
-    });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const code = errData?.error?.code || 'otp_failed';
-      const msg = errData?.error?.message || 'Could not send sign-in code.';
-      throw Object.assign(new Error(msg), { code, status: res.status });
-    }
-    return res.json();
+    return postJson('/auth/otp/request', {
+      mobile,
+      captcha: solution,
+      device: { id: device.id, platform: device.platform, label: device.label },
+    }, { code: 'otp_failed', message: 'Could not send sign-in code.' });
   }, []);
 
   const verifyOtp = useCallback(async (mobile, code) => {
     if (DEMO_MODE) return;
     const device = await getDevice();
-    const res = await fetch(`${API_BASE}/auth/otp/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        mobile,
-        code,
-        device: { id: device.id, platform: device.platform, label: device.label },
-      }),
-    });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const errCode = errData?.error?.code || 'otp_invalid';
-      const msg = errData?.error?.message || 'The code is incorrect or has expired.';
-      throw Object.assign(new Error(msg), { code: errCode, status: res.status });
-    }
-    const loginData = await res.json();
-    const { authLib, auth } = await loadFirebase();
-    await authLib.signInWithCustomToken(auth, loginData.custom_token);
-  }, []);
+    const loginData = await postJson('/auth/otp/verify', {
+      mobile,
+      code,
+      device: { id: device.id, platform: device.platform, label: device.label },
+    }, { code: 'otp_invalid', message: 'The code is incorrect or has expired.' });
+    startSession(loginData);
+  }, [startSession]);
 
-  // Changes the Firebase password after re-checking the current one. Needs a connection.
+  // Changes the password on the server after it re-checks the current one. Needs a connection. Other
+  // sessions of this employee are ended by the server; this one continues.
   const changePassword = useCallback(async (currentPassword, newPassword) => {
-    const { authLib, auth } = await loadFirebase();
-    const u = auth.currentUser;
-    if (!u?.email) throw Object.assign(new Error('Sign in again to change your password.'), { code: 'auth/no-current-user' });
-    await authLib.reauthenticateWithCredential(u, authLib.EmailAuthProvider.credential(u.email, currentPassword));
-    await authLib.updatePassword(u, newPassword);
-  }, []);
+    if (!remote) throw Object.assign(new Error('Sign in again to change your password.'), { code: 'not_signed_in' });
+    await remote.post('/auth/password', { current_password: currentPassword, new_password: newPassword });
+  }, [remote]);
 
   const signOut = useCallback(async () => {
     if (DEMO_MODE) return;
-    try {
-      const token = await getToken();
-      if (token) {
-        await fetch(`${API_BASE}/auth/logout`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-      }
-    } catch { /* offline */ }
+    const token = storedToken();
+    if (token) {
+      await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    }
     saveCachedLease(null);
-    const { authLib, auth } = await loadFirebase();
-    await authLib.signOut(auth);
-    setFbUser(null);
+    clearToken();
+    setAccount(null);
     setMe(null);
-  }, [getToken]);
+  }, []);
 
   const value = useMemo(() => {
     const divisions = me ? Object.keys(me.divisions) : [];
     const perms = new Set(divisions.flatMap((d) => me.divisions[d]));
     return {
-      status: fbUser === undefined ? 'loading' : !fbUser ? 'signedOut' : me ? 'ready' : meError ? 'error' : 'loading',
-      firebaseUser: fbUser,
+      status: !account ? 'signedOut' : me ? 'ready' : meError ? 'error' : 'loading',
+      account,
       configError,
       me,
       meError,
@@ -310,7 +299,7 @@ export function SessionProvider({ db, files, children }) {
       changePassword,
       reload: loadMe,
     };
-  }, [fbUser, me, meError, configError, api, ops, queue, store, db, outbox, signIn, signOut, requestOtp, verifyOtp, changePassword, loadMe]);
+  }, [account, me, meError, configError, api, ops, queue, store, db, outbox, signIn, signOut, requestOtp, verifyOtp, changePassword, loadMe]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

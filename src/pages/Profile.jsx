@@ -10,13 +10,12 @@ import { DetailList, PageHeader, Panel, Tabs } from '../components/ui.jsx';
 import { validatePassword } from '../utils/validation.js';
 
 const AUTH_MESSAGES = {
-  'auth/invalid-credential': 'Your current password is not correct.',
-  'auth/invalid-login-credentials': 'Your current password is not correct.',
-  'auth/wrong-password': 'Your current password is not correct.',
-  'auth/too-many-requests': 'Too many attempts. Try again later.',
-  'auth/network-request-failed': 'No connection. Changing your password needs internet.',
-  'auth/weak-password': 'Choose a stronger password.',
-  'auth/requires-recent-login': 'Sign out and sign in again, then change your password.',
+  wrong_password: 'Your current password is not correct.',
+  login_locked: 'Too many attempts. Try again later.',
+  rate_limited: 'Too many attempts. Try again later.',
+  network_error: 'No connection. Changing your password needs internet.',
+  password_unchanged: 'The new password must be different from the current one.',
+  validation_error: 'Choose a stronger password (at least 8 characters).',
 };
 
 function ChangePassword() {
@@ -55,7 +54,7 @@ function ChangePassword() {
         <PasswordInput label="Confirm new password" value={confirm} onChange={setConfirm} error={confirmError} placeholder="Repeat the new password" />
         {next && current && next === current && <p className="text-sm text-amber-800">The new password must be different from the current one.</p>}
         {state.error && <p className="flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800" role="alert"><AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />{state.error}</p>}
-        {state.done && <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status"><CheckIcon className="h-4 w-4" />Password changed. Use the new password next time you sign in.</p>}
+        {state.done && <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status"><CheckIcon className="h-4 w-4" />Password changed. You stay signed in here; other devices signed in as you have been signed out.</p>}
         <button type="submit" className="btn-primary w-full" disabled={!ready || state.busy}>{state.busy && <Spinner />} Update password</button>
       </form>
     </Panel>

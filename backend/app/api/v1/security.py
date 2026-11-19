@@ -15,10 +15,9 @@ from app.schemas.security import (
     CaptchaCheckIn,
     CaptchaImageOut,
     CaptchaOut, DeviceOut, DeviceRevokeIn, LoginOut, NetworkOut, OtpLoginRequest, OtpLoginVerify, OtpRequestOut,
-    PasswordLogin, SecurityEventOut, SecurityEventsIn, SessionOut,
+    PasswordChangeIn, PasswordLogin, SecurityEventOut, SecurityEventsIn, SessionOut,
 )
 from app.security import captcha
-from app.security.identity import PasswordVerifier, TokenIssuer, get_password_verifier, get_token_issuer
 from app.security.principal import Principal, get_principal
 from app.security.ratelimit import limiter
 from app.services import auth, security
@@ -67,9 +66,8 @@ def check_captcha(body: CaptchaCheckIn, request: Request, db: Session = Depends(
 
 
 @signin_router.post("/login", response_model=LoginOut)
-def login(body: PasswordLogin, request: Request, db: Session = Depends(get_db),
-          verifier: PasswordVerifier = Depends(get_password_verifier), issuer: TokenIssuer = Depends(get_token_issuer)):
-    return auth.login_password(db, body, _per_ip(request, 20, 60), verifier, issuer)
+def login(body: PasswordLogin, request: Request, db: Session = Depends(get_db)):
+    return auth.login_password(db, body, _per_ip(request, 20, 60))
 
 
 @signin_router.post("/otp/request", response_model=OtpRequestOut)
@@ -79,14 +77,21 @@ def otp_request(body: OtpLoginRequest, request: Request, db: Session = Depends(g
 
 
 @signin_router.post("/otp/verify", response_model=LoginOut)
-def otp_verify(body: OtpLoginVerify, request: Request, db: Session = Depends(get_db),
-               issuer: TokenIssuer = Depends(get_token_issuer)):
-    return auth.verify_otp(db, body, _per_ip(request, 20, 60), issuer)
+def otp_verify(body: OtpLoginVerify, request: Request, db: Session = Depends(get_db)):
+    return auth.verify_otp(db, body, _per_ip(request, 20, 60))
 
 
 @signin_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     auth.logout(db, p.user, p.session_id)
+
+
+@signin_router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(body: PasswordChangeIn, request: Request, db: Session = Depends(get_db),
+                    p: Principal = Depends(get_principal)):
+    """The signed-in employee changes their password. Their other sessions are ended; this one continues."""
+    _per_ip(request, 10, 60)
+    auth.change_password(db, p.user, p.session_id, body.current_password, body.new_password)
 
 
 @signin_router.get("/session", response_model=SessionOut)
@@ -96,8 +101,7 @@ def session(db: Session = Depends(get_db), p: Principal = Depends(get_principal)
     s = db.get(AuthSession, p.session_id) if p.session_id else None
     device = db.get(Device, p.device_id) if p.device_id else None
     return SessionOut(session_id=p.session_id, device_id=p.device_id, device_status=device.status if device else None,
-                      method=s.method if s else None, backend_session_required=get_settings().auth_require_backend_session,
-                      server_time=utcnow())
+                      method=s.method if s else None, server_time=utcnow())
 
 
 @security_router.get("/network", response_model=NetworkOut)

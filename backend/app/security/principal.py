@@ -7,9 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.errors import Forbidden, Unauthenticated
-from app.models import ChargeMap, PermissionEffect, RoleId, RolePermission, User, UserStatus
+from app.models import ChargeMap, PermissionEffect, RoleId, RolePermission, User
 from app.security.catalog import MANAGEABLE_ROLES
-from app.security.tokens import TokenVerifier, get_token_verifier
 from app.timeutil import today_ist
 
 
@@ -21,7 +20,7 @@ class Principal:
     division_ids: frozenset[uuid.UUID]
     _db: Session
     _perm_cache: dict[uuid.UUID, frozenset[str]] = field(default_factory=dict)
-    # Backend sign-in session and its device (None for tokens minted before backend sign-in existed).
+    # Backend sign-in session and its device.
     session_id: uuid.UUID | None = None
     device_id: str | None = None
 
@@ -82,28 +81,8 @@ class Principal:
         return RoleId(role_id) in MANAGEABLE_ROLES[self.role]
 
 
-def resolve_principal(db: Session, claims: dict) -> Principal:
-    uid = claims.get("uid") or claims.get("sub")
-    if not uid:
-        raise Unauthenticated("Token has no subject")
-    user = db.scalar(select(User).where(User.firebase_uid == uid))
-    if user is None and claims.get("email") and claims.get("email_verified") is True:
-        # First sign-in of a provisioned employee: link by verified email only.
-        user = db.scalar(
-            select(User).where(
-                User.firebase_uid.is_(None),
-                User.status != UserStatus.DELETED,
-                User.email.ilike(claims["email"]),
-            )
-        )
-        if user is not None:
-            user.firebase_uid = uid
-            db.commit()
-    if user is None:
-        raise Forbidden("Account is not provisioned for operations", code="not_provisioned")
-    if user.status != UserStatus.ACTIVE:
-        raise Forbidden("Account is not active", code="account_inactive")
-
+def resolve_principal(db: Session, user: User) -> Principal:
+    """Role and divisions (home division plus any active temporary charge) of an authenticated employee."""
     today = today_ist()
     charge = db.scalars(
         select(ChargeMap.division_id).where(
@@ -116,18 +95,13 @@ def resolve_principal(db: Session, claims: dict) -> Principal:
     return Principal(user=user, division_ids=frozenset({user.division_id, *charge}), _db=db)
 
 
-def get_principal(
-    authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-    verifier: TokenVerifier = Depends(get_token_verifier),
-) -> Principal:
+def get_principal(authorization: str | None = Header(default=None), db: Session = Depends(get_db)) -> Principal:
+    """The caller, from the session token issued by the backend sign-in (app/services/auth.py)."""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise Unauthenticated("Missing bearer token")
-    claims = verifier.verify(authorization.split(" ", 1)[1].strip())
-    principal = resolve_principal(db, claims)
-    from app.services.auth import validate_session  # late import: services depend on this module
+    from app.services.auth import authenticate  # late import: services depend on this module
 
-    session = validate_session(db, claims, principal.user)
-    if session is not None:
-        principal.session_id, principal.device_id = session.id, session.device_id
+    session, user = authenticate(db, authorization.split(" ", 1)[1].strip())
+    principal = resolve_principal(db, user)
+    principal.session_id, principal.device_id = session.id, session.device_id
     return principal

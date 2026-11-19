@@ -9,35 +9,10 @@ from sqlalchemy import select
 
 from app.models import Attendance, AuthSession, LoginAttempt, SecurityEvent
 from app.security import captcha
-from app.security.identity import PasswordCheck, get_password_verifier, get_token_issuer
 from tests.factories import now_iso, upload
 
 DEVICE = {"id": "dev-test-0001", "platform": "web", "label": "Test browser"}
 PASSWORD = "Correct-Horse-9"
-
-
-class FakePasswords:
-    def __init__(self) -> None:
-        self.accounts: dict[str, tuple[str, str, bool]] = {}  # email -> (password, uid, email_verified)
-
-    def check(self, email, password):
-        acct = self.accounts.get(email)
-        if not acct or acct[0] != password:
-            return PasswordCheck(ok=False, reason="invalid")
-        return PasswordCheck(ok=True, uid=acct[1], email_verified=acct[2])
-
-
-class FakeIssuer:
-    def __init__(self) -> None:
-        self.issued: list[tuple[str, dict]] = []
-        self.by_email: dict[str, str] = {}
-
-    def custom_token(self, uid, claims):
-        self.issued.append((uid, claims))
-        return f"custom::{uid}::{claims['sid']}"
-
-    def uid_for_email(self, email):
-        return self.by_email.get(email)
 
 
 def solve(ch: dict) -> dict:
@@ -49,23 +24,18 @@ def solve(ch: dict) -> dict:
 
 @pytest.fixture
 def signin(world, fakes):
-    from app.main import app
+    from app.services.auth import set_password
 
-    pw, issuer = FakePasswords(), FakeIssuer()
-    app.dependency_overrides.update({get_password_verifier: lambda: pw, get_token_issuer: lambda: issuer})
     jan = world.users["jan"]
     jan.email = "jan@example.org"
+    set_password(world.db, jan, PASSWORD, source="admin")
     world.db.commit()
-    pw.accounts[jan.email] = (PASSWORD, jan.firebase_uid, True)
-    verifier = fakes[0]
 
     def session_headers(resp):
-        """Simulates signInWithCustomToken: the ID token then carries the session claims."""
-        uid, claims = issuer.issued[-1]
-        verifier.claims[uid] = {"uid": uid, **claims}
-        return {"Authorization": f"Bearer tok-{uid}"}
+        """What the app does with a sign-in answer: send its access token on every call."""
+        return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
-    return type("S", (), dict(pw=pw, issuer=issuer, jan=jan, headers=staticmethod(session_headers), sms=fakes[1], verifier=verifier))
+    return type("S", (), dict(jan=jan, headers=staticmethod(session_headers), sms=fakes[1]))
 
 
 def cap(client):
@@ -133,14 +103,50 @@ def test_password_login_needs_captcha(world, signin):
     assert r.status_code == 422 and r.json()["error"]["code"] == "captcha_invalid"
 
 
-def test_backend_session_required_refuses_direct_firebase_tokens(world, signin, monkeypatch):
-    from app.config import get_settings
+def test_password_login_by_email_and_no_password_means_no_sign_in(world, signin):
+    assert login(world.client, "JAN@example.org").status_code == 200
+    # An employee with no password row cannot sign in with any password, and the answer is the generic one.
+    r = login(world.client, world.users["jan2"].emp_id, password="anything-1")
+    assert r.status_code == 401 and r.json()["error"]["code"] == "invalid_credentials"
+    reasons = {a.reason for a in world.db.scalars(select(LoginAttempt).where(LoginAttempt.success.is_(False)))}
+    assert "no_password" in reasons
 
-    monkeypatch.setattr(get_settings(), "auth_require_backend_session", True)
-    direct = world.client.get("/api/v1/auth/me", headers=world.h("jan"))  # token with no session id
-    assert direct.status_code == 401 and direct.json()["error"]["code"] == "backend_login_required"
+
+def test_only_a_hash_of_the_token_is_stored(world, signin):
     r = login(world.client, signin.jan.emp_id)
-    assert world.client.get("/api/v1/auth/me", headers=signin.headers(r)).status_code == 200
+    token = r.json()["access_token"]
+    sess = world.db.get(AuthSession, uuid.UUID(r.json()["session_id"]))
+    assert sess.token_hash and token.split(".")[-1] not in sess.token_hash and len(sess.token_hash) == 64
+
+
+def test_change_password_ends_other_sessions_and_keeps_this_one(world, signin):
+    first = signin.headers(login(world.client, signin.jan.emp_id))
+    second = signin.headers(login(world.client, signin.jan.emp_id))
+    wrong = world.client.post("/api/v1/auth/password", headers=second,
+                              json={"current_password": "not-it-1", "new_password": "Brand-new-pass-7"})
+    assert wrong.status_code == 401 and wrong.json()["error"]["code"] == "wrong_password"
+    ok = world.client.post("/api/v1/auth/password", headers=second,
+                           json={"current_password": PASSWORD, "new_password": "Brand-new-pass-7"})
+    assert ok.status_code == 204, ok.text
+    assert world.client.get("/api/v1/auth/me", headers=second).status_code == 200
+    ended = world.client.get("/api/v1/auth/me", headers=first)
+    assert ended.status_code == 401 and ended.json()["error"]["details"]["reason"] == "password_changed"
+    assert login(world.client, signin.jan.emp_id).status_code == 401
+    assert login(world.client, signin.jan.emp_id, password="Brand-new-pass-7").status_code == 200
+
+
+def test_firebase_era_sessions_cannot_be_used(world, signin):
+    """Sessions created before the move have no token hash: nothing can present them."""
+    from app.timeutil import utcnow
+
+    old = AuthSession(id=uuid.uuid4(), user_id=signin.jan.id, device_id=DEVICE["id"], method="password",
+                      firebase_uid="fb-uid", last_seen_at=utcnow())
+    login(world.client, signin.jan.emp_id)  # registers the device
+    world.db.add(old)
+    world.db.commit()
+    for secret in ("", "x", "None"):
+        r = world.client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer ss1.{old.id.hex}.{secret}"})
+        assert r.status_code == 401
 
 
 def test_logout_and_device_revocation(world, signin):
@@ -311,18 +317,6 @@ def test_network_check_reports_provider_answer(world):
     del app.dependency_overrides[get_vpn_provider]
     r = world.client.get("/api/v1/security/network", headers=world.h("jan"))
     assert r.json()["vpn"] is None  # no provider configured: unknown, never "no VPN"
-
-
-def test_session_token_device_claim_must_match_session(world, signin):
-    r = login(world.client, signin.jan.emp_id)
-    h = signin.headers(r)
-    uid = signin.issuer.issued[-1][0]
-    verifier_claims = dict(signin.issuer.issued[-1][1])
-    # Simulate a token whose device claim was swapped to another installation.
-    world_claims = {"uid": uid, **verifier_claims, "did": "web-someotherdevice000000000000000"}
-    signin.verifier.claims[uid] = world_claims
-    bad = world.client.get("/api/v1/auth/me", headers=h)
-    assert bad.status_code == 401 and bad.json()["error"]["code"] == "session_device_mismatch"
 
 
 def test_sync_batch_rejects_other_device_id(world, signin):

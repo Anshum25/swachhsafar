@@ -61,7 +61,11 @@ class OtpRequestOut(StrictModel):
 
 
 class LoginOut(StrictModel):
-    custom_token: str
+    """`access_token` is sent as `Authorization: Bearer <token>` on every API call. It stays valid until the
+    session is signed out, revoked, or unused for SESSION_IDLE_DAYS; it is shown once and stored only hashed."""
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
     session_id: uuid.UUID
     device_id: str
     method: Literal["password", "otp"]
@@ -72,8 +76,12 @@ class SessionOut(StrictModel):
     device_id: str | None
     device_status: str | None
     method: str | None
-    backend_session_required: bool
     server_time: datetime
+
+
+class PasswordChangeIn(StrictModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class NetworkOut(StrictModel):

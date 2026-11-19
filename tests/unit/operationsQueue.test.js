@@ -183,7 +183,7 @@ describe('operationsQueue', () => {
 });
 
 describe('apiClient', () => {
-  it('attaches the Firebase ID token and surfaces backend error codes', async () => {
+  it('attaches the session token and surfaces backend error codes', async () => {
     const seen = [];
     const api = createApiClient({
       getToken: async () => 'tok-123',

@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     database_url: str
 
+    # Firebase is used only by the optional STORAGE_BACKEND=firebase and by `app.cli import-firebase-passwords`
+    # (the one-off move of passwords off Firebase Authentication). Sign-in itself never contacts Firebase.
     firebase_project_id: str | None = None
     firebase_credentials_file: str | None = None
     firebase_storage_bucket: str | None = None
@@ -53,12 +55,7 @@ class Settings(BaseSettings):
     external_timeout_seconds: float = 15.0
     media_url_ttl_seconds: int = 600
 
-    # ---- sign-in (backend-owned; see app/services/auth.py) -------------------------------------------
-    # Web API key of the Firebase project: the backend checks passwords with the Identity Toolkit REST API.
-    firebase_web_api_key: SecretStr | None = None
-    # When true, API calls need a token minted by POST /auth/login or /auth/otp/verify (it carries a session
-    # id): tokens from a direct Firebase email/password sign-in, which skips the CAPTCHA, are refused.
-    auth_require_backend_session: bool = False
+    # ---- sign-in (backend-owned, PostgreSQL only; see app/services/auth.py) ---------------------------
     # HMAC key for CAPTCHA challenges; derived from OTP_PEPPER when not set.
     captcha_hmac_key: SecretStr | None = None
     captcha_max_number: int = 150_000  # proof-of-work difficulty (about 0.3-1 s on a mid-range phone)
@@ -83,18 +80,6 @@ class Settings(BaseSettings):
         raw = v.get_secret_value()
         if len(raw) < 32 or raw == "CHANGE_ME":
             raise ValueError("OTP_PEPPER must be a random secret of at least 32 characters")
-        return v
-
-    @field_validator("auth_require_backend_session")
-    @classmethod
-    def _require_backend_session_in_prod(cls, v: bool, info):
-        if info.data.get("environment") == "production" and not v:
-            import warnings
-            warnings.warn(
-                "CRITICAL SECURITY WARNING: AUTH_REQUIRE_BACKEND_SESSION is false in production! "
-                "Direct Firebase sign-in bypasses backend CAPTCHA and device registration.",
-                stacklevel=2,
-            )
         return v
 
     # Local disk is allowed in production (single-server deployment) only with an explicit absolute

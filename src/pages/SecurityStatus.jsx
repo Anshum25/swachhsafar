@@ -30,7 +30,7 @@ function Row({ label, state, detail }) {
 
 export default function SecurityStatus() {
   const sec = useSecurity();
-  const { me, store, firebaseUser } = useSession();
+  const { me, store } = useSession();
   const online = useNetworkStatus();
   const session = useResource(online && !me.offline ? '/auth/session' : null);
   const [faces, setFaces] = useState(null);
@@ -60,7 +60,7 @@ export default function SecurityStatus() {
         : network.check === 'server' ? 'Checked by the server against its IP reputation list (best effort: not every VPN is listed).'
           : 'Could not be checked here (browser offline or no reputation source). Absence of a result is not proof of no VPN.'],
     ['Network', online ? 'Verified' : 'Unavailable', online ? 'Connected' : 'Offline: records are saved on this device'],
-    ['Authentication', me.offline ? 'Pending' : 'Verified', me.offline ? `Signed in offline with the profile cached ${fmtDateTime(me.fetched_at)}` : `Signed in as ${me.user.emp_id}${firebaseUser ? '' : ''}`],
+    ['Authentication', me.offline ? 'Pending' : 'Verified', me.offline ? `Signed in offline with the profile cached ${fmtDateTime(me.fetched_at)}` : `Signed in as ${me.user.emp_id}`],
     ['Device registration', session.data?.device_status === 'active' ? 'Verified' : session.data?.device_status === 'revoked' ? 'Failed'
       : session.data && !session.data.session_id ? 'Pending' : 'Unavailable',
     session.data?.session_id ? `Device ${device?.id ?? ''}` : session.data ? 'This sign-in predates device registration: sign in again to register the device.' : 'Checked when online.'],

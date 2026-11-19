@@ -33,7 +33,6 @@ from app.schemas.org import (
     UserWithSignIn,
 )
 from app.schemas.policy import PolicySettings
-from app.security.identity import IdentityProvisioner, get_identity_provisioner
 from app.security.principal import Principal, get_principal
 from app.services import org, policy
 from app.services.common import paginate
@@ -82,23 +81,21 @@ def _with_signin(user, signin) -> UserWithSignIn:
     if signin is None:
         return UserWithSignIn.model_validate(user)
     return UserWithSignIn.model_validate(user).model_copy(
-        update={"temp_password": signin.password, "signin": "created" if signin.created else "existing"})
+        update={"temp_password": signin.password, "signin": "created"})
 
 
 @users_router.post("", response_model=UserWithSignIn, status_code=status.HTTP_201_CREATED)
-def create_user(body: UserCreate, db: Session = Depends(get_db), p: Principal = Depends(get_principal),
-                provisioner: IdentityProvisioner = Depends(get_identity_provisioner)):
-    """Creates the employee and, when an e-mail is given, the sign-in that goes with it."""
-    user, signin = org.create_user(db, p, body, provisioner)
+def create_user(body: UserCreate, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Creates the employee and, when an e-mail or password is given, the sign-in that goes with it."""
+    user, signin = org.create_user(db, p, body)
     return _with_signin(user, signin)
 
 
 @users_router.post("/{user_id}/signin", response_model=UserWithSignIn)
 def create_signin(user_id: uuid.UUID, body: SignInIn, db: Session = Depends(get_db),
-                  p: Principal = Depends(get_principal),
-                  provisioner: IdentityProvisioner = Depends(get_identity_provisioner)):
-    """Sign-in for an employee who has none: created before sign-ins came with the record, or e-mail added later."""
-    user, signin = org.create_signin(db, p, user_id, body.password, provisioner)
+                  p: Principal = Depends(get_principal)):
+    """Password sign-in for an employee who has none (created without e-mail or password)."""
+    user, signin = org.create_signin(db, p, user_id, body.password)
     return _with_signin(user, signin)
 
 

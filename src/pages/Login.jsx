@@ -8,11 +8,9 @@ import CaptchaVerification from '../components/auth/CaptchaVerification.jsx';
 import { LoginUpdateBanner } from '../components/PwaPanels.jsx';
 
 const AUTH_MESSAGES = {
-  'auth/invalid-credential': 'Email / Employee ID or password is incorrect.',
-  'auth/invalid-login-credentials': 'Email / Employee ID or password is incorrect.',
-  'auth/user-disabled': 'This account has been disabled. Contact your supervisor.',
-  'auth/too-many-requests': 'Too many attempts. Try again later.',
-  'auth/network-request-failed': 'No connection. Signing in needs internet the first time.',
+  invalid_credentials: 'Email / Employee ID or password is incorrect.',
+  account_inactive: 'This account is not active. Contact your supervisor.',
+  network_error: 'No connection. Signing in needs internet the first time.',
   'login_locked': 'Too many unsuccessful attempts. Sign-in is locked for 15 minutes.',
   'device_revoked': 'This device has been blocked by an administrator.',
   'otp_invalid': 'The 6-digit code is incorrect or expired. Request a new code.',
@@ -324,12 +322,9 @@ export default function Login() {
               <span>Log in with Mobile Number</span>
             </button>
 
-            {/* 11. Existing registration link */}
+            {/* 11. Accounts are created by an administrator */}
             <p className="pt-1 text-center text-sm font-medium text-slate-500">
-              New user?{' '}
-              <a className="font-bold text-brand-700 underline-offset-2 hover:underline" href="#/register">
-                Register
-              </a>
+              New user? Ask your administrator for an account.
             </p>
           </>
         ) : (

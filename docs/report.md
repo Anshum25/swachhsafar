@@ -31,7 +31,7 @@ Capture of every record, both biometric checks, and all reads of synced data. Wr
 deliver later. The offline window is capped at 24 hours.
 
 **What external services are mandatory? Two.**
-PostgreSQL and Firebase (authentication). SMS, geocoding, PNR lookup and Google Maps are each optional
+PostgreSQL only. Sign-in (passwords, sessions) lives in PostgreSQL since November 2026. SMS, geocoding, PNR lookup and Google Maps are each optional
 and currently off or unset except Maps. Section 8.
 
 ---
@@ -51,7 +51,7 @@ and a Python API. Versions are what the repository pins today.
 | Native shell | Capacitor | 8.6.2 | Android only; two custom Kotlin plugins |
 | Local database | `@sqlite.org/sqlite-wasm` | 3.54.1 | SQLite in OPFS, SyncAccessHandle Pool VFS, in a worker |
 | Face recognition | `@vladmandic/face-api` | 1.7.15 | TensorFlow.js; WebGL backend, CPU fallback |
-| Auth client | `firebase` | 13.2 | Custom-token sign-in minted by our backend |
+| Auth client | own (`src/security/authToken.js`) | — | Bearer session token issued by our backend |
 | Offline shell | `vite-plugin-pwa` + Workbox | 2.0 / 7.4 | injectManifest; the APK runs no service worker |
 | Fonts | `@fontsource-variable/inter` | 5.3 | Self-hosted, so the app does not need a font CDN |
 | Tests | Vitest, Playwright | 5.1 / 1.64 | 298 unit tests; e2e suites for live and offline |
@@ -78,7 +78,7 @@ installs over the last one (see `docs/ANDROID_SETUP.md`).
 | ORM / migrations | SQLAlchemy + Alembic | ≥2.0.36 / ≥1.13 | `alembic upgrade head` runs on service start |
 | Database | PostgreSQL via psycopg | ≥3.2 | Runs in a Docker container on the app host |
 | Validation | Pydantic + pydantic-settings | ≥2.9 | Strict models; unknown fields rejected |
-| Identity | firebase-admin | ≥6.5 | Mints custom tokens; verifies ID tokens |
+| Identity | PostgreSQL + scrypt (`hashlib`) | — | Password hashes in `user_credentials`; opaque session tokens |
 | HTTP client | httpx | ≥0.27 | Outbound calls to SMS, geocoding, PNR |
 | Upload handling | python-multipart, filetype | ≥0.0.9 / ≥1.2 | Media uploads and content-type sniffing |
 | Media storage | Local disk or Firebase Storage | configurable | `storage_backend`; defaults to local |
@@ -214,7 +214,6 @@ Two are load-bearing. The rest degrade to a named, visible limitation rather tha
 | Service | Status | Used for | Without it |
 |---|---|---|---|
 | PostgreSQL | **Required** | All server state | No API |
-| Firebase Auth | **Required** | Password checks, custom tokens carrying the session id | No sign-in; existing devices run to their offline lease and stop |
 | Firebase Storage | Optional | Media, when `storage_backend=firebase` | Local disk is the default |
 | SMS gateway | Off | OTP sign-in (MSG91 or generic HTTP) | OTP answers "unavailable"; password sign-in unaffected |
 | Google Maps JS | Configured | Maps on capture screens, browser reverse geocoding | Coordinates shown instead; nothing blocks |

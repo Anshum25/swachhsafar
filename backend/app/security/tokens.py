@@ -1,68 +1,49 @@
-import threading
-from functools import lru_cache
-from typing import Protocol
+"""Session tokens issued by the backend sign-in (POST /auth/login, /auth/otp/verify).
 
-from app.config import get_settings
-from app.errors import ServiceUnavailable, Unauthenticated
+A token is opaque: `ss1.<session id>.<secret>`, where the secret is 32 random bytes. Only a SHA-256 of the
+secret is stored (auth_sessions.token_hash), so the table cannot be used to impersonate anyone if it leaks.
+Every API call looks its session up anyway (revocation, device block, idle expiry), so a signed token would add
+nothing: deleting or revoking the row is what ends a session, immediately and everywhere."""
 
-NOT_CONFIGURED = ("Sign-in cannot be checked: the server's Firebase Admin credentials are not configured "
-                  "(FIREBASE_CREDENTIALS_FILE).")
+import hashlib
+import hmac
+import secrets
+import uuid
+from dataclasses import dataclass
 
-
-_INIT_LOCK = threading.Lock()
-
-
-class TokenVerifier(Protocol):
-    def verify(self, token: str) -> dict: ...
+PREFIX = "ss1"
 
 
-class FirebaseTokenVerifier:
-    """Verifies Firebase ID tokens with the Admin SDK, including revocation checks."""
-
-    def __init__(self) -> None:
-        import firebase_admin
-        from firebase_admin import credentials
-
-        settings = get_settings()
-        with _INIT_LOCK:  # concurrent first requests must not both initialise the default app
-            self._init(firebase_admin, credentials, settings)
-
-    @staticmethod
-    def _init(firebase_admin, credentials, settings) -> None:
-        if not firebase_admin._apps:
-            try:
-                cred = (
-                    credentials.Certificate(settings.firebase_credentials_file)
-                    if settings.firebase_credentials_file
-                    else credentials.ApplicationDefault()
-                )
-            except (OSError, ValueError) as exc:  # missing / unreadable / invalid service-account file
-                raise ServiceUnavailable(NOT_CONFIGURED, code="auth_not_configured") from exc
-            options = {"projectId": settings.firebase_project_id}
-            if settings.firebase_storage_bucket:
-                options["storageBucket"] = settings.firebase_storage_bucket
-            try:
-                firebase_admin.initialize_app(cred, options)
-            except ValueError:  # already initialised elsewhere (e.g. the CLI): use that app
-                pass
-
-    def verify(self, token: str) -> dict:
-        from firebase_admin import auth
-
-        from google.auth.exceptions import DefaultCredentialsError
-
-        try:
-            return auth.verify_id_token(token, check_revoked=True)
-        except DefaultCredentialsError as exc:  # no service account and no Application Default Credentials
-            raise ServiceUnavailable(NOT_CONFIGURED, code="auth_not_configured") from exc
-        except auth.RevokedIdTokenError as exc:
-            raise Unauthenticated("Token revoked", code="token_revoked") from exc
-        except auth.UserDisabledError as exc:
-            raise Unauthenticated("Firebase account disabled", code="account_disabled") from exc
-        except (auth.InvalidIdTokenError, auth.ExpiredIdTokenError, ValueError) as exc:
-            raise Unauthenticated("Invalid or expired token", code="invalid_token") from exc
+@dataclass(frozen=True)
+class IssuedToken:
+    token: str
+    token_hash: str
 
 
-@lru_cache
-def get_token_verifier() -> TokenVerifier:
-    return FirebaseTokenVerifier()
+def _digest(secret: str) -> str:
+    return hashlib.sha256(secret.encode("ascii")).hexdigest()
+
+
+def issue(session_id: uuid.UUID) -> IssuedToken:
+    secret = secrets.token_urlsafe(32)
+    return IssuedToken(token=f"{PREFIX}.{session_id.hex}.{secret}", token_hash=_digest(secret))
+
+
+def parse(token: str) -> tuple[uuid.UUID, str] | None:
+    """(session id, secret) of a well-formed token, else None."""
+    parts = token.strip().split(".")
+    if len(parts) != 3 or parts[0] != PREFIX or not parts[2]:
+        return None
+    try:
+        return uuid.UUID(hex=parts[1]), parts[2]
+    except ValueError:
+        return None
+
+
+def matches(secret: str, token_hash: str | None) -> bool:
+    if not token_hash:
+        return False
+    try:
+        return hmac.compare_digest(_digest(secret), token_hash)
+    except (UnicodeEncodeError, TypeError):
+        return False

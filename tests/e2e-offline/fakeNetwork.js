@@ -1,7 +1,7 @@
-// In-browser fake of Firebase Auth (a FAKE project) and of the FastAPI endpoints the sync engine uses.
-// Every Google API and /api/v1 request is answered or refused by Playwright routing, so nothing leaves
-// the browser. Each user gets their own unsigned ID token; the server records whose token delivered
-// each operation, so tests can check that records are only ever sent with their owner's credentials.
+// In-browser fake of the FastAPI endpoints: sign-in (which issues backend session tokens) and everything
+// the sync engine uses. Every Google API and /api/v1 request is answered or refused by Playwright routing,
+// so nothing leaves the browser. Each user gets their own session token; the server records whose token
+// delivered each operation, so tests can check that records are only ever sent with their owner's credentials.
 import { expect } from '@playwright/test';
 import { changesFixture } from '../helpers/operationalFixtures.js';
 import { DEFAULT_POLICY } from '../../src/database/masterDataRepository.js';
@@ -21,17 +21,13 @@ export async function ensureGps(scope) {
 
 const b64url = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 
-function tokenFor(email, uid) {
-  const now = Math.floor(Date.now() / 1000);
-  return `${b64url({ alg: 'RS256', kid: 'e2e', typ: 'JWT' })}.${b64url({
-    iss: 'https://securetoken.google.com/swachh-safar-e2e-fake', aud: 'swachh-safar-e2e-fake', auth_time: now, user_id: uid, sub: uid,
-    iat: now, exp: now + 30 * 86400, email, email_verified: true, firebase: { identities: { email: [email] }, sign_in_provider: 'password' },
-  })}.c2ln`;
-}
+// Same shape as a real session token (ss1.<session>.<secret>); the fake puts the e-mail in the secret so the
+// server can tell callers apart without keeping a session table.
+const tokenFor = (email, uid) => `ss1.${Buffer.from(uid).toString('hex')}.${b64url(email)}`;
 
 const emailOf = (token) => {
   try {
-    return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).email;
+    return JSON.parse(Buffer.from(token.split('.')[2], 'base64url').toString());
   } catch {
     return null;
   }
@@ -61,35 +57,14 @@ export function createFakeNetwork({ users, today }) {
         globalThis.__e2eCspViolation?.({ directive: e.effectiveDirective, blocked: e.blockedURI, source: e.sourceFile, line: e.lineNumber });
       });
     });
-    await context.route(/googleapis\.com|firebaseinstallations|gstatic/, async (route) => {
+    await context.route(/googleapis\.com|gstatic/, async (route) => {
       const req = route.request();
       const url = req.url();
       if (!server.connected) {
         server.offlineHits.push(url);
         return route.abort('internetdisconnected');
       }
-      const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-      const body = req.postDataJSON?.() ?? {};
-      if (url.includes('accounts:signInWithPassword')) {
-        const acct = accounts[body.email];
-        if (!acct) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { code: 400, message: 'INVALID_LOGIN_CREDENTIALS' } }) });
-        return json({ kind: 'identitytoolkit#VerifyPasswordResponse', localId: acct.uid, email: body.email, displayName: '', idToken: acct.token, registered: true, refreshToken: `refresh-${acct.uid}`, expiresIn: '2592000' });
-      }
-      if (url.includes('accounts:signInWithCustomToken')) {
-        const customToken = body.token;
-        const acct = Object.values(accounts).find((a) => a.token === customToken) || Object.values(accounts)[0];
-        return json({ kind: 'identitytoolkit#SignInWithCustomTokenResponse', idToken: acct ? acct.token : customToken, refreshToken: `refresh-${acct?.uid || 'user'}`, expiresIn: '2592000' });
-      }
-      if (url.includes('accounts:lookup')) {
-        const email = emailOf(body.idToken);
-        const acct = accounts[email];
-        return json({ kind: 'identitytoolkit#GetAccountInfoResponse', users: [{ localId: acct.uid, email, emailVerified: true, providerUserInfo: [{ providerId: 'password', email, federatedId: email, rawId: email }], lastLoginAt: `${Date.now()}`, createdAt: `${Date.now()}` }] });
-      }
-      if (url.includes('securetoken.googleapis.com')) {
-        const acct = Object.values(accounts).find((a) => String(req.postData() ?? '').includes(a.uid)) ?? Object.values(accounts)[0];
-        return json({ access_token: acct.token, expires_in: '2592000', token_type: 'Bearer', refresh_token: `refresh-${acct.uid}`, id_token: acct.token, user_id: acct.uid, project_id: '0' });
-      }
-      return route.abort('blockedbyclient');
+      return route.abort('blockedbyclient'); // the app calls no Google API that the tests need answered
     });
 
     await context.route('**/api/v1/**', async (route) => {
@@ -134,7 +109,7 @@ export function createFakeNetwork({ users, today }) {
         }
         const acct = accounts[targetEmail];
         return json({
-          custom_token: acct.token,
+          access_token: acct.token, token_type: 'bearer',
           session_id: 'e2e-session-id',
           device_id: body.device?.id || 'e2e-device',
           method: 'password',
@@ -153,7 +128,7 @@ export function createFakeNetwork({ users, today }) {
         const firstEmail = Object.keys(users)[0];
         const acct = accounts[firstEmail];
         return json({
-          custom_token: acct.token,
+          access_token: acct.token, token_type: 'bearer',
           session_id: 'e2e-session-id',
           device_id: body.device?.id || 'e2e-device',
           method: 'otp',
@@ -251,7 +226,7 @@ export function createFakeNetwork({ users, today }) {
       const row = {
         id: crypto.randomUUID(), status: 'active', updated_at: now, name_hindi: null, gender: null, lang: 'en',
         ...body, email: body.email ? body.email.toLowerCase() : null,
-        firebase_linked: !!body.email,
+        password_set: !!(body.email || body.password), face_enrolled: false, fingerprint_enrolled: false,
         temp_password: generated,
         signin: body.email ? 'created' : null,
       };
@@ -263,8 +238,8 @@ export function createFakeNetwork({ users, today }) {
       const row = masters.staff.find((u) => u.id === m[1]);
       if (!row) return { status: 404, body: { error: { code: 'not_found', message: 'Not found' } } };
       if (!can('users.manage', row.division_id)) return forbidden;
-      if (row.firebase_linked) return invalid('This employee can already sign in');
-      Object.assign(row, { firebase_linked: true, signin: 'created', temp_password: body.password ? null : 'gen-pass-5678', updated_at: now });
+      if (row.password_set) return invalid('This employee can already sign in');
+      Object.assign(row, { password_set: true, signin: 'created', temp_password: body.password ? null : 'gen-pass-5678', updated_at: now });
       return { status: 200, body: row };
     }
     if (method === 'GET' && path === '/complaints/departments') return list(masters.departments);
@@ -332,7 +307,7 @@ export function meFor({ id, name, email, roleId, divisionId, perms = FIELD_PERMS
   return {
     user: {
       id, emp_id: `EMP-${name.split(' ')[0]}`, name, name_hindi: null, email, mobile: null, gender: null, designation: null, lang: 'en',
-      role_id: roleId, division_id: divisionId, status: 'active', firebase_linked: true, updated_at: '2026-11-01T00:00:00Z',
+      role_id: roleId, division_id: divisionId, status: 'active', password_set: true, face_enrolled: false, fingerprint_enrolled: false, updated_at: '2026-11-01T00:00:00Z',
     },
     divisions: { [divisionId]: perms },
   };

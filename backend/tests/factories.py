@@ -3,48 +3,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from app.errors import Unauthenticated
 from app.models import Division, RoleId, User, UserStatus
 from app.providers.external import PnrResult, ProviderUnavailable
-from app.security.identity import LoginProvisioned
 from app.timeutil import today_ist
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + bytes(200)
 JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + bytes(200)
 PDF = b"%PDF-1.4\n" + bytes(200)
-
-
-class FakeVerifier:
-    """Accepts tokens of the form 'tok-<firebase uid>'; claims can be customised per uid."""
-
-    def __init__(self) -> None:
-        self.claims: dict[str, dict] = {}
-
-    def verify(self, token: str) -> dict:
-        if not token.startswith("tok-"):
-            raise Unauthenticated("Invalid or expired token", code="invalid_token")
-        uid = token[4:]
-        return self.claims.get(uid, {"uid": uid})
-
-
-class FakeProvisioner:
-    """Stands in for Firebase when an employee's sign-in is created. Records what was asked for, and returns
-    the same UID for an address it has seen before, as the real one adopts an existing account."""
-
-    def __init__(self) -> None:
-        self.created: dict[str, str] = {}  # email -> password
-        self.existing: dict[str, str] = {}  # email -> uid of an account that already exists
-        self.fails = False
-
-    def ensure_login(self, email: str, password: str, display_name: str | None = None) -> LoginProvisioned:
-        if self.fails:
-            raise RuntimeError("identity store unavailable")
-        if email in self.existing:
-            return LoginProvisioned(self.existing[email], created=False)
-        self.created[email] = password
-        uid = f"uid-{email}"
-        self.existing[email] = uid
-        return LoginProvisioned(uid, created=True)
 
 
 class FakeSms:
@@ -83,8 +48,36 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+TEST_DEVICE = "dev-factory-0000"
+
+
+def session_token(user: User, device_id: str = TEST_DEVICE) -> str:
+    """A real session for `user` (as a sign-in creates one), on the shared factory device."""
+    from sqlalchemy.orm import object_session
+
+    from app.models import AuthSession, Device
+    from app.security import tokens
+    from app.timeutil import utcnow
+
+    db = object_session(user)
+    if db.get(Device, device_id) is None:
+        db.add(Device(id=device_id, platform="web", label="factory"))
+        db.flush()
+    session = AuthSession(id=uuid.uuid4(), user_id=user.id, device_id=device_id, method="password", last_seen_at=utcnow())
+    issued = tokens.issue(session.id)
+    session.token_hash = issued.token_hash
+    db.add(session)
+    db.commit()
+    return issued.token
+
+
 def auth(user: User) -> dict:
-    return {"Authorization": f"Bearer tok-{user.firebase_uid}"}
+    """Bearer header of a session for `user`, created once per user object and reused."""
+    token = user.__dict__.get("_test_token")
+    if token is None:
+        token = session_token(user)
+        user.__dict__["_test_token"] = token
+    return {"Authorization": f"Bearer {token}"}
 
 
 def make_division(db, code: str) -> Division:
@@ -99,7 +92,7 @@ _mobile_seq = iter(range(10_000_000))
 
 def make_user(db, division: Division, role: RoleId, name: str, **kw) -> User:
     u = User(emp_id=f"{division.code}-{name}", name=name.title(), role_id=int(role), division_id=division.id,
-             firebase_uid=kw.pop("firebase_uid", f"uid-{division.code}-{name}"), status=kw.pop("status", UserStatus.ACTIVE),
+             status=kw.pop("status", UserStatus.ACTIVE),
              mobile=kw.pop("mobile", f"9{next(_mobile_seq):09d}"), **kw)
     db.add(u)
     db.commit()
@@ -146,6 +139,7 @@ class World:
                            (b, [("manager_b", RoleId.MANAGER), ("sup_b", RoleId.SUPERVISOR), ("jan_b", RoleId.JANITOR)])):
             for name, role in specs:
                 w.users[name] = make_user(db, div, role, name)
+                auth(w.users[name])  # sessions minted now, not lazily from concurrent test threads
         w.train = w.create_train()
         w.journey = w.create_journey(staff=["jan"])
         w.create_banks()

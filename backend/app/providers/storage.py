@@ -22,12 +22,16 @@ class FirebaseStorage:
     serves_directly = False
 
     def __init__(self) -> None:
-        from firebase_admin import storage
+        import firebase_admin  # optional dependency: pip install ".[firebase]"
+        from firebase_admin import credentials, storage
 
-        from app.security.tokens import get_token_verifier
-
-        get_token_verifier()  # ensures firebase_admin is initialised with the bucket option
-        self._bucket = storage.bucket(get_settings().firebase_storage_bucket)
+        settings = get_settings()
+        if not firebase_admin._apps:
+            cred = (credentials.Certificate(settings.firebase_credentials_file) if settings.firebase_credentials_file
+                    else credentials.ApplicationDefault())
+            firebase_admin.initialize_app(cred, {"projectId": settings.firebase_project_id,
+                                                 "storageBucket": settings.firebase_storage_bucket})
+        self._bucket = storage.bucket(settings.firebase_storage_bucket)
 
     def put(self, path: str, data: BinaryIO, content_type: str) -> None:
         blob = self._bucket.blob(path)

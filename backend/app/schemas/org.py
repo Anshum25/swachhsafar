@@ -65,9 +65,9 @@ class UserCreate(StrictModel):
     lang: Literal["en", "hi"] = "en"
     role_id: int = Field(ge=1, le=6)
     division_id: uuid.UUID
-    firebase_uid: str | None = Field(default=None, max_length=128)
-    # Sign-in is created with the employee when an e-mail is given, so a new user can sign in straight away.
-    # Leave it out and the server generates one, returned once as `temp_password`.
+    # A password sign-in is created with the employee when an e-mail or a password is given, so a new user can
+    # sign in straight away (with Employee ID or e-mail). With an e-mail but no password, the server generates
+    # one, returned once as `temp_password`.
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
@@ -81,7 +81,6 @@ class UserUpdate(StrictModel):
     lang: Literal["en", "hi"] | None = None
     role_id: int | None = Field(default=None, ge=1, le=6)
     division_id: uuid.UUID | None = None
-    firebase_uid: str | None = Field(default=None, max_length=128)
 
 
 class UserStatusIn(StrictModel):
@@ -101,12 +100,14 @@ class UserOut(ReadModel):
     role_id: int
     division_id: uuid.UUID
     status: UserStatus
-    firebase_linked: bool
+    password_set: bool  # has a password sign-in (user_credentials)
+    face_enrolled: bool  # has a registered face (face_enrollments)
+    fingerprint_enrolled: bool  # has registered fingerprints (fingerprint_enrollments)
     updated_at: datetime
 
 
 class SignInIn(StrictModel):
-    """Creating (or attaching) the Firebase login of an employee who has none."""
+    """Creating the password sign-in of an employee who has none."""
 
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
@@ -114,14 +115,13 @@ class SignInIn(StrictModel):
 class UserWithSignIn(UserOut):
     """A user plus what just happened to their sign-in.
 
-    `temp_password` is shown once and never stored: it is present only when the server generated one, never
-    when the administrator chose the password, and never when an existing Firebase account was adopted --
-    that account keeps the password its owner already set.
+    `temp_password` is shown once and never stored in clear: it is present only when the server generated one,
+    never when the administrator chose the password.
 
-    `signin` is "created", "existing" (adopted, old password still applies) or null (no e-mail, no sign-in)."""
+    `signin` is "created" or null (no e-mail and no password given, so no sign-in yet)."""
 
     temp_password: str | None = None
-    signin: Literal["created", "existing"] | None = None
+    signin: Literal["created"] | None = None
 
 
 class MeOut(StrictModel):

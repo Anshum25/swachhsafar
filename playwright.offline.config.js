@@ -1,15 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
 // Offline end-to-end tests of the operational screens against a production build (real OPFS SQLite,
-// real service worker). The build uses a FAKE Firebase project and every Google API and /api/v1 request
-// is answered inside the browser by the test, so nothing reaches production Firebase or a backend.
-const FAKE_FIREBASE = [
-  'VITE_FIREBASE_API_KEY=e2e-fake-api-key',
-  'VITE_FIREBASE_AUTH_DOMAIN=swachh-safar-e2e-fake.firebaseapp.com',
-  'VITE_FIREBASE_PROJECT_ID=swachh-safar-e2e-fake',
-  'VITE_FIREBASE_STORAGE_BUCKET=swachh-safar-e2e-fake.appspot.com',
-  'VITE_FIREBASE_MESSAGING_SENDER_ID=0',
-  'VITE_FIREBASE_APP_ID=1:0:web:e2efake',
+// real service worker). Every Google API and /api/v1 request (sign-in included) is answered inside the
+// browser by the test, so nothing reaches a real backend.
+const BUILD_ENV = [
   'VITE_DEMO_MODE=false',
   // The commit the build claims to be made from; the Android app compares it with the published release.
   `VITE_BUILD_SHA=${'e2e'.padEnd(40, '0')}`,
@@ -26,7 +20,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   webServer: {
-    command: `npx cross-env ${FAKE_FIREBASE} vite build --outDir dist-e2e --emptyOutDir && npx cross-env ${PREVIEW_ENV} vite preview --outDir dist-e2e --port ${E2E_PORT} --strictPort`,
+    command: `npx cross-env ${BUILD_ENV} vite build --outDir dist-e2e --emptyOutDir && npx cross-env ${PREVIEW_ENV} vite preview --outDir dist-e2e --port ${E2E_PORT} --strictPort`,
     url: `http://localhost:${E2E_PORT}`,
     reuseExistingServer: false,
     timeout: 240_000,

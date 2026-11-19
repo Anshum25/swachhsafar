@@ -6,8 +6,7 @@
 #              DEPLOY_KNOWN_HOSTS  output of: ssh-keyscan 76.13.243.27
 #              ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
 #                                  the release signing key; the keystore is generated locally and never committed
-#   Variables: VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID,
-#              VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID (public web config),
+#   Variables: (no Firebase web config any more: sign-in is the backend's own),
 #              VITE_GOOGLE_MAPS_API_KEY (browser key, referrer-restricted; must allow https://localhost for the APK)
 #              DEPLOY_HOST (76.13.243.27), BUILD_APK ('true' to build and publish the Android app)
 #              APK_API_BASE_URL (optional) the API the APK talks to; defaults to https://ehk.itfarmer.in/api/v1.
@@ -54,12 +53,6 @@ jobs:
       - run: npm ci
       - name: Build PWA (production, demo mode off)
         env:
-          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
           # A browser key, restricted by HTTP referrer, and expected to be in the bundle: that is how the
           # Maps JS API is keyed (see src/services/googleMaps.js). Unset, every map falls back to showing
           # coordinates, which is what had been happening -- the variable was never passed here at all.
@@ -95,12 +88,6 @@ jobs:
       # The APK's pages are served from https://localhost by the WebView, so a relative /api/v1 would point
       # at the app's own assets: this build, and only this build, carries the server's absolute API base.
       - env:
-          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
           # The APK's pages are served from https://localhost by the WebView, so this key's referrer
           # restrictions have to allow that as well as the site's own host, or maps load on the web and
           # are refused in the app.
