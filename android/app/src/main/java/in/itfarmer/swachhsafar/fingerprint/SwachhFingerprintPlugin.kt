@@ -200,10 +200,25 @@ class SwachhFingerprintPlugin : Plugin() {
     // An ISO/IEC 19794-2 template begins with the magic "FMR", which is "Rk1S" once base64-encoded. It is
     // what tells a template from the base64 of an image, and an image is the one thing that must never be
     // taken out of the scanner: see docs/FINGERPRINT.md.
+    //
+    // ACPL's companion app is shipped in more than one build, and they do not all hand the template back
+    // the same way: base64 text, hex text ("464D52..."), or the raw bytes. Recognising only the first made
+    // a perfectly good scan from the others read as "not clear enough", however clean the finger was.
     private fun isoTemplate(value: String?): String? {
-        val v = value?.trim()
-        return if (!v.isNullOrEmpty() && v.startsWith("Rk1S")) v else null
+        val v = value?.trim()?.replace("\n", "")?.replace("\r", "")?.replace(" ", "")
+        if (v.isNullOrEmpty()) return null
+        if (v.startsWith("Rk1S")) return v
+        if (v.length >= 60 && v.length % 2 == 0 && v.startsWith("464D52", ignoreCase = true) &&
+            v.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) {
+            val bytes = ByteArray(v.length / 2) { i -> v.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+            return Base64.encodeToString(bytes, Base64.NO_WRAP)
+        }
+        return null
     }
+
+    private fun isoTemplate(value: ByteArray?): String? =
+        if (value != null && value.size >= 30 && value[0].toInt() == 0x46 && value[1].toInt() == 0x4D &&
+            value[2].toInt() == 0x52) Base64.encodeToString(value, Base64.NO_WRAP) else null
 
     // The companion app's own extras, read directly. Used when the typed read gives nothing: the vendor
     // ships more than one build of that app and they do not all return the same shape.
@@ -212,7 +227,11 @@ class SwachhFingerprintPlugin : Plugin() {
         for (key in extras.keySet()) {
             val found = try {
                 @Suppress("DEPRECATION")
-                isoTemplate(extras.get(key) as? String)
+                when (val v = extras.get(key)) {
+                    is String -> isoTemplate(v)
+                    is ByteArray -> isoTemplate(v)
+                    else -> null
+                }
             } catch (_: Exception) {
                 null
             }

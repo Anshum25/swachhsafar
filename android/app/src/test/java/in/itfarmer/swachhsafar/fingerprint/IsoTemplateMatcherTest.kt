@@ -22,10 +22,12 @@ class IsoTemplateMatcherTest {
 
     private fun put16(out: ByteArray, at: Int, v: Int) { out[at] = (v shr 8).toByte(); out[at + 1] = v.toByte() }
 
-    private fun putMinutiae(out: ByteArray, at: Int, minutiae: List<Triple<Int, Int, Double>>, stride: Int) {
+    private fun putMinutiae(out: ByteArray, at: Int, minutiae: List<Triple<Int, Int, Double>>, stride: Int,
+                            angleSteps: Int = 256) {
         var i = at
         for ((x, y, angle) in minutiae) {
-            val a = ((angle / (2 * Math.PI)) * 256).toInt() and 0xFF
+            val turns = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (2 * Math.PI)
+            val a = (turns * angleSteps).toInt() % angleSteps
             out[i++] = ((x shr 8) and 0x3F).toByte(); out[i++] = (x and 0xFF).toByte()
             out[i++] = ((y shr 8) and 0x3F).toByte(); out[i++] = (y and 0xFF).toByte()
             out[i++] = a.toByte()
@@ -61,7 +63,7 @@ class IsoTemplateMatcherTest {
                 put16(out, 16, 1000); put16(out, 18, 1000)                                // image size
                 put16(out, 20, 197); put16(out, 22, 197)                                  // resolution
                 out[24] = 1
-                view(out, 26); putMinutiae(out, 30, minutiae, 6)
+                view(out, 26); putMinutiae(out, 30, minutiae, 6, angleSteps = 180) // ANSI: 2-degree units
             }
             Dialect.ISO_2011 -> ByteArray(52 + n * 6).also { out ->
                 magic(out, "030\u0000")
@@ -91,15 +93,20 @@ class IsoTemplateMatcherTest {
         }
     }
 
-    /** The same finger, pressed at a different angle and position, with a few points missing or added. */
+    /**
+     * The same finger pressed again, turned [rotation] radians counter-clockwise as seen on screen, moved,
+     * with a few points lost -- written the way a real scanner writes it: Y grows DOWN, angles count
+     * counter-clockwise. An earlier version rotated with Y growing up, the same mistake the matcher made,
+     * so a matcher that turned real presses the wrong way passed every test and scored 0 on the device.
+     */
     private fun pressedAgain(points: List<Triple<Int, Int, Double>>, rotation: Double, dx: Int, dy: Int,
                              keep: Int, seed: Int): List<Triple<Int, Int, Double>> {
         val rnd = Random(seed)
         val cosR = cos(rotation)
         val sinR = sin(rotation)
         return points.take(keep).map { (x, y, a) ->
-            val nx = (x * cosR - y * sinR).toInt() + dx + rnd.nextInt(-2, 3)
-            val ny = (x * sinR + y * cosR).toInt() + dy + rnd.nextInt(-2, 3)
+            val nx = (x * cosR + y * sinR).toInt() + dx + rnd.nextInt(-2, 3)
+            val ny = (-x * sinR + y * cosR).toInt() + dy + rnd.nextInt(-2, 3)
             Triple(nx.coerceIn(1, 4000), ny.coerceIn(1, 4000), (a + rotation) % (2 * Math.PI))
         }
     }
@@ -177,6 +184,20 @@ class IsoTemplateMatcherTest {
         val again = pressedAgain(enrolled, rotation = 0.15, dx = 12, dy = -8, keep = 27, seed = 13)
         val score = IsoTemplateMatcher.match(template(again, Dialect.ANSI_378), template(enrolled, Dialect.ISO_2005))
         assertTrue("a genuine press across dialects scored only $score", score >= 40.0)
+    }
+
+    // The failure seen on the AST300: a genuine press scored 0. Larger twists than a person usually makes,
+    // both ways, in both standard dialects.
+    @Test
+    fun `a genuine press turned either way matches, as the scanner records it`() {
+        val enrolled = randomFinger(seed = 31).map { (x, y, a) -> Triple(x + 200, y + 200, a) }
+        for (dialect in listOf(Dialect.ISO_2005, Dialect.ANSI_378)) {
+            for (deg in listOf(-25.0, -10.0, 5.0, 15.0, 25.0)) {
+                val again = pressedAgain(enrolled, Math.toRadians(deg), dx = 20, dy = -12, keep = 24, seed = 41)
+                val score = IsoTemplateMatcher.match(template(again, dialect), template(enrolled, dialect))
+                assertTrue("$dialect, turned $deg degrees, scored only $score", score >= 40.0)
+            }
+        }
     }
 
     @Test
