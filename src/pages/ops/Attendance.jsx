@@ -167,11 +167,11 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   // names that could honestly be marked present here.
   const memberIds = members.map((m) => m.employee_id).join(',');
   useEffect(() => {
-    if (!groupPhotoOn || !memberIds) { setProfiles([]); return undefined; }
+    if (mode !== 'photo' || !memberIds) { setProfiles([]); return undefined; }
     let cancelled = false;
     store.masters.faceProfilesFor(memberIds.split(',')).then((r) => !cancelled && setProfiles(r), () => !cancelled && setProfiles([]));
     return () => { cancelled = true; };
-  }, [groupPhotoOn, memberIds, store]);
+  }, [mode, memberIds, store]);
 
   const photoMembers = group?.members ?? [];
   const ready = mode === 'photo'
