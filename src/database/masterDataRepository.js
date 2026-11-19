@@ -187,6 +187,18 @@ export function createMasterDataRepository(db) {
       ];
     },
 
+    // One profile fetched straight from the server (the employee was registered after this device's last
+    // pull). Replaced again in full by the next pull, like every other row of this table.
+    async saveFingerprintProfile(f, now = new Date().toISOString()) {
+      await db.transaction([
+        { sql: 'DELETE FROM fingerprint_profiles WHERE user_id = ?', params: [f.user_id] },
+        insertStatement('fingerprint_profiles', {
+          user_id: f.user_id, division_id: f.division_id, format: f.format, matcher: f.matcher,
+          fingers: JSON.stringify(f.fingers), updated_at: f.updated_at ?? now,
+        }),
+      ]);
+    },
+
     async getFingerprintProfile(userId) {
       const [row] = await db.query('SELECT * FROM fingerprint_profiles WHERE user_id = ?', [userId]);
       return row ? { ...row, fingers: parseJson(row.fingers, []) } : null;

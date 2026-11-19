@@ -86,6 +86,32 @@ def test_devices_receive_templates_only_when_on_and_only_for_their_staff(world):
     assert changes("manager_b")["fingerprint_profiles"] == []  # other division
 
 
+def test_registration_reaches_devices_by_journey_division_not_stale_home_division(world, db):
+    """A registration whose stored division is not the journey's (staff from another division, or moved
+    since registering) must still reach the supervisor: attendance is judged by the journey's policy."""
+    assert enroll(world).status_code == 200
+    set_policy(world, attendance_fingerprint_verification=True)
+    row = db.get(FingerprintEnrollment, world.users["jan"].id)
+    row.division_id = world.b.id  # as if jan were registered while in another division
+    db.commit()
+    sup = world.client.get(f"{API}/sync/changes", headers=world.h("sup")).json()["fingerprint_profiles"]
+    assert [p["user_id"] for p in sup] == [str(world.users["jan"].id)]
+
+
+def test_device_can_fetch_a_registration_it_has_not_synced(world):
+    url = f"{API}/users/{world.users['jan'].id}/fingerprint/profile"
+    set_policy(world, attendance_fingerprint_verification=True)
+    assert world.client.get(url, headers=world.h("sup")).status_code == 404  # not registered yet
+    assert enroll(world).status_code == 200
+    r = world.client.get(url, headers=world.h("sup"))
+    assert r.status_code == 200, r.text
+    assert r.json()["user_id"] == str(world.users["jan"].id) and len(r.json()["fingers"]) == 2
+    assert world.client.get(url, headers=world.h("jan")).status_code == 200  # own
+    # Same rule as the sync: not this journey's supervisor, or another division, gets nothing.
+    assert world.client.get(url, headers=world.h("sup2")).status_code == 404
+    assert world.client.get(url, headers=world.h("manager_b")).status_code == 404
+
+
 def test_attendance_blocked_without_a_verified_match_when_required(world):
     set_policy(world, attendance_fingerprint_verification=True, fingerprint_match_score=40)
     r, _ = punch(world, "jan", 1, fingerprint_score=60, fingerprint_matcher=MATCHER, fingerprint_finger="right_index")
