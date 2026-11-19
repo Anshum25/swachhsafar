@@ -2,7 +2,7 @@
 // SQLite WASM, icons, manifest) so the installed app starts and navigates without a network connection.
 //
 // There is deliberately NO runtime caching. Requests that are not precached, including every /api call
-// (private, authenticated data) and all Firebase traffic, go straight to the network and are never stored
+// (private, authenticated data) and any third-party traffic, go straight to the network and are never stored
 // by this worker. Operational data lives in SQLite (OPFS), which this worker never touches, so installing
 // a new version cannot affect records waiting to sync.
 //

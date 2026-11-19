@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import Register from './pages/Register.jsx';
 import Login from './pages/Login.jsx';
 import Download from './pages/Download.jsx';
 import DeveloperModeGate from './security/DeveloperModeGate.jsx';
@@ -36,21 +35,8 @@ const SCREENS = {
 function Shell() {
   const session = useSession();
   const { path, parts } = useRoute();
-  // A signed-out device starts on Sign in: staff accounts are provisioned by an administrator, and the
-  // installed app opens at "/". Registration (Phase 1) is opened from the "Register" link (#/register) and
-  // stays on screen even after its sync signs the new account in to Firebase, until the user navigates away.
-  const [registering, setRegistering] = useState(null);
-
-  useEffect(() => {
-    if (registering === null && session.status !== 'loading') setRegistering(path === '/register');
-  }, [registering, session.status, path]);
-  useEffect(() => {
-    if (path === '/register') setRegistering(true);
-    else if (path !== '/') setRegistering(false);
-  }, [path]);
-
-  if (path === '/register' || registering) return <Register />;
-  if (session.status === 'loading' || registering === null) return <Splash />;
+  // A signed-out device starts on Sign in: staff accounts are provisioned by an administrator.
+  if (session.status === 'loading') return <Splash />;
   if (session.status === 'signedOut') return <Login />;
   if (session.status === 'error' && BLOCKS[session.meError?.code]) {
     // Session ended, device blocked, or this sign-in predates backend sign-in: explain, then sign in again.
@@ -61,7 +47,7 @@ function Shell() {
     return (
       <div className="mx-auto max-w-md space-y-3 px-4 py-16">
         <ErrorNote error={session.meError} onRetry={session.reload} />
-        {notProvisioned && <p className="text-sm text-slate-600">Your Firebase account is signed in but is not linked to an active Swachh Safar employee record. Ask an administrator to link it.</p>}
+        {notProvisioned && <p className="text-sm text-slate-600">Your sign-in is not linked to an active Swachh Safar employee record. Ask an administrator to check your account.</p>}
         <button type="button" className="btn-secondary" onClick={session.signOut}>Sign out</button>
       </div>
     );
@@ -108,7 +94,13 @@ function OperationsApp() {
   }, []);
 
   if (db.status === 'initializing') return <Splash />;
-  if (db.status === 'error') return <Register />; // Register reports the database failure itself.
+  if (db.status === 'error') {
+    return (
+      <div className="mx-auto max-w-md space-y-3 px-4 py-16" data-testid="database-error">
+        <ErrorNote error={{ message: `This device's local database could not be opened: ${db.error?.message ?? 'unknown error'}. The app needs a secure (HTTPS) connection and browser storage.` }} />
+      </div>
+    );
+  }
   return (
     <SessionProvider db={db.handle} files={db.files}>
       <Shell />

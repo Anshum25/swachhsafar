@@ -1,8 +1,9 @@
-"""Sign-in, devices and security events.
+"""Sign-in credentials, sessions, devices and security events.
 
-Sessions are created only by the backend sign-in endpoints (password + CAPTCHA, or mobile OTP); the Firebase
-custom token they return carries the session id (`sid`) and device id (`did`) as claims, so every API call can
-be tied to a session that an administrator can revoke. OTP codes and CAPTCHA signatures are stored hashed."""
+Identity lives entirely in PostgreSQL: an employee's password hash is in user_credentials, and sessions are
+created only by the backend sign-in endpoints (password + CAPTCHA, or mobile OTP). The bearer token they return
+names its session, so every API call is tied to a session that an administrator can revoke. Passwords, session
+tokens, OTP codes and CAPTCHA signatures are all stored hashed, never in a form that can be replayed."""
 
 import uuid
 from datetime import datetime
@@ -39,6 +40,22 @@ class Device(Timestamps, Base):
     revoke_reason: Mapped[str | None] = mapped_column(String(200))
 
 
+class UserCredential(Timestamps, Base):
+    """An employee's password, hashed (see app/security/passwords.py). Kept apart from `users` so that no
+    query or serialiser of a user can carry it by accident. No row: the employee has no password sign-in
+    (mobile OTP may still work). `source` records where the hash came from: "admin", "user" (changed it
+    themselves), "cli", or "firebase" (imported when sign-in moved off Firebase; rehashed at next sign-in)."""
+
+    __tablename__ = "user_credentials"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    password_changed_at: Mapped[datetime] = mapped_column(TZDateTime(), nullable=False)
+    # Kept for the record of which Firebase account an imported hash came from.
+    legacy_firebase_uid: Mapped[str | None] = mapped_column(String(128))
+
+
 class AuthSession(Timestamps, Base):
     __tablename__ = "auth_sessions"
     __table_args__ = (Index("ix_auth_sessions_user_active", "user_id", "revoked_at"),)
@@ -47,7 +64,10 @@ class AuthSession(Timestamps, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), nullable=False, index=True)
     method: Mapped[str] = mapped_column(String(16), nullable=False)  # "password" | "otp"
-    firebase_uid: Mapped[str] = mapped_column(String(128), nullable=False)
+    # SHA-256 of the token's secret (app/security/tokens.py). NULL for sessions from the Firebase era,
+    # which therefore can never be used again.
+    token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    firebase_uid: Mapped[str | None] = mapped_column(String(128))  # Firebase-era sessions only
     ip: Mapped[str | None] = mapped_column(String(45))
     last_seen_at: Mapped[datetime] = mapped_column(TZDateTime(), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(TZDateTime())

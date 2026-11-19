@@ -1,4 +1,4 @@
-// CP-03 master-data administration in Chromium against the production build (fake Firebase project and
+// CP-03 master-data administration in Chromium against the production build (fake sign-in server and
 // fake FastAPI inside the browser; nothing leaves it). An administrator changes all five master areas
 // online; with the network disconnected the same screens show the stored data and offer no changes;
 // a read-only user sees the data without any management actions.
@@ -205,7 +205,7 @@ test('creating a user creates their sign-in, and an unlinked one can be given it
 
   // An employee who already exists without a sign-in, as every user created before this feature did.
   net.masters.staff.push({ id: 'stuck-user-id', emp_id: '1213', name: 'Om Unlinked', email: 'om@example.com',
-    role_id: 5, division_id: IDS.division, status: 'active', firebase_linked: false, updated_at: new Date().toISOString() });
+    role_id: 5, division_id: IDS.division, status: 'active', password_set: false, face_enrolled: false, fingerprint_enrolled: false, updated_at: new Date().toISOString() });
 
   await openTab(page, 'Users');
   await page.getByRole('button', { name: 'Add user' }).click();

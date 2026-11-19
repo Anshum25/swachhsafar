@@ -5,10 +5,9 @@ Before starting the backend in production (`ENVIRONMENT=production`):
 
 - [ ] **`DATABASE_URL`**: Verified connection string to PostgreSQL with SSL (`sslmode=require`).
 - [ ] **`OTP_PEPPER`**: Random secret string of at least 32 characters (do not use "CHANGE_ME").
-- [ ] **`FIREBASE_CREDENTIALS_FILE`**: Valid absolute path to the production Firebase Admin Service Account JSON.
-- [ ] **`FIREBASE_PROJECT_ID`**: Production Firebase project ID.
-- [ ] **`FIREBASE_WEB_API_KEY`**: Web API key of the Firebase project for server-side Identity Toolkit authentication.
-- [ ] **`AUTH_REQUIRE_BACKEND_SESSION=true`**: Enabled so direct Firebase tokens are rejected.
+- [ ] **Sign-in**: lives in PostgreSQL (`user_credentials`, `auth_sessions`); no Firebase settings are needed for it.
+- [ ] **One-off, first deploy of 0007 only**: `python -m app.cli import-firebase-passwords` (see `docs/AUTHENTICATION.md` §5).
+- [ ] **`FIREBASE_CREDENTIALS_FILE` / `FIREBASE_PROJECT_ID`**: only when `STORAGE_BACKEND=firebase`.
 - [ ] **`STORAGE_BACKEND`**: Set to `local` (with absolute `LOCAL_MEDIA_DIR`) or `firebase`.
 - [ ] **`CORS_ORIGINS`**: Explicitly set to production domain (e.g. `'["https://ehk.itfarmer.in"]'`).
 - [ ] **`SMS_PROVIDER=http`**: Configured with production DLT `SMS_SENDER_ID` and `SMS_LOGIN_TEMPLATE_ID`.

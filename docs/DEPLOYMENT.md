@@ -15,7 +15,7 @@ but "Respect Existing Headers" in Cloudflare → Caching is the cleaner setting.
 Phone (Chrome) ──HTTPS :8082──► nginx ──/──────────► /var/www/html/swachhsafar2.0/current → releases/<time>-<sha>/
                                   └──/api/, /health──► uvicorn 127.0.0.1:8010 (swachhsafar-api.service, 2 workers)
                                                            └──► PostgreSQL 16, Docker swachhsafar_db, 127.0.0.1:5433
-                                                           └──► Firebase Admin (token verification, Storage)
+                                                           └──► Firebase Storage (only if STORAGE_BACKEND=firebase)
 ```
 
 ## Origin warning
@@ -36,7 +36,7 @@ change, make sure every device shows *0 pending*. A domain name avoids this prob
 | TLS | `/etc/swachhsafar/tls/active.{crt,key}` → `le/` | **Let's Encrypt IP certificate** (6-day `shortlived` profile, chain to ISRG Root X1). lego v5.5.2 at `/usr/local/bin/lego`, state in `/etc/swachhsafar/lego/` (back it up). Fallback: private IP-constrained CA in the same directory (`server-fullchain.crt`). |
 | Cert renewal | `swachhsafar-cert-renew.timer` (twice a day) → `deploy/scripts/renew-cert.sh` → `cert-deploy-hook.sh` | Renews at ~1/3 of the lifetime left, or when Let's Encrypt's renewal info asks. A certificate goes live only if it covers the IP, matches its key, and passes `nginx -t`. |
 | ACME challenge | SkyPOS site: `location ^~ /.well-known/acme-challenge/` → `/var/www/acme` | Needed because SkyPOS answers `http://76.13.243.27/`. Backup: `/var/backups/swachhsafar/nginx/skypos.20261105-080850.bak`. |
-| Backend env | `/etc/swachhsafar/backend.env` (640 root:swachhsafar) | DB URL, OTP pepper, Firebase settings. Never commit. |
+| Backend env | `/etc/swachhsafar/backend.env` (640 root:swachhsafar) | DB URL, OTP pepper, provider settings. Never commit. |
 | Firebase key | `/etc/swachhsafar/firebase-admin.json` (640 root:swachhsafar) | Rotate it: it was shared in a chat on 2026-11-05. |
 | DB credentials | `/etc/swachhsafar/postgres.env` (600 root) | |
 | PostgreSQL | Docker `swachhsafar_db`, volume `swachhsafar_pgdata`, `127.0.0.1:5433` | `postgres:16`; not reachable from outside. |
@@ -166,15 +166,15 @@ Run the live test again: `LIVE_URL=https://76.13.243.27:8082 npx playwright test
 ## Accounts
 
 First Super Admin (2026-11-05): `SA001` "DK Parmar", `dkparmar1412@gmail.com`, home division `HQ` "Headquarters",
-linked by Firebase UID because the email is unverified. Employee ID and division **code** cannot be changed later.
+password in PostgreSQL (imported from Firebase in November 2026). Employee ID and division **code** cannot be changed later.
 Name, email and the division **name** can. Further staff are added in the app. Provision from the shell:
 
 ```bash
 cd backend && sudo -u swachhsafar bash -c 'set -a; . /etc/swachhsafar/backend.env; set +a
   .venv/bin/python -m app.cli create-division --code <CODE> --name "<Name>"
-  .venv/bin/python -m app.cli create-superadmin --division-code <CODE> --emp-id <ID> --name "<Name>" --email <email> [--firebase-uid <uid>]'
+  .venv/bin/python -m app.cli create-superadmin --division-code <CODE> --emp-id <ID> --name "<Name>" --email <email>'
 ```
-Without `--firebase-uid`, the record links on first sign-in only if the Firebase email is verified.
+The command asks for the Super Admin's password; it is stored hashed in PostgreSQL (`user_credentials`).
 
 ## Media files (photos, video, voice notes)
 
@@ -200,14 +200,14 @@ Stored on this server since 2026-11-05: Firebase Storage has no bucket for the p
 - Size limits per file: photos 8 MB, voice 10 MB, complaint attachments 15 MB, video 100 MB (nginx accepts up to 30 MB,
   matching the device's 25 MB video limit).
 
-### Linking staff logins (unverified e-mails)
+### Staff passwords and roles
 
-Staff are created in the app (Masters → Users). They link to their Firebase login automatically on first sign-in **only if
-that Firebase e-mail is verified**. Otherwise they see "Account is not provisioned". After confirming the login really
-belongs to that person, an administrator links it (recorded in the audit log), optionally with a role change:
+Staff are created in the app (Masters → Users) with their sign-in. From the shell, an administrator can set a
+password or change a role (both recorded in the audit log):
 
 ```bash
 cd backend && sudo -u swachhsafar bash -c 'set -a; . /etc/swachhsafar/backend.env; set +a
-  .venv/bin/python -m app.cli link-user --email <staff e-mail> [--role janitor|supervisor|manager|contractor|admin]'
+  .venv/bin/python -m app.cli set-password --emp-id <ID>
+  .venv/bin/python -m app.cli set-role --email <staff e-mail> --role janitor|supervisor|manager|contractor|admin'
 ```
 Janitor = only the journeys the person is assigned to, plus marking and viewing attendance.

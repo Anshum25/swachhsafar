@@ -103,6 +103,8 @@ class User(UUIDPk, Timestamps, Base):
         CheckConstraint("mobile IS NULL OR mobile ~ '^[6-9][0-9]{9}$'", name="mobile_format"),
     )
 
+    # The Firebase Authentication account this employee used before sign-in moved to PostgreSQL. History only:
+    # nothing authenticates with it any more.
     firebase_uid: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     emp_id: Mapped[str] = mapped_column(String(32), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -126,10 +128,25 @@ class User(UUIDPk, Timestamps, Base):
     role: Mapped[Role] = relationship(lazy="joined")
     division: Mapped[Division] = relationship(lazy="joined")
     kyc: Mapped["EmployeeKyc | None"] = relationship(back_populates="user", uselist=False)
+    # The employee's sign-in and biometric registrations, all keyed by users.id. Loaded only when read
+    # (list endpoints load them in bulk with selectinload).
+    credential: Mapped["UserCredential | None"] = relationship(uselist=False, lazy="select", viewonly=True)
+    face_enrollment: Mapped["FaceEnrollment | None"] = relationship(
+        uselist=False, lazy="select", viewonly=True, foreign_keys="FaceEnrollment.user_id")
+    fingerprint_enrollment: Mapped["FingerprintEnrollment | None"] = relationship(
+        uselist=False, lazy="select", viewonly=True, foreign_keys="FingerprintEnrollment.user_id")
 
     @property
-    def firebase_linked(self) -> bool:
-        return self.firebase_uid is not None
+    def password_set(self) -> bool:
+        return self.credential is not None
+
+    @property
+    def face_enrolled(self) -> bool:
+        return self.face_enrollment is not None
+
+    @property
+    def fingerprint_enrolled(self) -> bool:
+        return self.fingerprint_enrollment is not None
 
 
 class EmployeeKyc(Timestamps, Base):

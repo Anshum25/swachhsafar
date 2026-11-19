@@ -2,8 +2,8 @@
 //
 // Network: the browser context is put offline (context.setOffline) and, as a second guard, every
 // /api/v1 and Google API request is aborted while "disconnected". While connected, the test itself
-// plays FastAPI (/auth/me, /sync/changes, /sync/batch, /media) and Firebase Auth (fake project,
-// fake token). No request leaves the browser: nothing touches production Firebase or a real backend.
+// plays FastAPI (/auth/me, /sync/changes, /sync/batch, /media) and sign-in (fake session
+// tokens). No request leaves the browser: nothing touches a real backend.
 //
 // Scenario: sign in and pull master data/journeys online -> disconnect -> capture attendance,
 // inspection, passenger feedback, railway feedback, a complaint and an inventory issue + return through the

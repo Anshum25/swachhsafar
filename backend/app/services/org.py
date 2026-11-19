@@ -3,14 +3,13 @@ import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound, ServiceUnavailable
+from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound
 from app.models import ChargeMap, Division, EmployeeKyc, Permission, Role, RoleId, RolePermission, User, UserStatus
 from app.schemas.common import PageParams
 from app.schemas.org import ChargeMapCreate, DivisionCreate, DivisionUpdate, GrantIn, KycIn, UserCreate, UserUpdate
 from app.security.catalog import CHARGE_ELIGIBLE_ROLES
-from app.security.identity import IdentityProvisioner
 from app.security.principal import Principal
 from app.services.common import audit, commit_or_conflict, diff, flush_or_conflict, get_or_404, paginate
 from app.timeutil import utcnow
@@ -123,42 +122,31 @@ def _validate_role_division(db: Session, p: Principal, role_id: int, division_id
 
 @dataclass(frozen=True)
 class SignInResult:
-    password: str | None  # only when this call set it: never for an adopted account or a chosen password
-    created: bool
+    password: str | None  # only when this call generated it: never a password the administrator chose
+    created: bool = True
 
 
 def _new_password() -> str:
-    """Long enough to be safe, short enough to read out over a phone."""
-    return secrets.token_urlsafe(9)
+    """Long enough to be safe, short enough to read out over a phone; always has a letter and a digit."""
+    while True:
+        candidate = secrets.token_urlsafe(9)
+        if any(c.isalpha() for c in candidate) and any(c.isdigit() for c in candidate):
+            return candidate
 
 
-def _link_signin(db: Session, p: Principal, user: User, password: str | None,
-                 provisioner: IdentityProvisioner) -> SignInResult:
-    """Gives `user` the Firebase login their sign-in needs. Without this an employee exists but cannot sign
-    in, which nobody discovers until they try.
+def _set_signin(db: Session, p: Principal, user: User, password: str | None) -> SignInResult:
+    """Gives `user` a password sign-in (hash in user_credentials). Without this an employee exists but cannot
+    sign in with a password, which nobody discovers until they try."""
+    from app.services.auth import set_password  # late import: auth imports this package's siblings
 
-    A password is only ever reported when this call actually set one. If an account for that address already
-    exists it is adopted untouched, and the employee keeps signing in with the password they already have:
-    saying otherwise would hand an administrator a password that does not work."""
-    if not user.email:
-        raise BusinessRuleViolation("An e-mail address is needed to create a sign-in")
     chosen = password or _new_password()
-    try:
-        login = provisioner.ensure_login(user.email, chosen, user.name)
-    except ServiceUnavailable:
-        raise
-    except Exception as exc:  # noqa: BLE001 - any identity-store failure must not half-create an account
-        raise ServiceUnavailable("Could not create the sign-in; nothing was saved", code="signin_unavailable") from exc
-    user.firebase_uid = login.uid
-    audit(db, actor_id=p.id, action="user.signin.link", entity=user, division_id=user.division_id,
-          changes={"firebase_uid": "linked",
-                   "password": ("generated" if password is None else "set by administrator") if login.created
-                   else "existing account adopted"})
-    flush_or_conflict(db, "That sign-in is already linked to another employee")
-    return SignInResult(password=chosen if (login.created and password is None) else None, created=login.created)
+    set_password(db, user, chosen, source="admin")
+    audit(db, actor_id=p.id, action="user.signin.create", entity=user, division_id=user.division_id,
+          changes={"password": "generated" if password is None else "set by administrator"})
+    return SignInResult(password=None if password else chosen)
 
 
-def create_user(db: Session, p: Principal, body: UserCreate, provisioner: IdentityProvisioner) -> tuple[User, SignInResult | None]:
+def create_user(db: Session, p: Principal, body: UserCreate) -> tuple[User, SignInResult | None]:
     _validate_role_division(db, p, body.role_id, body.division_id)
     data = body.model_dump()
     password = data.pop("password")
@@ -166,27 +154,25 @@ def create_user(db: Session, p: Principal, body: UserCreate, provisioner: Identi
         data["email"] = data["email"].lower()
     user = User(**data, created_by_id=p.id, status=UserStatus.ACTIVE)
     db.add(user)
-    flush_or_conflict(db, "Employee ID, email, mobile or Firebase account already in use")
-    audit(db, actor_id=p.id, action="user.create", entity=user, division_id=user.division_id,
-          changes={k: v for k, v in data.items() if k != "firebase_uid"})
-    # An employee with an e-mail gets their sign-in with the record: the administrator does nothing else,
-    # and nobody discovers days later that the account was never usable. A failure here saves nothing.
-    signin = _link_signin(db, p, user, password, provisioner) if user.email and not user.firebase_uid else None
-    commit_or_conflict(db, "Employee ID, email, mobile or Firebase account already in use")
+    flush_or_conflict(db, "Employee ID, email or mobile already in use")
+    audit(db, actor_id=p.id, action="user.create", entity=user, division_id=user.division_id, changes=data)
+    # An employee with an e-mail (or a chosen password) gets their sign-in with the record: the administrator
+    # does nothing else, and nobody discovers days later that the account was never usable.
+    signin = _set_signin(db, p, user, password) if (user.email or password) else None
+    commit_or_conflict(db, "Employee ID, email or mobile already in use")
     return user, signin
 
 
-def create_signin(db: Session, p: Principal, user_id: uuid.UUID, password: str | None,
-                  provisioner: IdentityProvisioner) -> tuple[User, SignInResult]:
-    """Sign-in for an employee created before this existed, or whose e-mail was added later."""
+def create_signin(db: Session, p: Principal, user_id: uuid.UUID, password: str | None) -> tuple[User, SignInResult]:
+    """Password sign-in for an employee who has none."""
     user = get_or_404(db, User, user_id, "User")
     if user.status == UserStatus.DELETED:
         raise NotFound("User not found")
     _assert_manageable(p, user)
-    if user.firebase_uid:
+    if user.password_set:
         raise BusinessRuleViolation("This employee can already sign in")
-    signin = _link_signin(db, p, user, password, provisioner)
-    commit_or_conflict(db, "That sign-in is already linked to another employee")
+    signin = _set_signin(db, p, user, password)
+    commit_or_conflict(db, "Could not create the sign-in")
     return user, signin
 
 
@@ -205,7 +191,7 @@ def update_user(db: Session, p: Principal, user_id: uuid.UUID, body: UserUpdate)
     audit(db, actor_id=p.id, action="user.update", entity=user, division_id=user.division_id, changes=diff(user, updates))
     for k, v in updates.items():
         setattr(user, k, v)
-    commit_or_conflict(db, "Employee ID, email, mobile or Firebase account already in use")
+    commit_or_conflict(db, "Employee ID, email or mobile already in use")
     return user
 
 
@@ -247,6 +233,9 @@ def list_users(db: Session, p: Principal, params: PageParams, *, role_id: int | 
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(or_(func.lower(User.name).like(like), func.lower(User.emp_id).like(like), User.mobile.like(like)))
+    # Sign-in and biometric registration status are shown with every user: load them in three queries, not 3 per row.
+    stmt = stmt.options(selectinload(User.credential), selectinload(User.face_enrollment),
+                        selectinload(User.fingerprint_enrollment))
     return paginate(db, stmt.order_by(User.name, User.id), params)
 
 

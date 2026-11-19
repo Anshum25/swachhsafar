@@ -97,7 +97,7 @@ function SignInCreated({ user, result, onClose }) {
   return (
     <div className="space-y-3" data-testid="signin-created">
       <p className="text-sm text-slate-700">
-        <b>{user.name}</b> can now sign in with <b>{user.email}</b> or employee ID <b>{user.emp_id}</b>.
+        <b>{user.name}</b> can now sign in with employee ID <b>{user.emp_id}</b>{user.email ? <> or <b>{user.email}</b></> : null}.
       </p>
       {result.temp_password ? (
         <>
@@ -106,10 +106,6 @@ function SignInCreated({ user, result, onClose }) {
             Write it down and give it to them now. It is not stored anywhere and cannot be shown again.
           </p>
         </>
-      ) : result.signin === 'existing' ? (
-        <p className="text-sm text-slate-600">
-          They had already registered with this address, so their existing password still applies. Nothing was changed.
-        </p>
       ) : (
         <p className="text-sm text-slate-600">They sign in with the password you chose.</p>
       )}
@@ -132,7 +128,7 @@ function UserForm({ divisionId, onClose, onSaved }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Employee ID"><input className="input" required value={f.emp_id} onChange={set('emp_id')} /></Field>
         <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={set('name')} /></Field>
-        <Field label="Email" hint="Their sign-in is created with this address"><input type="email" className="input" value={f.email} onChange={set('email')} /></Field>
+        <Field label="Email" hint="Optional. A sign-in is created when an email or password is given"><input type="email" className="input" value={f.email} onChange={set('email')} /></Field>
         <Field label="Mobile"><input className="input" pattern="[6-9][0-9]{9}" value={f.mobile} onChange={set('mobile')} /></Field>
         <Field label="Designation"><input className="input" value={f.designation} onChange={set('designation')} /></Field>
         <Field label="Role"><Select value={f.role_id} onChange={set('role_id')} options={roles.map(([value, l]) => ({ value, label: l }))} /></Field>
@@ -194,14 +190,19 @@ function Users({ divisionId }) {
           <Table rows={page.items} columns={[
             { key: 'name', label: 'Name', render: (u) => <><span className="font-medium">{u.name}</span><span className="block text-xs text-slate-500">{u.emp_id} · {u.email ?? 'no email'}</span></> },
             { key: 'role', label: 'Role', render: (u) => ROLE_NAMES[u.role_id] },
-            // "Not linked" means the employee cannot sign in at all. Where that can be put right here and
-            // now, the badge is the button that does it, rather than a dead-end label.
-            { key: 'firebase_linked', label: 'Sign-in', render: (u) => (
-              u.firebase_linked ? <Badge tone="green">Linked</Badge>
-                : manage && u.email ? (
-                  <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setSignInFor(u); }}
-                    aria-label={`Create sign-in for ${u.name}`}>Create sign-in</button>
-                ) : <Badge tone="amber" title={u.email ? undefined : 'Add an email address first'}>Not linked</Badge>
+            // "No password" means the employee cannot sign in with a password. Where that can be put right
+            // here and now, the badge is the button that does it, rather than a dead-end label. Face and
+            // fingerprint show whether this employee's biometrics are registered (same user record).
+            { key: 'password_set', label: 'Sign-in', render: (u) => (
+              <div className="flex flex-wrap items-center gap-1">
+                {u.password_set ? <Badge tone="green">Password</Badge>
+                  : manage ? (
+                    <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setSignInFor(u); }}
+                      aria-label={`Create sign-in for ${u.name}`}>Create sign-in</button>
+                  ) : <Badge tone="amber">No password</Badge>}
+                {u.face_enrolled && <Badge tone="green" title="Face registered">Face</Badge>}
+                {u.fingerprint_enrolled && <Badge tone="green" title="Fingerprints registered">Finger</Badge>}
+              </div>
             ) },
             { key: 'status', label: 'Status', render: (u) => manage
               ? <button type="button" onClick={() => toggle(u)}><Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge></button>

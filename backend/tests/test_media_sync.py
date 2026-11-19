@@ -56,7 +56,7 @@ def _attendance_op(world, media_id, stage=1, employee="jan", record_id=None):
 
 
 def batch(world, ops, by="sup"):
-    r = world.client.post(f"{API}/sync/batch", headers=world.h(by), json={"device_id": "device-001", "operations": ops})
+    r = world.client.post(f"{API}/sync/batch", headers=world.h(by), json={"device_id": "dev-factory-0000", "operations": ops})
     assert r.status_code == 200, r.text
     return r.json()["results"]
 

@@ -1,5 +1,5 @@
 """Tests run against a real PostgreSQL 16 (embedded via pgserver) migrated with Alembic. External services are
-replaced by in-process fakes: Firebase token verification, SMS gateway, PNR API. Storage uses the local backend.
+replaced by in-process fakes: SMS gateway, PNR API. Sign-in is real: tests authenticate with session tokens. Storage uses the local backend.
 
 TEST_DB=sqlite runs the same suite against SQLite (the local single-PC deployment): the database is migrated
 once into a template file with Alembic, and every test starts from a fresh copy of it."""
@@ -153,9 +153,9 @@ def db(engine):
 
 @pytest.fixture
 def fakes():
-    from tests.factories import FakePnr, FakeProvisioner, FakeSms, FakeVerifier
+    from tests.factories import FakePnr, FakeSms
 
-    return FakeVerifier(), FakeSms(), FakePnr(), FakeProvisioner()
+    return None, FakeSms(), FakePnr(), None
 
 
 @pytest.fixture
@@ -165,17 +165,12 @@ def client(engine, fakes):
     from app.main import app
     from app.providers.external import get_pnr_provider, get_sms_provider
     from app.providers.storage import LocalStorage, get_storage
-    from app.security.identity import get_identity_provisioner
-    from app.security.tokens import get_token_verifier
-
-    verifier, sms, pnr, provisioner = fakes
+    _, sms, pnr, _ = fakes
     storage = LocalStorage(str(_MEDIA))
     app.dependency_overrides.update({
-        get_token_verifier: lambda: verifier,
         get_sms_provider: lambda: sms,
         get_pnr_provider: lambda: pnr,
         get_storage: lambda: storage,
-        get_identity_provisioner: lambda: provisioner,
     })
     with TestClient(app) as c:
         yield c

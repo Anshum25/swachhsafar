@@ -139,7 +139,7 @@ def test_concurrent_sync_batch_is_delivered_once(world):
     item = world.client.post(f"{API}/inventory/items", headers=world.h("admin"),
                              json={"division_id": str(world.a.id), "name": "Soap", "unit": "nos", "ideal_qty": 5}).json()
     op["payload"] = dict(id=str(uuid.uuid4()), journey_id=world.journey["id"], item_id=item["id"], coach_code="B1", txn_type="issue", quantity=3)
-    body = {"device_id": "pwa-test", "operations": [op]}
+    body = {"device_id": "dev-factory-0000", "operations": [op]}
 
     def send(_):
         return world.client.post(f"{API}/sync/batch", headers=world.h("sup"), json=body).json()["results"][0]
@@ -151,20 +151,31 @@ def test_concurrent_sync_batch_is_delivered_once(world):
     assert ledger["total"] == 1
 
 
-def test_bootstrap_cli_is_idempotent(engine, db, capsys):
+def test_bootstrap_cli_is_idempotent(engine, db, capsys, monkeypatch):
+    import io
+
     from app.cli import main
-    from app.models import Division, User
+    from app.models import Division, User, UserCredential
+    from app.security.passwords import verify_password
+
+    def stdin(text):
+        monkeypatch.setattr("sys.stdin", io.StringIO(text + "\n"))
 
     assert main(["create-division", "--code", "jbp", "--name", "Jabalpur Division"]) == 0
     assert main(["create-division", "--code", "JBP", "--name", "Jabalpur Division"]) == 0
     assert main(["create-division", "--code", "JBP", "--name", "Other name"]) == 2
-    args = ["create-superadmin", "--division-code", "JBP", "--emp-id", "SA001", "--name", "Admin", "--email", "Admin@Example.com"]
+    args = ["create-superadmin", "--division-code", "JBP", "--emp-id", "SA001", "--name", "Admin", "--email",
+            "Admin@Example.com", "--password-stdin"]
+    stdin("short")
+    assert main(args) == 2  # weak password: nothing created
+    stdin("Super-admin-1")
     assert main(args) == 0
-    assert main(args) == 0
-    assert main([*args, "--firebase-uid", "uid-1"]) == 0  # links an existing Firebase identity once
-    assert main([*args, "--firebase-uid", "uid-2"]) == 2  # never re-linked to another account
-    assert main([*args[:-2], "--email", "someone@example.com"]) == 2  # emp_id belongs to that user
+    assert main(args) == 0  # already exists with a password: stdin not even read
+    assert main([*args[:-3], "--email", "someone@example.com", "--password-stdin"]) == 2  # emp_id belongs to that user
+    stdin("Reset-pass-22")
+    assert main(["set-password", "--emp-id", "sa001", "--password-stdin"]) == 0
     db.expire_all()
     assert db.query(Division).filter_by(code="JBP").count() == 1
     users = db.query(User).filter_by(emp_id="SA001").all()
-    assert len(users) == 1 and users[0].firebase_uid == "uid-1" and users[0].email == "admin@example.com"
+    assert len(users) == 1 and users[0].email == "admin@example.com"
+    assert verify_password(db.get(UserCredential, users[0].id).password_hash, "Reset-pass-22").ok

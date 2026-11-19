@@ -17,11 +17,11 @@ const ALL_PERMS = [
 const user = (n, name, role, extra = {}) => ({
   id: `00000000-0000-4000-8000-00000000u${String(n).padStart(3, '0')}`, emp_id: `EMP${100 + n}`, name, name_hindi: null,
   email: `${name.split(' ')[0].toLowerCase()}@demo.swachh`, mobile: null, gender: null, designation: null, lang: 'en',
-  role_id: role, division_id: D, status: 'active', firebase_linked: true, updated_at: ts(48), ...extra,
+  role_id: role, division_id: D, status: 'active', password_set: true, face_enrolled: true, fingerprint_enrolled: false, updated_at: ts(48), ...extra,
 });
 const USERS = [
   user(1, 'Demo Administrator', 1), user(2, 'Priya Sharma', 3), user(3, 'Ravi Kumar', 4), user(4, 'Anil Verma', 4),
-  user(5, 'Sunita Devi', 5), user(6, 'Mohan Lal', 5), user(7, 'Kavita Singh', 5), user(8, 'Rajesh Yadav', 5, { firebase_linked: false }),
+  user(5, 'Sunita Devi', 5), user(6, 'Mohan Lal', 5), user(7, 'Kavita Singh', 5), user(8, 'Rajesh Yadav', 5, { password_set: false, face_enrolled: false }),
 ];
 export const DEMO_ME = { user: USERS[0], divisions: { [D]: ALL_PERMS }, demo: true };
 

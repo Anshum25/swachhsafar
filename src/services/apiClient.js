@@ -1,5 +1,5 @@
 // Central client for the FastAPI backend (/api/v1). Every request carries the signed-in user's
-// Firebase ID token; errors surface the backend's error code so screens can show it honestly.
+// backend session token (from POST /auth/login); errors surface the backend's error code so screens can show it honestly.
 export const API_BASE = (import.meta.env?.VITE_API_BASE_URL ?? '/api/v1').replace(/\/$/, '');
 
 export class ApiError extends Error {

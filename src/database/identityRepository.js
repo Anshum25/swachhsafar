@@ -1,20 +1,22 @@
 // Local identity and authorization: employee profiles, per-division permissions, the cached
 // /auth/me snapshot used for offline sign-in, and local session metadata.
-// Firebase Authentication stays the identity provider; nothing here stores a credential.
+// The backend (PostgreSQL) is the identity provider; nothing here stores a credential.
 import { bool, fromBool, insertStatement, parseJson, upsertStatement } from './sqlHelpers.js';
 
 const profileRow = (u, now, extra = {}) => ({
   id: u.id, emp_id: u.emp_id ?? null, name: u.name ?? '', name_hindi: u.name_hindi ?? null,
   email: u.email ? String(u.email).toLowerCase() : null, mobile: u.mobile ?? null, gender: u.gender ?? null,
   designation: u.designation ?? null, lang: u.lang ?? null, role_id: u.role_id ?? null, division_id: u.division_id ?? null,
-  status: u.status ?? 'active', firebase_linked: u.firebase_linked == null ? null : bool(u.firebase_linked),
+  status: u.status ?? 'active',
+  // Column kept from the Firebase era; it now records whether the employee has a password sign-in.
+  firebase_linked: u.password_set == null ? null : bool(u.password_set),
   sync_status: 'synced', server_updated_at: u.updated_at ?? null, created_at: now, updated_at: now, ...extra,
 });
 
 const profileOut = (r) => ({
   id: r.id, emp_id: r.emp_id, name: r.name, name_hindi: r.name_hindi, email: r.email, mobile: r.mobile, gender: r.gender,
   designation: r.designation, lang: r.lang ?? 'en', role_id: r.role_id, division_id: r.division_id, status: r.status,
-  firebase_linked: r.firebase_linked == null ? null : fromBool(r.firebase_linked), updated_at: r.server_updated_at ?? r.updated_at,
+  password_set: r.firebase_linked == null ? null : fromBool(r.firebase_linked), updated_at: r.server_updated_at ?? r.updated_at,
 });
 
 const KNOWN_ROLES = new Set([1, 2, 3, 4, 5, 6]);
@@ -62,6 +64,14 @@ export function createIdentityRepository(db, { masters }) {
           snapshot: JSON.stringify(me), fetched_at: now, created_at: now, updated_at: now,
         }, { key: ['user_id'] }),
       ]);
+    },
+
+    // Cached authorization of this employee, or null.
+    async findSnapshotByUserId(userId) {
+      if (!userId) return null;
+      const [row] = await db.query('SELECT snapshot, fetched_at FROM authorization_snapshots WHERE user_id = ? LIMIT 1', [userId]);
+      const snapshot = parseJson(row?.snapshot);
+      return snapshot ? { ...snapshot, fetched_at: row.fetched_at } : null;
     },
 
     // Most recent cached authorization for this email (case-insensitive), or null.
