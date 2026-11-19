@@ -49,11 +49,11 @@ def _check_fingerprint(db: Session, policy, body: AttendanceIn) -> None:
 
 
 def _check_group_photo(db: Session, p: Principal, j: Journey, policy, body: AttendanceIn) -> None:
-    """A capture named out of one photograph of a group. Allowed only where the division turned it on and
-    only from whoever is answerable for the crew, because that is all it proves: not that this person was
-    watched blinking at the camera, but that a named supervisor photographed a group and attested who was
-    in it. The employee may not attest their own presence this way -- that would be a record with no
-    second party to it at all."""
+    """A capture recognised in one photograph of a crew. Allowed only where the division turned it on and
+    only from whoever is answerable for the crew, because that is close to all it proves: not that this
+    person was watched blinking at the camera, but that a named supervisor pointed the app at a group and
+    it recognised them. The employee may not do this for their own attendance -- that would be a record
+    with no second party to it at all."""
     if not policy.attendance_group_photo:
         raise BusinessRuleViolation("Group photo attendance is not enabled for this division", code="group_photo_not_allowed")
     if not (j.supervisor_id == p.id or p.has("attendance.review", j.division_id)):

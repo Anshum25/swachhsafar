@@ -168,6 +168,25 @@ export const GROUP_INPUT_SIZE = 608;
 // reported -- the supervisor should see that someone was there -- but never identified automatically.
 export const MIN_FACE_PX = 48;
 
+// The live preview's own pass: where the faces are, and nothing else. Descriptors are what makes reading a
+// group photo slow, and the preview does not need them -- it only has to know that a steady number of
+// big-enough faces is in frame, which is the moment to take the picture. Run at a smaller input size than
+// the still, because this happens many times a second.
+export const PREVIEW_INPUT_SIZE = 416;
+
+// Returns [{ box, score }] for a video frame, left to right.
+export async function detectFaces(input, { inputSize = PREVIEW_INPUT_SIZE } = {}) {
+  const faceapi = await loadFaceEngine();
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.4 });
+  const found = await faceapi.detectAllFaces(input, options);
+  return found
+    .map((d) => ({
+      box: { x: Math.round(d.box.x), y: Math.round(d.box.y), width: Math.round(d.box.width), height: Math.round(d.box.height) },
+      score: d.score,
+    }))
+    .sort((a, b) => a.box.x - b.box.x);
+}
+
 // Returns { faces: [{ descriptor, box, score, small }], width, height } for a data URL, canvas or video.
 export async function describeAll(src, { inputSize = GROUP_INPUT_SIZE } = {}) {
   const faceapi = await loadFaceEngine();

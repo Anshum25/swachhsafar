@@ -24,9 +24,9 @@ class AttendanceIn(Captured):
     fingerprint_score: int | None = Field(default=None, ge=0, le=10_000)
     fingerprint_matcher: str | None = Field(default=None, max_length=40)
     fingerprint_finger: str | None = Field(default=None, max_length=20)
-    # This capture came from one photograph of a group whose naming the submitter confirmed, rather than a
-    # live capture of this person. It weakens what the record proves, so the server records it and only
-    # accepts it from a supervisor or reviewer of the journey, in a division that allows it.
+    # This capture came from one photograph of a crew in which this person was recognised, rather than a
+    # live capture of them. It weakens what the record proves, so the server records it and only accepts
+    # it from a supervisor or reviewer of the journey, in a division that allows it.
     group_photo: bool = False
     # When the location fix was taken (device clock), and the capture conditions the app reports.
     gps_timestamp: AwareDatetime | None = None

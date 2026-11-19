@@ -59,11 +59,12 @@ class PolicySettings(StrictModel):
     # anyone could be marked present with a picture of them. The blink is passive, so most captures never
     # show a prompt. The head turn costs a few seconds more and also defeats a short recorded video.
     face_liveness_required: bool = False
-    # One photograph of a group, with every face in it recognised and the naming confirmed by the
-    # supervisor, instead of a live capture per person. Off by default, and a deliberate trade: it is by
-    # far the quickest way to mark a whole crew present, and it is the weakest proof the app offers,
-    # because no face in a single frame has been watched blinking. Records made this way carry
-    # identified_by="group_photo" so they are never counted as live face checks, and the supervisor who
-    # confirmed the names is the one answerable for them. A division that needs per-person proof leaves
-    # this off; where it is on, the live per-person capture stays available alongside it.
+    # One photograph of a crew, taken and read automatically: the camera waits for a steady frame, takes
+    # it, recognises every face it can against the staff still due the stage, and marks those people
+    # present without anything being pressed or ticked. Off by default, and the weakest proof the app
+    # offers -- no face in a single frame has been watched blinking, so a photograph of a face cannot be
+    # ruled out the way a live per-person capture rules it out. Records carry identified_by="group_photo"
+    # so they are never counted as live face checks, only the journey supervisor or a reviewer may make
+    # them, and a face the model cannot place with confidence is reported rather than guessed at. A
+    # division that needs per-person proof leaves this off; marking one person at a time is unaffected.
     attendance_group_photo: bool = False

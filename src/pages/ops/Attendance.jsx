@@ -152,10 +152,13 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   // can be held to the attestation -- the same people the server accepts it from -- so the choice never
   // appears to someone whose submission would then be refused.
   const mayAttest = journey.supervisor_id === user?.id || canIn('attendance.review', journey.division_id);
-  const groupPhotoOn = policy.data?.attendance_group_photo === true && mayAttest;
-  const [mode, setMode] = useState('each');   // 'each' = a live capture per person, 'photo' = one group photo
-  const [group, setGroup] = useState(null);   // what GroupPhotoCapture confirmed
+  // Where the division allows it and this person is answerable for the crew, group attendance IS the
+  // camera: one screen, no choice to make, nothing to tick. Marking a single person is still possible
+  // from the stage grid, which is untouched.
+  const mode = policy.data?.attendance_group_photo === true && mayAttest ? 'photo' : 'each';
+  const [group, setGroup] = useState(null);   // what the camera recognised
   const [profiles, setProfiles] = useState([]);
+  const [sent, setSent] = useState(false);    // the automatic submission fires once
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const members = stage ? eligible(stage) : [];
   const chosen = members.filter((m) => picked[m.employee_id]);
@@ -172,14 +175,24 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
 
   const photoMembers = group?.members ?? [];
   const ready = mode === 'photo'
-    ? gps && photoMembers.length > 0 && !policy.loading && gate.allowed
+    ? gps && group?.ready && photoMembers.length > 0 && !policy.loading && gate.allowed
     : gps && chosen.length && !policy.loading && gate.allowed
       && (!liveOn || chosen.every((m) => live[m.employee_id] === 'passed'))
       && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
       && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
 
+  // Nothing is pressed in camera mode: once the photo has been read and there is a location fix, the
+  // records go. It runs once -- `sent` is set before the first await, so a re-render mid-submission
+  // cannot start a second round of the same group.
+  useEffect(() => {
+    if (mode !== 'photo' || sent || busy || !ready) return;
+    setSent(true);
+    submit();
+    // `submit` closes over this render's values, which are the ones `ready` was computed from.
+  }, [mode, sent, busy, ready]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   async function submit(e) {
-    e.preventDefault();
+    e?.preventDefault();
     setBusy(true);
     const submission = crypto.randomUUID();
     const at = deviceTimestamp();
@@ -245,16 +258,14 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         <form onSubmit={submit} className="space-y-3">
           <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Stage</p>
             <Segmented label="Stage" value={stage} onChange={(v) => { setStage(v); setPicked({}); setGroup(null); }} options={stages} /></div>
-          {groupPhotoOn && (
-            <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">How</p>
-              <Segmented label="How attendance is taken" value={mode} onChange={(v) => { setMode(v); setGroup(null); setPicked({}); }}
-                options={[{ value: 'each', label: 'Each person' }, { value: 'photo', label: 'One group photo' }]} /></div>
-          )}
           <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
           {mode === 'photo' ? (
             <>
-              <p className="text-xs font-medium uppercase text-slate-500">Photograph the {members.length} staff due for {STAGES[stage - 1]}</p>
-              <GroupPhotoCapture candidates={members} profiles={profiles} threshold={threshold} onChange={setGroup} />
+              <p className="text-xs font-medium uppercase text-slate-500">
+                {members.length} staff due for {STAGES[stage - 1]}
+              </p>
+              <GroupPhotoCapture key={`${stage}:${profiles.length}`} candidates={members} profiles={profiles}
+                threshold={threshold} onChange={setGroup} />
             </>
           ) : (
           <>
@@ -287,11 +298,25 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
           </>
           )}
           {gate.notice}
-          <SubmitBar busy={busy} disabled={!ready}
-            label={mode === 'photo'
-              ? (photoMembers.length ? `Mark ${photoMembers.length} present` : 'Mark attendance')
-              : (chosen.length ? `Mark attendance for ${chosen.length}` : 'Mark attendance')}
-            onCancel={onClose} />
+          {mode === 'photo' ? (
+            <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+              <p className="text-sm font-medium text-muted" aria-live="polite">
+                {busy ? `Marking ${photoMembers.length} present\u2026`
+                  : sent ? 'Done.'
+                    : !gps ? 'Waiting for the location fix\u2026'
+                      : !group?.ready ? 'The photo is taken and read automatically.'
+                        : photoMembers.length ? `Marking ${photoMembers.length} present\u2026`
+                          : 'Nobody was recognised. Retake the photo.'}
+              </p>
+              <button type="button" className="btn-secondary shrink-0" onClick={onClose}>
+                {sent ? 'Close' : 'Cancel'}
+              </button>
+            </div>
+          ) : (
+            <SubmitBar busy={busy} disabled={!ready}
+              label={chosen.length ? `Mark attendance for ${chosen.length}` : 'Mark attendance'}
+              onCancel={onClose} />
+          )}
         </form>
       )}
     </Dialog>

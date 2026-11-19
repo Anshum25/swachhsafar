@@ -70,8 +70,8 @@ export function createAttendanceRepository(db, { journeys, masters }) {
       if ((policy.attendance_photo_required || policy.attendance_face_verification) && !p.photo_media_id) {
         throw new LocalRuleError('photo_required', 'A photograph is required for attendance.');
       }
-      // Backend attendance._check_group_photo: a capture named out of one photograph of a group. It is
-      // checked here in the same order as the server, so a group marked offline is accepted or refused
+      // Backend attendance._check_group_photo: a capture recognised in one photograph of a crew. It is
+      // checked here in the same order as the server, so a crew marked offline is accepted or refused
       // on this device for the reason the server would give, rather than failing hours later at sync.
       if (p.group_photo) {
         if (!policy.attendance_group_photo) {

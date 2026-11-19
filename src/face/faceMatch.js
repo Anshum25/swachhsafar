@@ -52,7 +52,10 @@ export const similarityPercent = (d) => (d == null ? null : Math.max(0, Math.min
 //   2. One face, one person. Assignment is global and greedy from the best pair outwards, so a single
 //      registered person can never be matched to two faces in the same photo, nor one face to two people.
 //
-// Nothing here decides attendance on its own: the caller shows every row to the supervisor to confirm.
+// There is no confirmation step after this, so these two rules are the whole of the protection: a row
+// returned as `ambiguous` or `unknown` is never marked present, only reported. That is the trade the
+// margin buys -- a face the model cannot place with confidence is left to be marked the slow way, rather
+// than attached to whichever registered person happened to be nearest.
 export const GROUP_MARGIN = 0.08;
 
 // faces: [{ descriptor, box }]; profiles: [{ user_id, model, descriptors }].
