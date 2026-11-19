@@ -6,7 +6,7 @@ import MediaPreview from '../../components/MediaPreview.jsx';
 import ReviewPanel from '../../components/ReviewPanel.jsx';
 import { GpsCapture, PhotoCapture, outcomeToast, savedLocally } from '../../components/Capture.jsx';
 import {
-  Badge, DataState, DetailList, Dialog, Empty, Field, FilterBar, Loading, PageHeader, Pager, Panel, STATE_TONE, Segmented, Select, SubmitBar, SyncBadge,
+  Badge, DataState, DetailList, Dialog, Empty, Field, FilterBar, Loading, PageHeader, Pager, Panel, STATE_TONE, Select, SubmitBar, SyncBadge,
   SyncState, Table, Tabs, fmtDateTime, label,
 } from '../../components/ui.jsx';
 import { CameraSolidIcon, CheckBoldIcon, CheckIcon, LockSolidIcon, RefreshIcon, TrainSolidIcon, UserSolidIcon, UsersIcon } from '../../components/Icons.jsx';
@@ -19,6 +19,7 @@ import LiveFaceCapture from '../../face/LiveFaceCapture.jsx';
 import GroupPhotoCapture from '../../face/GroupPhotoCapture.jsx';
 import { FACE_MODEL } from '../../face/faceMatch.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
+import { nextStageFor } from '../../database/attendanceRepository.js';
 
 export const STAGES = ['Source', 'Enroute 1', 'Destination', 'Enroute 2', 'End'];
 // Reference labels under the five stage icons.
@@ -37,6 +38,9 @@ const LegendDot = ({ state, children }) => (
 );
 
 const VERIFICATION = [{ value: 'pending', label: 'Pending review' }, { value: 'verified', label: 'Verified' }, { value: 'rejected', label: 'Rejected' }];
+// How each record established identity (attendance.identified_by); group records share a submission id.
+const METHOD = { group_photo: 'Group photo', face: 'Face', fingerprint: 'Fingerprint' };
+const methodOf = (r) => METHOD[r.identified_by] ?? (r.group_submission_id ? 'Group' : 'Individual');
 const gpsText = (r) => (r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude.toFixed(5)}${r.gps_accuracy_m != null ? ` ±${Math.round(r.gps_accuracy_m)} m` : ''}` : null);
 
 function CaptureDialog({ target, journey, onClose, onDone }) {
@@ -118,15 +122,24 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   );
 }
 
-// Group attendance: one stage for several staff with one GPS fix and capture time. As on the server
-// (backend attendance.create_group), it is one attendance record per member sharing a
-// group_submission_id, and each member succeeds or fails independently. Each record is an ordinary
-// 'attendance.create' operation, so the whole group works offline and is delivered exactly once.
+// Group attendance: one shared capture (one photo, GPS fix and capture time) for several staff, but stage
+// progression is per employee -- each selected person is recorded at THEIR OWN next pending stage, never
+// one stage forced on the whole group. As on the server (backend attendance.create_group), it is one
+// attendance record per member sharing a group_submission_id, and each member succeeds or fails
+// independently. Each record is an ordinary 'attendance.create' operation, so the whole group works
+// offline, is delivered exactly once, and is checked for stage order and duplicates locally and again
+// by the server.
 function MemberFaceCheck({ photo, member, enabled, threshold, onResult }) {
   const check = useFaceCheck({ photo, employeeId: member.employee_id, enabled, threshold });
   useEffect(() => { onResult(member.employee_id, check); }, [check, member.employee_id, onResult]);
   return <FaceCheckNote check={check} name={member.name} />;
 }
+
+const StagePill = ({ stage }) => (
+  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-camera/10 px-2 py-0.5 text-[11px] font-semibold text-camera">
+    <CameraSolidIcon className="h-3 w-3" /> {stage} · {STAGES[stage - 1]}
+  </span>
+);
 
 function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const { queue, store, user, canIn } = useSession();
@@ -134,14 +147,17 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const policy = useResource(`/divisions/${journey.division_id}/policy`);
   // Photo required unless the division policy relaxes it (the strict default while it is loading).
   const photoRequired = policy.data?.attendance_photo_required !== false;
-  const eligible = (stage) => rows.filter((s) => s.stages.some((c) => c.stage === stage && c.status === 'next') && !local[`${s.employee_id}:${stage}`]);
-  const stages = STAGES.map((name, i) => ({ value: i + 1, label: name })).filter((o) => eligible(o.value).length);
-  const [stage, setStage] = useState(stages[0]?.value ?? null);
+  // Every employee's own next stage. Staff who have finished all five are not offered.
+  const members = rows
+    .map((r) => ({ ...r, stage: nextStageFor(r, (st) => local[`${r.employee_id}:${st}`]) }))
+    .filter((r) => r.stage != null);
+  const byId = new Map(members.map((m) => [m.employee_id, m]));
   const [picked, setPicked] = useState({});
   const [photos, setPhotos] = useState({});
   const [gps, setGps] = useState(null);
   const [address, setAddress] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [faces, setFaces] = useState({});
   const faceOn = policy.data?.attendance_face_verification === true;
   const liveOn = faceOn && policy.data?.face_liveness_required === true;
@@ -152,19 +168,13 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   // can be held to the attestation -- the same people the server accepts it from -- so the choice never
   // appears to someone whose submission would then be refused.
   const mayAttest = journey.supervisor_id === user?.id || canIn('attendance.review', journey.division_id);
-  // Where the division allows it and this person is answerable for the crew, group attendance IS the
-  // camera: one screen, no choice to make, nothing to tick. Marking a single person is still possible
-  // from the stage grid, which is untouched.
   const mode = policy.data?.attendance_group_photo === true && mayAttest ? 'photo' : 'each';
-  const [group, setGroup] = useState(null);   // what the camera recognised
+  const [group, setGroup] = useState(null);           // what the camera recognised
+  const [plainPhoto, setPlainPhoto] = useState(null); // fallback: an ordinary photo, staff named by hand
+  const [usePlain, setUsePlain] = useState(false);
   const [profiles, setProfiles] = useState([]);
-  const [sent, setSent] = useState(false);    // the automatic submission fires once
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
-  const members = stage ? eligible(stage) : [];
   const chosen = members.filter((m) => picked[m.employee_id]);
-  const byId = new Map(members.map((m) => [m.employee_id, m]));
-  // Only the staff still due this stage are offered to the photo, so the only names it can produce are
-  // names that could honestly be marked present here.
   const memberIds = members.map((m) => m.employee_id).join(',');
   useEffect(() => {
     if (mode !== 'photo' || !memberIds) { setProfiles([]); return undefined; }
@@ -173,65 +183,64 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
     return () => { cancelled = true; };
   }, [mode, memberIds, store]);
 
-  const photoMembers = group?.members ?? [];
+  // Recognition only proposes: whoever the camera recognised is pre-selected, and the supervisor
+  // confirms, removes or adds people before anything is recorded.
+  const recognised = new Map((group?.members ?? []).map((r) => [r.employee_id, r]));
+  const recognisedKey = [...recognised.keys()].join(',');
+  useEffect(() => {
+    if (mode !== 'photo' || !group?.ready) return;
+    setPicked(Object.fromEntries([...recognised.keys()].filter((id) => byId.has(id)).map((id) => [id, true])));
+  }, [mode, group?.ready, recognisedKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const groupPhoto = usePlain ? plainPhoto : (group?.ready ? group.photo : null);
+
   const ready = mode === 'photo'
-    ? gps && group?.ready && photoMembers.length > 0 && !policy.loading && gate.allowed
+    ? gps && groupPhoto && chosen.length > 0 && !policy.loading && gate.allowed
     : gps && chosen.length && !policy.loading && gate.allowed
       && (!liveOn || chosen.every((m) => live[m.employee_id] === 'passed'))
       && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
       && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
 
-  // Nothing is pressed in camera mode: once the photo has been read and there is a location fix, the
-  // records go. It runs once -- `sent` is set before the first await, so a re-render mid-submission
-  // cannot start a second round of the same group.
-  useEffect(() => {
-    if (mode !== 'photo' || sent || busy || !ready) return;
-    setSent(true);
-    submit();
-    // `submit` closes over this render's values, which are the ones `ready` was computed from.
-  }, [mode, sent, busy, ready]);   // eslint-disable-line react-hooks/exhaustive-deps
-
   async function submit(e) {
     e?.preventDefault();
+    if (!ready || busy || done) return;
     setBusy(true);
     const submission = crypto.randomUUID();
     const at = deviceTimestamp();
     const results = [];
-    if (mode === 'photo') {
-      for (const row of photoMembers) {
-        const member = byId.get(row.employee_id);
-        const mediaId = crypto.randomUUID();
-        const outcome = await queue.submit({
-          type: 'attendance.create',
-          payload: {
-            id: crypto.randomUUID(), journey_id: journey.id, employee_id: row.employee_id, stage,
-            device_timestamp: at, ...gps, photo_media_id: mediaId, group_submission_id: submission,
-            group_photo: true,
-            // The distance is evidence only where the device recognised this person and the supervisor
-            // agreed. Where the supervisor supplied the name, nothing is claimed about a match.
-            ...(row.confirmed === 'matched' ? { face_distance: row.distance, face_model: FACE_MODEL } : {}),
-            // A single frame cannot show that this face blinked, so no liveness is claimed for it either.
-            ...gate.evidence({ liveness: 'not_required', faceModel: row.confirmed === 'matched' ? FACE_MODEL : null }),
-          },
-          // Each record keeps this person's own face, cut out of the group photo.
-          media: [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: row.crop ?? group.photo }],
-        });
-        results.push({ member: member ?? { name: row.employee_id, employee_id: row.employee_id }, outcome });
-      }
-      finish(results);
-      return;
-    }
     for (const m of chosen) {
-      const photo = photos[m.employee_id];
-      const mediaId = photo ? crypto.randomUUID() : null;
+      let extra;
+      let media = [];
+      if (mode === 'photo') {
+        const hit = !usePlain ? recognised.get(m.employee_id) : null;
+        const mediaId = crypto.randomUUID();
+        extra = {
+          group_photo: true, photo_media_id: mediaId,
+          // The distance is evidence only where the device recognised this person and the supervisor
+          // agreed. Where the supervisor supplied the name, nothing is claimed about a match.
+          ...(hit ? { face_distance: hit.distance, face_model: FACE_MODEL } : {}),
+          // A single frame cannot show that this face blinked, so no liveness is claimed for it either.
+          ...gate.evidence({ liveness: 'not_required', faceModel: hit ? FACE_MODEL : null }),
+        };
+        // Each record keeps this person's own face cut out of the group photo; a person named by hand
+        // keeps the whole photograph.
+        media = [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: hit?.crop ?? groupPhoto }];
+      } else {
+        const photo = photos[m.employee_id];
+        const mediaId = photo ? crypto.randomUUID() : null;
+        extra = {
+          photo_media_id: mediaId, ...(faceOn ? faceFields(faces[m.employee_id] ?? {}) : {}),
+          ...gate.evidence({ liveness: liveOn ? live[m.employee_id] ?? 'failed' : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
+        };
+        media = photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [];
+      }
       const outcome = await queue.submit({
         type: 'attendance.create',
         payload: {
-          id: crypto.randomUUID(), journey_id: journey.id, employee_id: m.employee_id, stage, device_timestamp: at, ...gps,
-          photo_media_id: mediaId, group_submission_id: submission, ...(faceOn ? faceFields(faces[m.employee_id] ?? {}) : {}),
-          ...gate.evidence({ liveness: liveOn ? live[m.employee_id] ?? 'failed' : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
+          id: crypto.randomUUID(), journey_id: journey.id, employee_id: m.employee_id,
+          stage: m.stage,   // this employee's own next stage, not a group-wide one
+          device_timestamp: at, ...gps, group_submission_id: submission, ...extra,
         },
-        media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
+        media,
       });
       results.push({ member: m, outcome });
     }
@@ -242,81 +251,97 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   // rather than calling the whole group a failure.
   function finish(results) {
     setBusy(false);
+    setDone(true);
     const saved = results.filter((r) => savedLocally(r.outcome));
     const synced = saved.filter((r) => r.outcome.status === 'synced').length;
     const refused = results.filter((r) => !savedLocally(r.outcome));
     if (saved.length) notify(synced === saved.length ? 'success' : 'warning', synced === saved.length
       ? `Group attendance saved and synchronized for ${synced} staff.`
       : `Group attendance saved on this device for ${saved.length} staff. It will sync when the server is reachable.`);
-    for (const r of refused) notify('error', `${r.member.name}: ${r.outcome.message}`);
-    onDone(stage, saved.filter((r) => r.outcome.status !== 'synced').map((r) => r.member.employee_id));
+    for (const r of refused) notify('error', `${r.member.name} (${STAGES[r.member.stage - 1]}): ${r.outcome.message}`);
+    onDone(saved.filter((r) => r.outcome.status !== 'synced').map((r) => [r.member.employee_id, r.member.stage]));
   }
+
+  const toggle = (id, on) => setPicked((p) => ({ ...p, [id]: on }));
+  const selectAll = () => setPicked(Object.fromEntries(members.map((m) => [m.employee_id, true])));
+  const sourceOf = (id) => (!usePlain && recognised.has(id) ? 'Recognised' : 'Named by hand');
 
   return (
     <Dialog open title="Group attendance" onClose={onClose} wide>
-      {!stages.length ? <Empty title="No staff are due for a stage right now." /> : (
+      {!members.length ? <Empty title="Every allocated staff member has completed all five stages." /> : (
         <form onSubmit={submit} className="space-y-3">
-          <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Stage</p>
-            <Segmented label="Stage" value={stage} onChange={(v) => { setStage(v); setPicked({}); setGroup(null); }} options={stages} /></div>
+          <p className="text-xs text-muted">Each person is recorded at their own next stage.</p>
           <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
           {mode === 'photo' ? (
             <>
-              <p className="text-xs font-medium uppercase text-slate-500">
-                {members.length} staff due for {STAGES[stage - 1]}
-              </p>
-              <GroupPhotoCapture key={`${stage}:${profiles.length}`} candidates={members} profiles={profiles}
-                threshold={threshold} onChange={setGroup} />
+              {usePlain ? (
+                <PhotoCapture value={plainPhoto} onChange={setPlainPhoto} required stamp={stampLines({ ...gps, address })} />
+              ) : (
+                <GroupPhotoCapture key={profiles.length} candidates={members} profiles={profiles}
+                  threshold={threshold} onChange={setGroup} />
+              )}
+              <button type="button" className="btn-link text-xs"
+                onClick={() => { setUsePlain((u) => !u); setPicked({}); setPlainPhoto(null); setGroup(null); }}>
+                {usePlain ? 'Use the face recognition camera' : 'Take an ordinary photo and select staff by hand'}
+              </button>
+              {groupPhoto && (
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <p className="text-xs font-medium uppercase text-slate-500">Confirm who is in the photo ({chosen.length}/{members.length})</p>
+                    <button type="button" className="btn-link text-xs" onClick={selectAll}>Select all</button>
+                  </div>
+                  <ul className="divide-y divide-line rounded-2xl ring-1 ring-slate-200" aria-label="Group attendance review">
+                    {members.map((m) => (
+                      <li key={m.employee_id}>
+                        <label className="flex items-center gap-3 p-3 text-sm">
+                          <input type="checkbox" className="h-5 w-5" checked={!!picked[m.employee_id]} onChange={(e) => toggle(m.employee_id, e.target.checked)} />
+                          <span className="min-w-0 flex-1 truncate"><span className="font-medium">{m.name}</span><span className="text-slate-500"> · {m.emp_id}</span></span>
+                          <StagePill stage={m.stage} />
+                          <span className={`hidden w-36 shrink-0 text-right text-[11px] font-semibold sm:inline ${picked[m.employee_id] ? 'text-success' : 'text-slate-400'}`}>
+                            {picked[m.employee_id] ? `Ready · ${sourceOf(m.employee_id)}` : 'Not marked'}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           ) : (
-          <>
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium uppercase text-slate-500">Staff due for {STAGES[stage - 1]} ({chosen.length}/{members.length} selected)</p>
-            <button type="button" className="btn-link text-xs" onClick={() => setPicked(Object.fromEntries(members.map((m) => [m.employee_id, true])))}>Select all</button>
-          </div>
-          <ul className="space-y-2">
-            {members.map((m) => (
-              <li key={m.employee_id} className="rounded-2xl p-3 ring-1 ring-slate-200">
-                <label className="flex items-center gap-3 text-sm">
-                  <input type="checkbox" className="h-5 w-5" checked={!!picked[m.employee_id]} onChange={(e) => setPicked((p) => ({ ...p, [m.employee_id]: e.target.checked }))} />
-                  <span className="font-medium">{m.name}</span><span className="text-slate-500">· {m.emp_id}</span>
-                </label>
-                {picked[m.employee_id] && (
-                  <div className="mt-2 space-y-2">
-                    {liveOn && !photos[m.employee_id] ? (
-                      <LiveFaceCapture name={m.name} onDone={(r) => { setLive((l) => ({ ...l, [m.employee_id]: r.liveness })); setPhotos((p) => ({ ...p, [m.employee_id]: r.photo })); }} />
-                    ) : (
-                      <PhotoCapture value={photos[m.employee_id]} required={photoRequired || faceOn}
-                        stamp={stampLines({ ...gps, address })}
-                        onChange={(v) => { setLive((l) => ({ ...l, [m.employee_id]: liveOn ? null : l[m.employee_id] })); setPhotos((p) => ({ ...p, [m.employee_id]: liveOn ? null : v })); }} />
+            <>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase text-slate-500">Staff with a stage due ({chosen.length}/{members.length} selected)</p>
+                <button type="button" className="btn-link text-xs" onClick={selectAll}>Select all</button>
+              </div>
+              <ul className="space-y-2">
+                {members.map((m) => (
+                  <li key={m.employee_id} className="rounded-2xl p-3 ring-1 ring-slate-200">
+                    <label className="flex items-center gap-3 text-sm">
+                      <input type="checkbox" className="h-5 w-5" checked={!!picked[m.employee_id]} onChange={(e) => toggle(m.employee_id, e.target.checked)} />
+                      <span className="min-w-0 flex-1 truncate"><span className="font-medium">{m.name}</span><span className="text-slate-500"> · {m.emp_id}</span></span>
+                      <StagePill stage={m.stage} />
+                    </label>
+                    {picked[m.employee_id] && (
+                      <div className="mt-2 space-y-2">
+                        {liveOn && !photos[m.employee_id] ? (
+                          <LiveFaceCapture name={m.name} onDone={(r) => { setLive((l) => ({ ...l, [m.employee_id]: r.liveness })); setPhotos((p) => ({ ...p, [m.employee_id]: r.photo })); }} />
+                        ) : (
+                          <PhotoCapture value={photos[m.employee_id]} required={photoRequired || faceOn}
+                            stamp={stampLines({ ...gps, address })}
+                            onChange={(v) => { setLive((l) => ({ ...l, [m.employee_id]: liveOn ? null : l[m.employee_id] })); setPhotos((p) => ({ ...p, [m.employee_id]: liveOn ? null : v })); }} />
+                        )}
+                        <MemberFaceCheck photo={photos[m.employee_id]} member={m} enabled={faceOn} threshold={threshold} onResult={onFace} />
+                      </div>
                     )}
-                    <MemberFaceCheck photo={photos[m.employee_id]} member={m} enabled={faceOn} threshold={threshold} onResult={onFace} />
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-          </>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
           {gate.notice}
-          {mode === 'photo' ? (
-            <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-              <p className="text-sm font-medium text-muted" aria-live="polite">
-                {busy ? `Marking ${photoMembers.length} present\u2026`
-                  : sent ? 'Done.'
-                    : !gps ? 'Waiting for the location fix\u2026'
-                      : !group?.ready ? 'The photo is taken and read automatically.'
-                        : photoMembers.length ? `Marking ${photoMembers.length} present\u2026`
-                          : 'Nobody was recognised. Retake the photo.'}
-              </p>
-              <button type="button" className="btn-secondary shrink-0" onClick={onClose}>
-                {sent ? 'Close' : 'Cancel'}
-              </button>
-            </div>
-          ) : (
-            <SubmitBar busy={busy} disabled={!ready}
-              label={chosen.length ? `Mark attendance for ${chosen.length}` : 'Mark attendance'}
-              onCancel={onClose} />
-          )}
+          <SubmitBar busy={busy} disabled={!ready || done}
+            label={chosen.length ? `Confirm attendance for ${chosen.length}` : 'Confirm attendance'}
+            onCancel={onClose} />
         </form>
       )}
     </Dialog>
@@ -376,8 +401,8 @@ function StageGrid({ journey: j, status }) {
       )}
       {groupOpen && j && (
         <GroupDialog journey={j} rows={status.data ?? []} local={local} onClose={() => setGroupOpen(false)}
-          onDone={(stage, pendingIds) => {
-            setLocal((l) => ({ ...l, ...Object.fromEntries(pendingIds.map((id) => [`${id}:${stage}`, true])) }));
+          onDone={(pending) => {
+            setLocal((l) => ({ ...l, ...Object.fromEntries(pending.map(([id, stage]) => [`${id}:${stage}`, true])) }));
             setGroupOpen(false);
             status.reload();
           }} />
@@ -409,6 +434,8 @@ function AttendanceDetail({ record, staffName, onClose, onChanged }) {
           ['Captured (device)', record.device_timestamp ? fmtDateTime(record.device_timestamp) : null],
           ['Received (server)', record.server_timestamp ? fmtDateTime(record.server_timestamp) : null],
           ['GPS', gpsText(record)],
+          ['Capture method', methodOf(record)],
+          ['Group capture', record.group_submission_id ? `${record.group_submission_id.slice(0, 8)} (one photo, several staff)` : null],
           ['Recorded by', record.created_by_id ? staffName(record.created_by_id) : null],
           ['Review remarks', record.review_remarks],
         ]} />
@@ -448,6 +475,7 @@ function AttendanceRecords({ journey: j }) {
               { key: 'employee', label: 'Staff', render: (r) => staffName(r.employee_id) },
               { key: 'stage', label: 'Stage', render: (r) => STAGES[r.stage - 1] },
               { key: 'when', label: 'Captured', render: (r) => fmtDateTime(r.device_timestamp ?? r.server_timestamp) },
+              { key: 'method', label: 'Method', render: (r) => methodOf(r) },
               { key: 'gps', label: 'GPS', render: (r) => (r.latitude != null ? 'Yes' : '—') },
               { key: 'status', label: 'Sync', render: (r) => <SyncState record={r} /> },
               { key: 'verification', label: 'Verification', render: (r) => (r.verification_status ? <Badge tone={STATE_TONE[r.verification_status]}>{label(r.verification_status)}</Badge> : '—') },

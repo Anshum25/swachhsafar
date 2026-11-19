@@ -47,12 +47,16 @@ class GroupMember(StrictModel):
     liveness: Literal["passed", "failed", "not_required", "unavailable"] | None = None
     # Set when this member was named from the group photograph rather than captured individually.
     group_photo: bool = False
+    # This member's own stage. Progress is per employee, so one group capture can record different
+    # stages for different people. Omitted: the group's stage if given, else the member's next pending stage.
+    stage: int | None = Field(default=None, ge=1, le=5)
 
 
 class GroupAttendanceIn(StrictModel):
     group_submission_id: uuid.UUID
     journey_id: uuid.UUID
-    stage: int = Field(ge=1, le=5)
+    # Optional: when omitted, each member is recorded at their own next pending stage.
+    stage: int | None = Field(default=None, ge=1, le=5)
     device_timestamp: AwareDatetime
     latitude: Latitude
     longitude: Longitude
