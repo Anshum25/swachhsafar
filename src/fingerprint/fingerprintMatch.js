@@ -36,7 +36,12 @@ export function decideFingerprint({ result, profile, threshold = DEFAULT_MATCH_S
   // A template that yielded no minutiae cannot produce a score that means anything, and reporting it as
   // a mismatch sends everyone off to adjust a threshold that was never the problem.
   if (result.probeMinutiae === 0 || result.candidateMinutiae === 0) {
-    return { ...none, reason: 'unreadable_template' };
+    return { ...none, reason: 'unreadable_template',
+      diagnostic: {
+        build: result.matcherBuild ?? null,
+        probe: result.probeMinutiae, candidate: result.candidateMinutiae,
+        probeHeader: result.probeHeader ?? null, candidateHeader: result.candidateHeader ?? null,
+      } };
   }
   const matched = score >= threshold;
   return { matched, reason: matched ? 'matched' : 'mismatch', score, finger: result.finger ?? null,

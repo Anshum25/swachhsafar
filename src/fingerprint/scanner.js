@@ -111,7 +111,9 @@ export async function matchFinger({ template, profile }, plugin = scanner()) {
     return { score: r.score, finger: r.finger ?? null, matcher: r.matcher ?? profile.matcher,
       // How much of each template the matcher could read. Zero means it could not read one at all,
       // which is a different problem from the wrong finger and has a different fix.
-      probeMinutiae: r.probeMinutiae ?? null, candidateMinutiae: r.candidateMinutiae ?? null };
+      probeMinutiae: r.probeMinutiae ?? null, candidateMinutiae: r.candidateMinutiae ?? null,
+      // Diagnostics (headers only, no minutiae): which matcher build the APK has, and the record headers.
+      matcherBuild: r.matcherBuild ?? null, probeHeader: r.probeHeader ?? null, candidateHeader: r.candidateHeader ?? null };
   } catch {
     return null;
   }

@@ -89,7 +89,18 @@ export function FingerprintCheckNote({ check, name }) {
     unreadable: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
       'The scanner could not compare that finger. Try again, or use the photo check.'],
     unreadable_template: [`${base} bg-amber-50 text-amber-900`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
-      `${name}'s registered fingerprints are in a form this scanner cannot read, so nothing can be compared — this is not a wrong finger. Register them again on this app version, then sync. Use the photo check meanwhile.`],
+      <>
+        {`${name}'s registered fingerprints are in a form this scanner cannot read, so nothing can be compared — this is not a wrong finger. Use the photo check meanwhile.`}
+        {/* What support needs to tell an old APK from a template format still not understood. Headers
+            only: format, version, length, image size, resolution -- no fingerprint data. */}
+        <span className="mt-1 block break-all font-mono text-[10px] leading-snug opacity-80" data-testid="fingerprint-diagnostic">
+          {check.diagnostic?.build == null
+            ? 'Matcher: old app build — install the latest APK.'
+            : `Matcher build ${check.diagnostic.build} · points read: scan ${check.diagnostic.probe ?? '?'}, registered ${check.diagnostic.candidate ?? '?'}`}
+          {check.diagnostic?.probeHeader ? ` · scan ${check.diagnostic.probeHeader}` : ''}
+          {check.diagnostic?.candidateHeader ? ` · registered ${check.diagnostic.candidateHeader}` : ''}
+        </span>
+      </>],
   }[check.status] ?? [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
     check.message ?? 'The fingerprint could not be read.'];
   return (
