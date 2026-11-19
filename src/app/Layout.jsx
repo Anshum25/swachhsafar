@@ -59,7 +59,7 @@ function QueueIndicator() {
   return (
     <button type="button" onClick={() => (q.failed.length ? queue.retryFailed() : queue.flush())}
       className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${q.failed.length ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-amber-50 text-amber-800 ring-amber-200'}`}
-      title={q.lastError ?? 'Tap to sync now'} data-testid="ops-queue">
+      title={q.failed[0]?.last_error ?? q.lastError ?? 'Tap to sync now'} data-testid="ops-queue">
       {q.running ? <Spinner className="h-3 w-3" /> : <RefreshIcon className="h-3 w-3" />}
       {q.pending ? `${q.pending} pending` : ''}{q.pending && q.failed.length ? ' · ' : ''}{q.failed.length ? `${q.failed.length} failed` : ''}
     </button>
@@ -68,14 +68,33 @@ function QueueIndicator() {
 
 // Browser connectivity is not server connectivity: "Online" only when the last exchange with the server
 // worked; a failed pull while the network is up shows as a server problem.
-const SHORT_STATUS = { 'Server unreachable': 'No server', 'Syncing…': 'Syncing' };
+const SHORT_STATUS = { 'Server unreachable': 'No server', 'Records refused': 'Refused', 'Syncing\u2026': 'Syncing' };
+
+// Which of the four states the app is in, and the sentence that explains it. Pure, so it can be tested
+// without rendering: this classification was wrong once in a way that cost real debugging time.
+//
+// The distinction that matters is between the server not answering and the server answering to refuse a
+// record. Both used to read "Server unreachable", which is a lie in the second case and sends everyone
+// hunting for a network fault that is not there -- while the one thing that would help, the reason the
+// record was refused, sat in a `title` tooltip that a phone never shows. A refusal now says so and
+// carries its reason in the text, which the sync panel displays.
+export function connectionStatus(q, online) {
+  if (!online) return ['amber', 'Offline', 'No network. Records are saved on this device.'];
+  if (q.running || q.pulling) return ['sky', 'Syncing\u2026', 'Exchanging records with the server'];
+  if (q.failed?.length) {
+    const reason = q.failed[0]?.last_error;
+    const n = q.failed.length;
+    return ['red', 'Records refused',
+      `The server refused ${n} record${n === 1 ? '' : 's'}${reason ? `: ${reason}` : '.'}`];
+  }
+  if (q.pullError || (q.lastError && q.pending)) {
+    return ['red', 'Server unreachable', q.pullError ?? q.lastError];
+  }
+  return ['emerald', 'Online', q.lastPullAt ? 'Connected to the server' : 'Network available'];
+}
 
 function useConnection(online) {
-  const q = useQueueState();
-  return !online ? ['amber', 'Offline', 'No network. Records are saved on this device.']
-    : q.running || q.pulling ? ['sky', 'Syncing…', 'Exchanging records with the server']
-      : q.pullError || (q.lastError && q.pending) ? ['red', 'Server unreachable', q.pullError ?? q.lastError]
-        : ['emerald', 'Online', q.lastPullAt ? 'Connected to the server' : 'Network available'];
+  return connectionStatus(useQueueState(), online);
 }
 
 function ConnectionIndicator({ online }) {
