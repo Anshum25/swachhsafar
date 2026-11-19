@@ -13,10 +13,25 @@ export const STAGE_COUNT = 5;
 export const attendanceOut = (r) => ({
   id: r.id, journey_id: r.journey_id, division_id: r.division_id, employee_id: r.employee_id, stage: r.stage,
   device_timestamp: r.device_timestamp, server_timestamp: r.server_timestamp, latitude: r.latitude, longitude: r.longitude,
-  gps_accuracy_m: r.gps_accuracy_m, photo_media_id: r.photo_media_id, group_submission_id: null, created_by_id: r.recorded_by_id,
+  gps_accuracy_m: r.gps_accuracy_m, photo_media_id: r.photo_media_id, group_submission_id: r.group_submission_id ?? null, identified_by: r.identified_by ?? null, created_by_id: r.recorded_by_id,
   verification_status: r.verification_status, verified_by_id: null, review_remarks: null,
   origin: r.origin, sync_status: r.sync_status, last_sync_error: r.last_sync_error,
 });
+// How a capture established identity, as the server records it (attendance._check_identity).
+const identifiedBy = (p) => (p.group_photo ? 'group_photo'
+  : typeof p.fingerprint_score === 'number' ? 'fingerprint' : typeof p.face_distance === 'number' ? 'face' : null);
+
+// The employee's own next stage from a status row (server or local grid): the first stage that is
+// neither taken, saved on this device, nor in `extraDone` (stages just submitted and not yet reloaded).
+// Progress is per employee, so a group capture asks this of each member separately. null = all done.
+export function nextStageFor(row, extraDone = () => false) {
+  for (const c of row.stages ?? []) {
+    if (c.status === 'taken' || c.status === 'pending' || extraDone(c.stage)) continue;
+    return c.stage;
+  }
+  return null;
+}
+
 const LIVE = "sync_status NOT IN ('rejected', 'conflict')";
 
 // Cell states for one employee. `taken` = acknowledged by the server, `pending` = saved on this device.
@@ -111,7 +126,11 @@ export function createAttendanceRepository(db, { journeys, masters }) {
       const row = {
         id: p.id, journey_id: journey.id, division_id: journey.division_id, employee_id: p.employee_id, stage, ...gps,
         device_timestamp: p.device_timestamp, captured_on: capturedOn, photo_media_id: p.photo_media_id ?? null,
-        recorded_by_id: actor?.id ?? null, origin: 'local', sync_status: 'pending', created_at: now, updated_at: now,
+        recorded_by_id: actor?.id ?? null,
+        // Written only when they carry something, so an ordinary capture inserts the same columns as before.
+        ...(p.group_submission_id ? { group_submission_id: p.group_submission_id } : {}),
+        ...(identifiedBy(p) ? { identified_by: identifiedBy(p) } : {}),
+        origin: 'local', sync_status: 'pending', created_at: now, updated_at: now,
       };
       return { row, divisionId: journey.division_id, statements: [insertStatement('attendance_records', row)] };
     },

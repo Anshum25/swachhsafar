@@ -686,4 +686,17 @@ const V11 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11];
+// v12: progressive group attendance. One group photograph records each person at their own next stage;
+// group_submission_id keeps those records associated, identified_by says how identity was established
+// (backend attendance.identified_by). Additive only: existing rows keep NULL.
+const V12 = {
+  version: 12,
+  name: 'attendance group capture',
+  statements: [
+    'ALTER TABLE attendance_records ADD COLUMN group_submission_id TEXT',
+    'ALTER TABLE attendance_records ADD COLUMN identified_by TEXT',
+    'CREATE INDEX idx_attendance_group ON attendance_records (group_submission_id) WHERE group_submission_id IS NOT NULL',
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12];
