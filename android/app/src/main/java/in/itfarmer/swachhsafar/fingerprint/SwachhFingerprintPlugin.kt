@@ -43,7 +43,7 @@ class SwachhFingerprintPlugin : Plugin() {
         const val VENDOR_ID = 0x34FC
         // Bumped with each matcher fix, and shown on screen when a template cannot be read, so it is
         // obvious whether the phone runs an APK that has the fix at all.
-        const val MATCHER_BUILD = 4
+        const val MATCHER_BUILD = 5
     }
 
     private lateinit var executor: ExecutorService
