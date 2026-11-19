@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.schemas.faces import FaceEnrollIn, FaceStatusOut
-from app.schemas.fingerprints import FingerprintEnrollIn, FingerprintStatusOut
+from app.schemas.fingerprints import FingerprintEnrollIn, FingerprintProfileOut, FingerprintStatusOut
 from app.services import faces, fingerprints
 from app.db import get_db
 from app.errors import Forbidden
@@ -143,6 +143,13 @@ def put_face(user_id: uuid.UUID, body: FaceEnrollIn, db: Session = Depends(get_d
 @users_router.get("/{user_id}/fingerprint", response_model=FingerprintStatusOut)
 def get_fingerprint(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return fingerprints.status(db, p, user_id)
+
+
+@users_router.get("/{user_id}/fingerprint/profile", response_model=FingerprintProfileOut)
+def get_fingerprint_profile(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """The employee's templates for a device verifying their attendance that has not synced them yet.
+    Same access rule as /sync/changes: only staff this user may record attendance for, and their own."""
+    return fingerprints.profile_for_verifier(db, p, user_id)
 
 
 @users_router.put("/{user_id}/fingerprint", response_model=FingerprintStatusOut)

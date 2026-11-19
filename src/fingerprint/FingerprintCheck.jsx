@@ -11,10 +11,24 @@ import { AlertIcon, CheckIcon, FingerprintIcon, Spinner } from '../components/Ic
 import { captureFinger, fingerLabel, matchFinger, scannerStatus } from './scanner.js';
 import { decideFingerprint } from './fingerprintMatch.js';
 
+// The phone holds no templates for this employee: ask the main database directly (registered after the
+// last sync), and keep what comes back so the next scan works offline too. Offline, or not registered /
+// not this user's staff on the server, it is null -- still "not registered", now for a checked reason.
+async function fetchProfile({ api, store, employeeId }) {
+  try {
+    const profile = await api.get(`/users/${employeeId}/fingerprint/profile`);
+    if (!profile?.fingers?.length) return null;
+    await store.masters.saveFingerprintProfile(profile).catch(() => {});
+    return profile;
+  } catch {
+    return null;
+  }
+}
+
 // { status, scan } where status is off | unavailable | ready | scanning | matched | mismatch |
 // not_enrolled | wrong_matcher | unreadable | error.
 export function useFingerprintCheck({ employeeId, enabled, threshold }) {
-  const { store } = useSession();
+  const { store, api } = useSession();
   const [state, setState] = useState({ status: enabled ? 'ready' : 'off' });
   const [device, setDevice] = useState({ supported: false, connected: false });
 
@@ -36,7 +50,8 @@ export function useFingerprintCheck({ employeeId, enabled, threshold }) {
   const scan = useCallback(async () => {
     setState({ status: 'scanning' });
     try {
-      const profile = await store.masters.getFingerprintProfile(employeeId);
+      const profile = await store.masters.getFingerprintProfile(employeeId)
+        ?? await fetchProfile({ api, store, employeeId });
       if (!profile) { setState({ status: 'not_enrolled' }); return; }
       const captured = await captureFinger({});
       const result = await matchFinger({ template: captured.template, profile });
@@ -45,7 +60,7 @@ export function useFingerprintCheck({ employeeId, enabled, threshold }) {
     } catch (e) {
       setState({ status: 'error', message: e.message });
     }
-  }, [employeeId, store, threshold]);
+  }, [api, employeeId, store, threshold]);
 
   return { ...state, device, scan };
 }
