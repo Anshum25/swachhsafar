@@ -273,3 +273,82 @@ describe('acknowledgement is atomic (outbox state and record state)', () => {
     expect(queue.getState().revision).toBeGreaterThan(before);
   });
 });
+
+// A 401 means this device's session is not accepted any more -- revoked, expired, or ended wholesale by
+// the migration that moved sign-in off Firebase. It says nothing about the record being sent, so these
+// tests pin down that the record survives it. Marking such a record "refused by the server" would turn an
+// afternoon of saved attendance into a list of rejections and blame the server for judging records it
+// never saw.
+describe('a session the server no longer accepts', () => {
+  const unauthorised = () => {
+    const api = fakeApi();
+    const post = api.post;
+    api.batchAttempts = 0;
+    api.post = async (path, body) => {
+      if (path === '/sync/batch') {
+        api.batchAttempts += 1;
+        throw new ApiError(401, 'session_revoked', 'Your session was ended. Sign in again.');
+      }
+      return post(path, body);
+    };
+    api.get = async (path) => {
+      if (path === '/sync/changes') throw new ApiError(401, 'session_revoked', 'Your session was ended. Sign in again.');
+      throw new ApiError(404, 'not_found', 'Media not found');
+    };
+    return api;
+  };
+
+  it('keeps the record waiting instead of marking it refused', async () => {
+    const { db, queue } = await setup({ api: unauthorised() });
+    const capture = attendancePayload();
+    const out = await queue.submit(capture);
+    expect(out.status).not.toBe('failed');
+    expect(await statuses(db)).toEqual(['pending']);
+    expect(queue.getState().failed).toHaveLength(0);
+    expect(queue.getState().pending).toBe(1);
+  });
+
+  it('asks for a sign-in rather than blaming the server', async () => {
+    const { queue } = await setup({ api: unauthorised() });
+    await queue.submit(attendancePayload());
+    await queue.flush();
+    expect(queue.getState().authRequired).toBe(true);
+  });
+
+  it('stops at the first refusal instead of running the retry count up on every record', async () => {
+    const api = unauthorised();
+    const { db, queue } = await setup({ api });
+    await queue.submit(attendancePayload());
+    await queue.submit(attendancePayload({ stage: 2 }));
+    expect(await statuses(db)).toEqual(['pending', 'pending']);
+    api.batchAttempts = 0;
+    await queue.flush();
+    // Two records waiting, one attempt: the second would have been refused for the same reason.
+    expect(api.batchAttempts).toBe(1);
+  });
+
+  it('reports it from a pull as well', async () => {
+    const { queue } = await setup({ api: unauthorised() });
+    const r = await queue.pull();
+    expect(r.status).toBe('auth');
+    expect(queue.getState().authRequired).toBe(true);
+  });
+
+  it('clears once the session works again, and the waiting record goes up untouched', async () => {
+    const { db, store, queue } = await setup({ api: unauthorised() });
+    await queue.submit(attendancePayload());
+    expect(queue.getState().authRequired).toBe(true);
+    expect(await statuses(db)).toEqual(['pending']);
+
+    // The same device after signing in again: a queue over the same database, talking to a server that
+    // accepts it. Nothing had to be retried by hand and nothing was lost.
+    const working = fakeApi();
+    const after = createOperationsQueue({
+      db, store, getApi: async () => working, isOnline: () => true, now: () => NOW.toISOString(),
+      getActor: () => ({ actor: actorFor(IDS.supervisor) }),
+    });
+    await after.flush();
+    expect(await statuses(db)).toEqual(['completed']);
+    expect(after.getState().authRequired).toBe(false);
+  });
+});

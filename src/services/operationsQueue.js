@@ -35,6 +35,12 @@ export function createOperationsQueue({
   const currentOwner = () => getActor()?.actor?.id ?? null;
   // getApi() reaches Firebase for a token and can reject. Both callers awaited it outside their try
   // blocks, so a rejection escaped runOnce/pullOnce and left the whole queue inert with no sign of why.
+  // The server answering 401 means this device's session is not accepted any more -- revoked by an
+  // administrator, expired, or ended wholesale by a migration. It says nothing whatever about the record
+  // being sent, so the record must not be marked refused: it stays pending and goes up untouched after
+  // the next sign-in. Treating it as a refusal would turn an afternoon of saved attendance into a list of
+  // rejected records and tell the user the server had judged them, which it had not.
+  const isAuthFailure = (e) => e?.status === 401;
   const apiOrNull = async () => {
     try {
       return (await getApi()) ?? null;
@@ -134,6 +140,10 @@ export function createOperationsQueue({
       await fail(result.outcome === 'conflict' ? 'conflict' : 'rejected', message, { code: result.error?.code ?? null, detail: result.error ?? null });
       return { status: 'failed', message };
     } catch (e) {
+      if (isAuthFailure(e)) {
+        await retry(e.message);
+        return { status: 'auth', message: e.message };
+      }
       if (e.retryable === false || e instanceof LocalRuleError) {
         await fail('rejected', e.message, { code: e.code ?? null });
         return { status: 'failed', message: e.message };
@@ -158,10 +168,18 @@ export function createOperationsQueue({
     emit({ running: true, lastError: null });
     const device = await deviceId();
     const results = {};
-    for (const entry of entries) results[entry.id] = await processEntry(api, entry, device);
+    let unauthenticated = false;
+    for (const entry of entries) {
+      const result = await processEntry(api, entry, device);
+      results[entry.id] = result;
+      // Every remaining record would be refused for the same reason, so stop rather than running up the
+      // retry count on all of them.
+      if (result.status === 'auth') { unauthenticated = true; break; }
+    }
     const problem = Object.values(results).find((r) => r.status === 'retry' || r.status === 'failed');
     const settled = Object.values(results).some((r) => r.status === 'synced' || r.status === 'failed');
-    emit({ running: false, lastError: problem?.message ?? null, ...(settled ? { revision: state.revision + 1 } : {}) });
+    emit({ running: false, authRequired: unauthenticated, lastError: problem?.message ?? null,
+      ...(settled ? { revision: state.revision + 1 } : {}) });
     await refresh();
     return results;
   }
@@ -190,6 +208,10 @@ export function createOperationsQueue({
       return { status: result.ok ? 'pulled' : 'partial', ...result };
     } catch (e) {
       await local.syncState.recordCheckpointError(CHANGES_SCOPE, { error: e.message, now: now() });
+      if (isAuthFailure(e)) {
+        emit({ authRequired: true });
+        return { status: 'auth', message: e.message };
+      }
       return { status: 'error', message: e.message };
     } finally {
       emit({ pulling: false });
