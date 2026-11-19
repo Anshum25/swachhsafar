@@ -62,6 +62,14 @@ object IsoTemplateMatcher {
     private const val ISO_ANGLE_STEPS = 256.0
     private const val ANSI_ANGLE_STEPS = 180.0
 
+    /** How a stored angle may need re-reading: as written; clockwise instead; and each direction with
+     *  the other standard's angle unit (a record laid out as one standard but coded in the other's). */
+    private val ANGLE_VARIANTS = doubleArrayOf(
+        1.0, -1.0,
+        ISO_ANGLE_STEPS / ANSI_ANGLE_STEPS, -ISO_ANGLE_STEPS / ANSI_ANGLE_STEPS,
+        ANSI_ANGLE_STEPS / ISO_ANGLE_STEPS, -ANSI_ANGLE_STEPS / ISO_ANGLE_STEPS,
+    )
+
     /** Vendor variants that do not follow a standard header. No size is trusted from these. */
     private val FALLBACK_VIEW_HEADERS = intArrayOf(28, 32, 34)
 
@@ -217,13 +225,34 @@ object IsoTemplateMatcher {
         val candidate = parseIso19794(candidateBytes)
         if (probe.isEmpty() || candidate.isEmpty()) return Result(0.0, 0, 0)
 
-        val distToleranceSq = DIST_TOLERANCE_PX * DIST_TOLERANCE_PX
-        val angleTolerance = Math.toRadians(ANGLE_TOLERANCE_DEG)
         // The smaller print is the ceiling: a partial press cannot be asked to match points it never
         // recorded, and dividing by the larger would punish it for the other print being fuller.
         val comparable = min(probe.size, candidate.size)
         if (comparable <= 0) return Result(0.0, 0, 0)
 
+        // The angle convention is tried rather than assumed. The standard says counter-clockwise in
+        // 1.40625-degree steps (2-degree steps for ANSI), but a scanner that counts the other way, or in
+        // the other unit, turns every alignment the wrong way: on the AST300 a genuine press lined up 6
+        // points of 25 -- no better than chance. Both directions in each unit are tried, and the best
+        // alignment is the answer. Positions are never changed, only how angles are read, so a different
+        // finger gains nothing from it but a few more chances (see the impostor test).
+        var maxMatched = 0
+        for (variant in ANGLE_VARIANTS) {
+            val p = if (variant == 1.0) probe else probe.map { it.copy(theta = normalizeAngle(it.theta * variant)) }
+            val c = if (variant == 1.0) candidate else candidate.map { it.copy(theta = normalizeAngle(it.theta * variant)) }
+            maxMatched = maxOf(maxMatched, align(p, c, comparable))
+            if (maxMatched >= comparable) break
+        }
+
+        if (maxMatched < MIN_MATCHED_MINUTIAE) return Result(0.0, maxMatched, comparable)
+        val score = min(100.0, (maxMatched.toDouble() / comparable.toDouble()) * 100.0)
+        return Result(kotlin.math.round(score * 10.0) / 10.0, maxMatched, comparable)
+    }
+
+    /** Most minutiae of [probe] that land on [candidate] under any single anchor alignment. */
+    private fun align(probe: List<Minutia>, candidate: List<Minutia>, comparable: Int): Int {
+        val distToleranceSq = DIST_TOLERANCE_PX * DIST_TOLERANCE_PX
+        val angleTolerance = Math.toRadians(ANGLE_TOLERANCE_DEG)
         // Every pair of minutiae is tried as the alignment anchor, and the best alignment wins. Trying only
         // the eight "strongest" of each print missed the true pair whenever a press put different points
         // at the top of the quality order -- which on a real scanner is most presses -- and scored 0.
@@ -281,9 +310,7 @@ object IsoTemplateMatcher {
             }
         }
 
-        if (maxMatched < MIN_MATCHED_MINUTIAE) return Result(0.0, maxMatched, comparable)
-        val score = min(100.0, (maxMatched.toDouble() / comparable.toDouble()) * 100.0)
-        return Result(kotlin.math.round(score * 10.0) / 10.0, maxMatched, comparable)
+        return maxMatched
     }
 
     private fun normalizeAngle(angle: Double): Double {

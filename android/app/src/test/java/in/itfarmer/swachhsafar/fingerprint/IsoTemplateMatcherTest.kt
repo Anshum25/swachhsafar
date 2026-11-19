@@ -200,6 +200,27 @@ class IsoTemplateMatcherTest {
         }
     }
 
+    // On the AST300 a genuine press lined up 6 points of 25: its angles do not follow the convention the
+    // matcher assumed. A scanner that counts angles clockwise, or codes 2-degree units in an ISO-layout
+    // record, must still be matched.
+    @Test
+    fun `a genuine press matches whichever way the scanner codes its angles`() {
+        val enrolled = randomFinger(seed = 51).map { (x, y, a) -> Triple(x + 200, y + 200, a) }
+        val conventions = mapOf<String, (Double) -> Double>(
+            "clockwise" to { a -> -a },
+            "2-degree units in ISO layout" to { a -> a * 180.0 / 256.0 },
+            "clockwise, 2-degree units" to { a -> -a * 180.0 / 256.0 },
+        )
+        for ((name, code) in conventions) {
+            for (deg in listOf(-15.0, 10.0)) {
+                val again = pressedAgain(enrolled, Math.toRadians(deg), dx = 15, dy = 10, keep = 25, seed = 61)
+                val recorded = { pts: List<Triple<Int, Int, Double>> -> pts.map { (x, y, a) -> Triple(x, y, code(a)) } }
+                val score = IsoTemplateMatcher.match(template(recorded(again)), template(recorded(enrolled)))
+                assertTrue("$name, turned $deg degrees, scored only $score", score >= 40.0)
+            }
+        }
+    }
+
     @Test
     fun `an identical capture is a perfect score`() {
         val t = template(randomFinger(3))
