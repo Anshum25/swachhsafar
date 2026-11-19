@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     login_failure_window_seconds: int = 900
     session_idle_days: int = 30         # a session unused this long is refused (offline use is bounded by policy)
 
+    # ---- over-the-air web bundle releases (app/services/releases.py) ---------------------------------
+    # Shared secret the CI pipeline sends as X-Release-Token to publish a bundle and to point a channel at
+    # it. Unset means publishing is closed: the endpoints answer "not configured" rather than running open.
+    release_publish_token: SecretStr | None = None
+    web_bundle_max_bytes: int = 60 * 1024 * 1024          # the zip; a current build is about 6 MB
+    web_bundle_max_unpacked_bytes: int = 200 * 1024 * 1024  # what it may expand to on the phone
+
     # ---- network risk (VPN / proxy) ------------------------------------------------------------------
     # "cidr": a local file of CIDR ranges (one per line) known to be VPN/proxy/hosting; "http": a JSON IP
     # reputation API (GET {url}/{ip} with a bearer key returning {"vpn": bool, "proxy": bool, "hosting": bool}).

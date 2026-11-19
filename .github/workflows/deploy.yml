@@ -5,10 +5,15 @@
 #   Secrets:   DEPLOY_SSH_KEY      private key whose public half is in swachhdeploy@server authorized_keys
 #              DEPLOY_KNOWN_HOSTS  output of: ssh-keyscan 76.13.243.27
 #              ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#              RELEASE_PUBLISH_TOKEN  shared secret for publishing over-the-air web bundles; must equal
+#                                 the backend's RELEASE_PUBLISH_TOKEN (docs/OTA_UPDATES.md)
 #                                  the release signing key; the keystore is generated locally and never committed
 #   Variables: (no Firebase web config any more: sign-in is the backend's own),
 #              VITE_GOOGLE_MAPS_API_KEY (browser key, referrer-restricted; must allow https://localhost for the APK)
 #              DEPLOY_HOST (76.13.243.27), BUILD_APK ('true' to build and publish the Android app)
+#              PUBLISH_BUNDLE ('true' to publish the web bundle over the air after a deploy),
+#              MIN_NATIVE_VERSION (oldest APK allowed to run the bundle; raise it with any native change),
+#              RELEASE_CHANNEL_ROLLOUT (optional, 1-100: share of phones the release applies to),
 #              APK_API_BASE_URL (optional) the API the APK talks to; defaults to https://ehk.itfarmer.in/api/v1.
 #                               The APK is served from https://localhost by its WebView, so unlike the PWA it
 #                               cannot use a relative /api/v1, and that origin must be in the backend's CORS_ORIGINS.
@@ -140,6 +145,52 @@ jobs:
             app.apk
             apk.json
           retention-days: 30
+
+  # The over-the-air web bundle: the same web code as build-apk, built with the same absolute API base,
+  # zipped and handed to the server. This is what reaches phones without a Play Store release -- screens,
+  # business logic, fixes, new features. Anything under android/ still needs build-apk and an install.
+  #
+  # Published, not released: the upload records the bundle, and pointing the channel at it is a separate
+  # call. RELEASE_CHANNEL_ROLLOUT decides how much of the fleet the pointer applies to (10 = watch it on a
+  # tenth of the phones first); unset means everybody. With PUBLISH_BUNDLE unset, this job does not run and
+  # the pipeline behaves exactly as it did before.
+  publish-bundle:
+    if: vars.PUBLISH_BUNDLE == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [test-web, test-backend, deploy]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      # Built with the APK's environment, not the PWA's: the WebView serves from https://localhost, so the
+      # bundle must carry the absolute API base or every request lands on the app's own files. Publishing
+      # refuses a bundle whose base is relative, which is this mistake caught rather than shipped.
+      - name: Build the web bundle (APK flavour)
+        env:
+          VITE_GOOGLE_MAPS_API_KEY: ${{ vars.VITE_GOOGLE_MAPS_API_KEY }}
+          VITE_DEMO_MODE: 'false'
+          VITE_API_BASE_URL: ${{ vars.APK_API_BASE_URL || 'https://ehk.itfarmer.in/api/v1' }}
+          VITE_BUILD_SHA: ${{ github.sha }}
+        run: npx vite build --outDir bundle-web
+      - name: Refuse secrets or demo mode in the bundle
+        run: |
+          ! grep -rlE 'BEGIN (RSA )?PRIVATE KEY|"private_key"|OTP_PEPPER|DATABASE_URL|POSTGRES_PASSWORD' bundle-web
+          ! grep -rq 'Demo mode: records are not saved' bundle-web/assets
+          test -s bundle-web/index.html && test -s bundle-web/serviceWorker.js
+          ls bundle-web/assets/*.wasm >/dev/null
+      # MIN_NATIVE_VERSION is the oldest APK allowed to run this bundle. Raise it in the same commit that
+      # adds a native plugin method the web code starts calling, or phones on the older APK will be handed
+      # a bundle that cannot start -- and a phone whose bundle does not start cannot ask for a better one.
+      - name: Publish and release
+        env:
+          RELEASE_API_BASE: ${{ vars.APK_API_BASE_URL || 'https://ehk.itfarmer.in/api/v1' }}
+          RELEASE_PUBLISH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+          VITE_API_BASE_URL: ${{ vars.APK_API_BASE_URL || 'https://ehk.itfarmer.in/api/v1' }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          node scripts/publish-bundle.mjs             --dir bundle-web             --build ${{ github.run_number }}             --min-native "${{ vars.MIN_NATIVE_VERSION || '0.0.0' }}"             --rollout "${{ vars.RELEASE_CHANNEL_ROLLOUT || 100 }}"             --notes "${{ github.event.head_commit.message }}"             --release
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !cancelled() && needs.build-web.result == 'success' && needs.build-apk.result != 'failure'

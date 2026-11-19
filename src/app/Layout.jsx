@@ -12,7 +12,7 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
 import { ROLE_NAMES, useQueueState, useSession } from './session.jsx';
 import { MODULES } from './modules.js';
 import { DEMO_MODE } from '../services/demoApi.js';
-import { AppUpdateBanner, InstallBanner, UpdateBanner } from '../components/PwaPanels.jsx';
+import { AppUpdateBanner, BundleUpdateBanner, InstallBanner, UpdateBanner } from '../components/PwaPanels.jsx';
 import { requestPersistence } from '../pwa/pwaState.js';
 import { BUILD_SHA } from '../pwa/appUpdate.js';
 
@@ -304,6 +304,7 @@ export default function Layout({ path, children }) {
               </p>
             )}
             <UpdateBanner />
+            <BundleUpdateBanner />
             <AppUpdateBanner />
             <InstallBanner />
             {me.offline && <p className="bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6">Signed in offline with your cached profile. Permissions will refresh when you reconnect.</p>}

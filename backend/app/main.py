@@ -2,7 +2,9 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api.v1 import complaints, feedback, geo, inventory, journeys, media, operations, org, reports, security, sync, trains
+from app.api.v1 import (
+    complaints, feedback, geo, inventory, journeys, media, operations, org, releases, reports, security, sync, trains,
+)
 from app.config import get_settings
 from app.db import WriteIntentMiddleware, get_engine
 from app.errors import install_error_handlers
@@ -33,7 +35,7 @@ def create_app() -> FastAPI:
         trains.router, trains.coaches_router, journeys.router, journeys.staff_router,
         operations.attendance_router, operations.inspections_router, feedback.router, complaints.router,
         inventory.router, reports.router, reports.dashboard_router, sync.router, media.router,
-        security.signin_router, security.security_router, geo.router,
+        security.signin_router, security.security_router, geo.router, releases.router,
     ):
         v1.include_router(router)
     app.include_router(v1)

@@ -11,6 +11,13 @@
     "SwachhFingerprint": {
       "scannerVendorId": 13561,
       "defaultTimeoutMs": 15000
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "appReadyTimeout": 20000,
+      "responseTimeout": 20,
+      "resetWhenUpdate": true,
+      "directUpdate": false
     }
   }
 }

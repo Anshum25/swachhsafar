@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useQueueState } from '../app/session.jsx';
 import { dismissInstall, installDismissed, installInstructions, isStandalone, promptInstall, pwa, usePwa } from '../pwa/pwaState.js';
 import { checkAppUpdate } from '../pwa/appUpdate.js';
+import { applyBundleUpdate, checkBundleUpdate } from '../pwa/bundleUpdate.js';
 import { isNativeApp } from '../security/native.js';
 
 // Shown at most once per 30 days while the app is not installed: an Install button when the browser
@@ -51,8 +52,58 @@ export function UpdateBanner() {
   );
 }
 
+// Android app only: is a newer web bundle published? This is the usual way the app changes now -- screens,
+// logic and fixes all live in the bundle -- so it is asked first, and the APK question below only matters
+// for the few releases that change native code.
+//
+// The download runs by itself, in the background, and the bundle is staged for the next cold start: no
+// prompt, nothing to agree to, and nothing reloads while a form is open. The banner appears only once a
+// bundle is ready, and says what will happen rather than asking for permission to do it.
+function useBundleUpdate() {
+  const [state, setState] = useState(null);   // { bundleId, version } once staged
+  useEffect(() => {
+    if (!isNativeApp()) return undefined;
+    let cancelled = false;
+    const look = async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      const update = await checkBundleUpdate();
+      if (cancelled || !update) return;
+      const result = await applyBundleUpdate(update);
+      // `immediate` means the updater has already reloaded the WebView, so there is nothing to announce.
+      if (!cancelled && result.applied && !result.immediate) {
+        setState({ bundleId: update.bundleId, version: update.version });
+      }
+    };
+    look();
+    window.addEventListener('online', look);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', look);
+    };
+  }, []);
+  return state;
+}
+
+export function BundleUpdateBanner() {
+  const staged = useBundleUpdate();
+  const { pending } = useQueueState();
+  if (!staged) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-3 bg-sky-700 px-4 py-2 text-sm text-white sm:px-6" role="status" data-testid="bundle-update-banner">
+      <span className="flex-1">
+        Swachh Safar {staged.version} is downloaded and starts the next time you open the app.
+        {pending ? ` Your ${pending} unsynced record(s) are stored on this device and are kept.` : ''}
+      </span>
+    </div>
+  );
+}
+
 // Android app only: is a newer APK published? Asked on start and again whenever the device comes back
 // online. Offline, or in the browser, there is nothing to ask and nothing is shown.
+//
+// Since web bundles ship over the air, this is now only for a release that changes native code -- a new
+// plugin method, a permission, a Capacitor upgrade. The server withholds a bundle that needs an APK the
+// phone does not have (min_native_version), so what is left for this banner is exactly that case.
 function useAppUpdate() {
   const [update, setUpdate] = useState(null);
   useEffect(() => {
