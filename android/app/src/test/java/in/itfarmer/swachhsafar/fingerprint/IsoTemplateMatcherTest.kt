@@ -18,34 +18,70 @@ import kotlin.random.Random
  */
 class IsoTemplateMatcherTest {
 
-    /**
-     * Builds a finger minutiae record the way a scanner's SDK does.
-     *
-     * `viewHeader` is where the 4-byte finger view header sits: 28 is ISO/IEC 19794-2:2005, and the other
-     * values are dialects of the same record that vendors ship. The minutiae count is the LAST byte of
-     * that header, not the reserved byte before it -- an earlier version of these tests built the record
-     * with the same mistake the parser made, so they proved only that the two agreed with each other.
-     */
-    private fun template(minutiae: List<Triple<Int, Int, Double>>, viewHeader: Int = 28): ByteArray {
-        val out = ByteArray(viewHeader + 4 + minutiae.size * 6 + 2)
-        out[0] = 0x46; out[1] = 0x4D; out[2] = 0x52; out[3] = 0x00  // "FMR\0"
-        out[4] = 0x32; out[5] = 0x30; out[6] = 0x00                 // version "20"
-        out[18] = 0x02; out[19] = 0x00                              // image size X = 512
-        out[20] = 0x02; out[21] = 0x00                              // image size Y = 512
-        out[26] = 1                                                 // one finger view
-        out[viewHeader] = 1                                         // finger position
-        out[viewHeader + 1] = 0                                     // view number / impression type
-        out[viewHeader + 2] = 60                                    // finger quality
-        out[viewHeader + 3] = minutiae.size.toByte()                // number of minutiae
-        var i = viewHeader + 4
+    private enum class Dialect { ISO_2005, ANSI_378, ISO_2011, VENDOR_28, VENDOR_32 }
+
+    private fun put16(out: ByteArray, at: Int, v: Int) { out[at] = (v shr 8).toByte(); out[at + 1] = v.toByte() }
+
+    private fun putMinutiae(out: ByteArray, at: Int, minutiae: List<Triple<Int, Int, Double>>, stride: Int) {
+        var i = at
         for ((x, y, angle) in minutiae) {
             val a = ((angle / (2 * Math.PI)) * 256).toInt() and 0xFF
             out[i++] = ((x shr 8) and 0x3F).toByte(); out[i++] = (x and 0xFF).toByte()
             out[i++] = ((y shr 8) and 0x3F).toByte(); out[i++] = (y and 0xFF).toByte()
             out[i++] = a.toByte()
-            out[i++] = 80.toByte()
+            if (stride == 6) out[i++] = 80.toByte()
         }
-        return out
+    }
+
+    /**
+     * Builds a finger minutiae record byte for byte as the standard lays it out -- in particular with the
+     * scanner's resolution (197 px/cm, i.e. 500 dpi) where it really is. An earlier version of these tests
+     * put the image size where the resolution goes, the same mistake the parser made, so they proved only
+     * that the two agreed with each other while every real template parsed to nothing.
+     */
+    private fun template(minutiae: List<Triple<Int, Int, Double>>, dialect: Dialect = Dialect.ISO_2005): ByteArray {
+        val n = minutiae.size
+        fun magic(out: ByteArray, version: String) {
+            out[0] = 0x46; out[1] = 0x4D; out[2] = 0x52; out[3] = 0x00                // "FMR\0"
+            version.forEachIndexed { k, c -> out[4 + k] = c.code.toByte() }
+        }
+        fun view(out: ByteArray, at: Int) { out[at] = 1; out[at + 1] = 0; out[at + 2] = 60; out[at + 3] = n.toByte() }
+        return when (dialect) {
+            Dialect.ISO_2005 -> ByteArray(24 + 4 + n * 6 + 2).also { out ->
+                magic(out, " 20\u0000")
+                put16(out, 10, out.size)                                                  // record length (4 bytes at 8)
+                put16(out, 14, 1000); put16(out, 16, 1000)                                // image size
+                put16(out, 18, 197); put16(out, 20, 197)                                  // resolution, px/cm
+                out[22] = 1                                                               // one finger view
+                view(out, 24); putMinutiae(out, 28, minutiae, 6)
+            }
+            Dialect.ANSI_378 -> ByteArray(26 + 4 + n * 6 + 2).also { out ->
+                magic(out, " 20\u0000")
+                put16(out, 8, out.size)                                                   // record length (2 bytes)
+                put16(out, 16, 1000); put16(out, 18, 1000)                                // image size
+                put16(out, 20, 197); put16(out, 22, 197)                                  // resolution
+                out[24] = 1
+                view(out, 26); putMinutiae(out, 30, minutiae, 6)
+            }
+            Dialect.ISO_2011 -> ByteArray(52 + n * 6).also { out ->
+                magic(out, "030\u0000")
+                put16(out, 12, 1)                                                         // one representation
+                out[33] = 1                                                               // one quality block (34..38)
+                out[39] = 1                                                               // finger position
+                put16(out, 41, 197); put16(out, 43, 197)                                  // sampling rates
+                put16(out, 46, 1000); put16(out, 48, 1000)                                // image size
+                out[50] = 0x61                                                            // 6-byte minutiae
+                out[51] = n.toByte()
+                putMinutiae(out, 52, minutiae, 6)
+            }
+            Dialect.VENDOR_28, Dialect.VENDOR_32 -> {
+                val vh = if (dialect == Dialect.VENDOR_28) 28 else 32
+                ByteArray(vh + 4 + n * 6 + 2).also { out ->
+                    magic(out, " 20\u0000")
+                    view(out, vh); putMinutiae(out, vh + 4, minutiae, 6)
+                }
+            }
+        }
     }
 
     private fun randomFinger(seed: Int, count: Int = 32): List<Triple<Int, Int, Double>> {
@@ -107,12 +143,24 @@ class IsoTemplateMatcherTest {
     // The failure this was found by: every comparison scored 0, for every pair of people, because the
     // count was read from the reserved byte -- always zero -- and the record parsed to no minutiae at all.
     @Test
-    fun `the minutiae are found, not assumed to start at one fixed offset`() {
-        for (viewHeader in listOf(28, 26, 30, 32)) {
+    fun `the minutiae are found in every dialect the scanner may emit`() {
+        for (dialect in Dialect.values()) {
             val points = randomFinger(seed = 5)
-            val parsed = IsoTemplateMatcher.parseIso19794(template(points, viewHeader))
-            assertEquals("view header at $viewHeader", points.size, parsed.size)
+            val parsed = IsoTemplateMatcher.parseIso19794(template(points, dialect))
+            assertEquals("$dialect", points.size, parsed.size)
         }
+    }
+
+    // The failure seen on phones: "registered in a form this scanner cannot read" for everyone. An ISO
+    // 2005 record carries its resolution (197 px/cm) where the parser looked for the image size, so every
+    // minutia beyond 197 px was "outside the image" and the record parsed to nothing.
+    @Test
+    fun `minutiae beyond the resolution value are not mistaken for points outside the image`() {
+        val points = randomFinger(seed = 8).map { (x, y, a) -> Triple(x + 250, y + 250, a) }
+        assertTrue(points.all { it.first > 197 })
+        assertEquals("every minutia read", points.size, IsoTemplateMatcher.parseIso19794(template(points)).size)
+        val again = pressedAgain(points, rotation = 0.1, dx = 10, dy = 5, keep = 28, seed = 3)
+        assertTrue(IsoTemplateMatcher.match(template(again), template(points)) >= 40.0)
     }
 
     @Test
@@ -127,7 +175,7 @@ class IsoTemplateMatcherTest {
     fun `the same finger still matches when the two records are in different dialects`() {
         val enrolled = randomFinger(seed = 9)
         val again = pressedAgain(enrolled, rotation = 0.15, dx = 12, dy = -8, keep = 27, seed = 13)
-        val score = IsoTemplateMatcher.match(template(again, 26), template(enrolled, 28))
+        val score = IsoTemplateMatcher.match(template(again, Dialect.ANSI_378), template(enrolled, Dialect.ISO_2005))
         assertTrue("a genuine press across dialects scored only $score", score >= 40.0)
     }
 
