@@ -38,17 +38,38 @@ if ! git diff --quiet "$prev" "$SHA" -- backend/pyproject.toml; then
 fi
 
 # 3. Restart (ExecStartPre runs migrations) and health check; roll back the backend if it does not come up.
-systemctl restart swachhsafar-api
+#
+# `|| true` is load-bearing. Under `set -e` a unit that fails to start ends this script on this line --
+# before the health check below, so the rollback never ran and the diagnostics never printed. That is
+# exactly how a bad release left the API down with nothing to go on but "the control process exited".
+# The restart's own result is not the signal anyway; whether /health answers is.
+systemctl restart swachhsafar-api || log "systemctl restart reported failure; checking health anyway"
 ok=0
 for _ in $(seq 1 30); do
   curl -fsS -m 3 http://127.0.0.1:8010/health >/dev/null 2>&1 && { ok=1; break; }
   sleep 1
 done
 if [[ $ok -ne 1 ]]; then
-  log "API unhealthy after update: rolling back backend to $prev (frontend not changed)"
+  # The reason first, and in the deploy output, so whoever is reading CI can see what actually broke
+  # instead of having to get onto the server for it.
+  log "API did not come up at $SHA. Last 60 log lines:"
+  journalctl -u swachhsafar-api -n 60 --no-pager || true
+  log "rolling back backend to $prev (frontend not changed)"
   git checkout -q -B main "$prev"
   systemctl restart swachhsafar-api || true
-  journalctl -u swachhsafar-api -n 30 --no-pager || true
+  back=0
+  for _ in $(seq 1 30); do
+    curl -fsS -m 3 http://127.0.0.1:8010/health >/dev/null 2>&1 && { back=1; break; }
+    sleep 1
+  done
+  # A rollback that does not come up either is the serious case: say so plainly rather than leaving it
+  # to be inferred from a non-zero exit. A database migrated forward can do this, and it needs a human.
+  if [[ $back -eq 1 ]]; then
+    log "rolled back to $prev and the API is healthy again"
+  else
+    log "ROLLBACK ALSO UNHEALTHY: the API is DOWN at $prev. Last 60 log lines:"
+    journalctl -u swachhsafar-api -n 60 --no-pager || true
+  fi
   exit 1
 fi
 log "API healthy"
