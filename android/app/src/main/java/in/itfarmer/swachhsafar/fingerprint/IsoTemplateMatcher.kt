@@ -51,11 +51,16 @@ object IsoTemplateMatcher {
      * outside the image, the record was discarded, and every comparison reported no minutiae at all --
      * "registered in a form this scanner cannot read", for every employee, however often re-registered.
      */
+    // (size offset, view header offset, angle steps per full circle). ISO codes a minutia's angle in
+    // 1.40625-degree steps (256 to the circle); ANSI 378 in 2-degree steps (180 to the circle). Read with
+    // the wrong unit, every angle past a few degrees is off by more than the angle tolerance.
     private val STANDARD_LAYOUTS = listOf(
-        14 to 24, // ISO 19794-2:2005
-        16 to 26, // ANSI 378-2004
-        20 to 30, // ANSI 378-2004, long record length
+        Triple(14, 24, ISO_ANGLE_STEPS), // ISO 19794-2:2005
+        Triple(16, 26, ANSI_ANGLE_STEPS), // ANSI 378-2004
+        Triple(20, 30, ANSI_ANGLE_STEPS), // ANSI 378-2004, long record length
     )
+    private const val ISO_ANGLE_STEPS = 256.0
+    private const val ANSI_ANGLE_STEPS = 180.0
 
     /** Vendor variants that do not follow a standard header. No size is trusted from these. */
     private val FALLBACK_VIEW_HEADERS = intArrayOf(28, 32, 34)
@@ -101,10 +106,10 @@ object IsoTemplateMatcher {
         // size trusted at all. An exact fit -- the minutiae ending the record, bar the 2-byte extended
         // data length -- is the layout this record is actually in; anything else is only a candidate.
         var best: List<Minutia> = emptyList()
-        val attempts = STANDARD_LAYOUTS.map { (sizeAt, view) -> Triple(view, read16(bytes, sizeAt), read16(bytes, sizeAt + 2)) } +
-            FALLBACK_VIEW_HEADERS.map { Triple(it, -1, -1) }
-        for ((viewHeader, w, h) in attempts) {
-            val (minutiae, fits) = tryView(bytes, viewHeader, w, h) ?: continue
+        val attempts = STANDARD_LAYOUTS.map { (sizeAt, view, steps) -> listOf(view, read16(bytes, sizeAt), read16(bytes, sizeAt + 2), steps.toInt()) } +
+            FALLBACK_VIEW_HEADERS.map { listOf(it, -1, -1, ISO_ANGLE_STEPS.toInt()) }
+        for ((viewHeader, w, h, steps) in attempts) {
+            val (minutiae, fits) = tryView(bytes, viewHeader, w, h, steps.toDouble()) ?: continue
             if (fits) return minutiae.sortedByDescending { it.quality }
             if (minutiae.size > best.size) best = minutiae
         }
@@ -113,7 +118,7 @@ object IsoTemplateMatcher {
     }
 
     /** The minutiae under the view header at [viewHeader], and whether they end the record exactly. */
-    private fun tryView(bytes: ByteArray, viewHeader: Int, declaredW: Int, declaredH: Int): Pair<List<Minutia>, Boolean>? {
+    private fun tryView(bytes: ByteArray, viewHeader: Int, declaredW: Int, declaredH: Int, angleSteps: Double): Pair<List<Minutia>, Boolean>? {
         val countAt = viewHeader + 3
         val start = viewHeader + 4
         if (start >= bytes.size) return null
@@ -121,7 +126,7 @@ object IsoTemplateMatcher {
         if (count < 1) return null
         val end = start + count * 6
         if (end > bytes.size) return null
-        val minutiae = readMinutiae(bytes, start, count, 6)
+        val minutiae = readMinutiae(bytes, start, count, 6, angleSteps)
         if (!plausible(minutiae, count, declaredW, declaredH)) return null
         return minutiae to (bytes.size - end in 0..2)
     }
@@ -151,7 +156,7 @@ object IsoTemplateMatcher {
         val count = bytes[i + 1].toInt() and 0xFF
         val start = i + 2
         if (count < 1 || start + count * stride > bytes.size) return null
-        val minutiae = readMinutiae(bytes, start, count, stride)
+        val minutiae = readMinutiae(bytes, start, count, stride, ISO_ANGLE_STEPS)
         return if (plausible(minutiae, count, w, h)) minutiae else null
     }
 
@@ -168,7 +173,7 @@ object IsoTemplateMatcher {
     private fun read16(bytes: ByteArray, at: Int): Int =
         if (at + 1 < bytes.size) ((bytes[at].toInt() and 0xFF) shl 8) or (bytes[at + 1].toInt() and 0xFF) else -1
 
-    private fun readMinutiae(bytes: ByteArray, start: Int, count: Int, stride: Int): List<Minutia> {
+    private fun readMinutiae(bytes: ByteArray, start: Int, count: Int, stride: Int, angleSteps: Double): List<Minutia> {
         val buf = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
         buf.position(start)
         val minutiae = ArrayList<Minutia>(count)
@@ -182,7 +187,7 @@ object IsoTemplateMatcher {
             val type = (word1 shr 14) and 0x03
             val x = (word1 and 0x3FFF).toDouble()
             val y = (word2 and 0x3FFF).toDouble()
-            val theta = (angleByte.toDouble() / 256.0) * (2.0 * Math.PI)
+            val theta = ((angleByte.toDouble() % angleSteps) / angleSteps) * (2.0 * Math.PI)
             minutiae.add(Minutia(x, y, theta, type, qualityByte))
         }
         return minutiae
@@ -207,9 +212,11 @@ object IsoTemplateMatcher {
         val comparable = min(probe.size, candidate.size)
         if (comparable <= 0) return 0.0
 
-        // Every pair of strong minutiae is tried as the alignment anchor, and the best alignment wins.
-        val numAnchorsProbe = min(probe.size, 8)
-        val numAnchorsCand = min(candidate.size, 8)
+        // Every pair of minutiae is tried as the alignment anchor, and the best alignment wins. Trying only
+        // the eight "strongest" of each print missed the true pair whenever a press put different points
+        // at the top of the quality order -- which on a real scanner is most presses -- and scored 0.
+        val numAnchorsProbe = probe.size
+        val numAnchorsCand = candidate.size
         var maxMatched = 0
         val usedCandidates = BooleanArray(candidate.size)
 
@@ -224,15 +231,16 @@ object IsoTemplateMatcher {
                 usedCandidates.fill(false)
                 var matchedCount = 0
                 for (p in probe) {
+                    // Records put the origin top-left with Y growing DOWN, but measure angles
+                    // counter-clockwise as seen on screen. Rotating raw (x, y) with the angle's sign
+                    // therefore turns the points the opposite way to their angles: a 5-degree twist
+                    // became a 10-degree error, 17 px at 100 px from the anchor, and a genuine press
+                    // scored 0. Y is flipped up first, so positions and angles turn together.
                     val dx = p.x - pRef.x
-                    val dy = p.y - pRef.y
-                    // The probe is turned BACK by dTheta -- it is the one that was pressed at a
-                    // different angle, so undoing that angle is what puts its points where the
-                    // candidate's are. Turning it forward instead (rotating by +dTheta) scatters the
-                    // points and leaves the count measuring coincidence rather than agreement, which is
-                    // how a colleague's finger came to score as well as the right one.
+                    val dy = -(p.y - pRef.y)
+                    // The probe is turned BACK by dTheta: it is the one pressed at a different angle.
                     val rotX = dx * cosTheta + dy * sinTheta + cRef.x
-                    val rotY = -dx * sinTheta + dy * cosTheta + cRef.y
+                    val rotY = -(-dx * sinTheta + dy * cosTheta) + cRef.y // back to Y-down
                     val rotTheta = normalizeAngle(p.theta - dTheta)
 
                     var bestMatchIdx = -1
