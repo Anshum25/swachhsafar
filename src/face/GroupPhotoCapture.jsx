@@ -28,8 +28,9 @@ const CAMERA_ERRORS = {
 
 // The face count has to hold still for this long, over at least this many detections, before the photo is
 // taken. Short enough that nobody is made to pose, long enough to skip the frames from a phone in motion.
-const STEADY_MS = 900;
-const STEADY_FRAMES = 4;
+// The crew holds still for a full second (shown as a countdown) before the shutter fires.
+const STEADY_MS = 1000;
+const STEADY_FRAMES = 6;
 // Below this share of the frame height a face carries too little detail to recognise, so the preview waits
 // rather than taking a picture it cannot read.
 const MIN_FACE_SHARE = 0.07;
@@ -45,6 +46,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   const [error, setError] = useState(null);
   const [facing, setFacing] = useState('environment');  // a crew is normally photographed with the rear camera
   const [seen, setSeen] = useState(0);              // faces in the live preview
+  const [holdLeft, setHoldLeft] = useState(null);   // ms of the steady hold still to go
   const [photo, setPhoto] = useState(null);
   const [rows, setRows] = useState([]);
   const [crops, setCrops] = useState([]);
@@ -160,6 +162,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       } else {
         steady += 1;
       }
+      setHoldLeft(since != null ? Math.max(0, STEADY_MS - (t - since)) : null);
       const settled = usable.length > 0 && steady >= STEADY_FRAMES && since != null && t - since >= STEADY_MS;
       // Out of patience: take whatever is in view rather than stand here.
       const impatient = usable.length > 0 && t - startedAt >= PATIENCE_MS;
@@ -201,7 +204,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
             {phase === 'starting' ? 'Starting the camera\u2026'
               : phase === 'failed' ? 'The camera stopped'
                 : seen === 0 ? 'Point the camera at the crew'
-                  : `Hold still \u2014 ${seen} ${seen === 1 ? 'face' : 'faces'} in view`}
+                  : `Hold still \u2014 ${seen} ${seen === 1 ? 'face' : 'faces'} in view${holdLeft != null ? ` · ${(holdLeft / 1000).toFixed(1)}s` : ''}`}
           </p>
         )}
       </div>

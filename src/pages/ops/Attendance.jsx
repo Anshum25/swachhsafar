@@ -183,15 +183,18 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
     return () => { cancelled = true; };
   }, [mode, memberIds, store]);
 
-  // Recognition only proposes: whoever the camera recognised is pre-selected, and the supervisor
-  // confirms, removes or adds people before anything is recorded.
+  // Fully automatic with the face camera: once the photo is read and there is a location fix, everyone
+  // recognised is marked at THEIR OWN next stage -- nothing to choose, nothing to press. The ordinary-photo
+  // fallback (no recognition) still needs the supervisor to tick who is in it.
   const recognised = new Map((group?.members ?? []).map((r) => [r.employee_id, r]));
-  const recognisedKey = [...recognised.keys()].join(',');
-  useEffect(() => {
-    if (mode !== 'photo' || !group?.ready) return;
-    setPicked(Object.fromEntries([...recognised.keys()].filter((id) => byId.has(id)).map((id) => [id, true])));
-  }, [mode, group?.ready, recognisedKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const autoMembers = members.filter((m) => recognised.has(m.employee_id));
   const groupPhoto = usePlain ? plainPhoto : (group?.ready ? group.photo : null);
+  const autoReady = mode === 'photo' && !usePlain && gps && group?.ready && autoMembers.length > 0 && !policy.loading && gate.allowed;
+  useEffect(() => {
+    if (!autoReady || busy || done) return;
+    submit(null, autoMembers);
+    // `submit` closes over this render's values, which are the ones `autoReady` was computed from.
+  }, [autoReady]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const ready = mode === 'photo'
     ? gps && groupPhoto && chosen.length > 0 && !policy.loading && gate.allowed
@@ -200,14 +203,15 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
       && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
       && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
 
-  async function submit(e) {
+  async function submit(e, list = chosen) {
     e?.preventDefault();
-    if (!ready || busy || done) return;
+    if (busy || done || !(ready || list !== chosen)) return;
     setBusy(true);
+    setDone(true);   // before the first await: a re-render mid-submission cannot start a second round
     const submission = crypto.randomUUID();
     const at = deviceTimestamp();
     const results = [];
-    for (const m of chosen) {
+    for (const m of list) {
       let extra;
       let media = [];
       if (mode === 'photo') {
@@ -251,7 +255,6 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   // rather than calling the whole group a failure.
   function finish(results) {
     setBusy(false);
-    setDone(true);
     const saved = results.filter((r) => savedLocally(r.outcome));
     const synced = saved.filter((r) => r.outcome.status === 'synced').length;
     const refused = results.filter((r) => !savedLocally(r.outcome));
@@ -284,7 +287,16 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                 onClick={() => { setUsePlain((u) => !u); setPicked({}); setPlainPhoto(null); setGroup(null); }}>
                 {usePlain ? 'Use the face recognition camera' : 'Take an ordinary photo and select staff by hand'}
               </button>
-              {groupPhoto && (
+              {!usePlain && (
+                <p className="text-sm font-medium text-muted" aria-live="polite">
+                  {busy ? `Marking ${autoMembers.length} present…`
+                    : done ? `Done. ${autoMembers.map((m) => `${m.name}: ${STAGES[m.stage - 1]}`).join(' · ')}`
+                      : !gps ? 'Waiting for the location fix…'
+                        : !group?.ready ? 'Hold the phone steady; the photo is taken and read automatically.'
+                          : 'Nobody due was recognised. Retake the photo.'}
+                </p>
+              )}
+              {usePlain && groupPhoto && (
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
                     <p className="text-xs font-medium uppercase text-slate-500">Confirm who is in the photo ({chosen.length}/{members.length})</p>
@@ -339,9 +351,15 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
             </>
           )}
           {gate.notice}
-          <SubmitBar busy={busy} disabled={!ready || done}
-            label={chosen.length ? `Confirm attendance for ${chosen.length}` : 'Confirm attendance'}
-            onCancel={onClose} />
+          {mode === 'photo' && !usePlain ? (
+            <div className="flex justify-end border-t border-line pt-3">
+              <button type="button" className="btn-secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
+            </div>
+          ) : (
+            <SubmitBar busy={busy} disabled={!ready || done}
+              label={chosen.length ? `Confirm attendance for ${chosen.length}` : 'Confirm attendance'}
+              onCancel={onClose} />
+          )}
         </form>
       )}
     </Dialog>
