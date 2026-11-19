@@ -26,10 +26,22 @@ export function createOperationsQueue({
   const listeners = new Set();
   // `revision` increases after delivery outcomes or pulled changes are COMMITTED to SQLite; screens re-read
   // their data when it changes (useResource), so they never keep showing a state the database has left.
-  let state = { pending: 0, failed: [], othersPending: 0, running: false, lastError: null, pulling: false, lastPullAt: null, pullError: null, revision: 0 };
+  // `authRequired`: there is no usable sign-in on this device, so nothing can be sent. This is its own
+  // state because it is neither a network problem nor a refusal, and the only thing that fixes it is
+  // signing in again -- which the app has to say, rather than leaving records to sit for ever.
+  let state = { pending: 0, failed: [], othersPending: 0, running: false, lastError: null, pulling: false, lastPullAt: null, pullError: null, authRequired: false, revision: 0 };
   // Operations are delivered only for the user who captured them (sync_outbox.owner_user_id).
   // Entries queued before Phase 2 carry no owner and are delivered by whoever is signed in.
   const currentOwner = () => getActor()?.actor?.id ?? null;
+  // getApi() reaches Firebase for a token and can reject. Both callers awaited it outside their try
+  // blocks, so a rejection escaped runOnce/pullOnce and left the whole queue inert with no sign of why.
+  const apiOrNull = async () => {
+    try {
+      return (await getApi()) ?? null;
+    } catch {
+      return null;
+    }
+  };
   const isMine = (row, owner) => row.owner_user_id == null || (owner != null && row.owner_user_id === owner);
   let inFlight = null;
   let pullInFlight = null;
@@ -135,8 +147,12 @@ export function createOperationsQueue({
     if (!isOnline()) return refresh();
     const owner = currentOwner();
     if (!owner) return refresh();
-    const api = await getApi();
-    if (!api) return refresh();
+    const api = await apiOrNull();
+    if (!api) {
+      emit({ running: false, authRequired: true });
+      return refresh();
+    }
+    emit({ authRequired: false });
     const entries = await outbox.listPending(ENTITY_TYPE, { ownerId: owner });
     if (!entries.length) return refresh();
     emit({ running: true, lastError: null });
@@ -159,8 +175,12 @@ export function createOperationsQueue({
 
   async function pullOnce() {
     if (!isOnline()) return { status: 'offline' };
-    const api = await getApi();
-    if (!api) return { status: 'unavailable' };
+    const api = await apiOrNull();
+    if (!api) {
+      emit({ authRequired: true });
+      return { status: 'unavailable' };
+    }
+    emit({ authRequired: false });
     const checkpoint = await local.syncState.getCheckpoint(CHANGES_SCOPE);
     emit({ pulling: true });
     try {

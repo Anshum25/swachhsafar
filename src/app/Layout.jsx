@@ -68,7 +68,10 @@ function QueueIndicator() {
 
 // Browser connectivity is not server connectivity: "Online" only when the last exchange with the server
 // worked; a failed pull while the network is up shows as a server problem.
-const SHORT_STATUS = { 'Server unreachable': 'No server', 'Records refused': 'Refused', 'Syncing\u2026': 'Syncing' };
+const SHORT_STATUS = { 'Server unreachable': 'No server', 'Records refused': 'Refused', 'Sign in again': 'Sign in', 'Syncing\u2026': 'Syncing' };
+
+export const SIGN_IN_AGAIN = 'This device is no longer signed in to the server, so nothing can be sent. '
+  + 'Sign out and sign in again; the records saved here are kept and will go as soon as you do.';
 
 // Which of the four states the app is in, and the sentence that explains it. Pure, so it can be tested
 // without rendering: this classification was wrong once in a way that cost real debugging time.
@@ -81,6 +84,9 @@ const SHORT_STATUS = { 'Server unreachable': 'No server', 'Records refused': 'Re
 export function connectionStatus(q, online) {
   if (!online) return ['amber', 'Offline', 'No network. Records are saved on this device.'];
   if (q.running || q.pulling) return ['sky', 'Syncing\u2026', 'Exchanging records with the server'];
+  // Nothing can be sent without a sign-in, and no amount of tapping Sync will change that. Said before
+  // anything else, because it is the only one of these the person can actually act on.
+  if (q.authRequired) return ['red', 'Sign in again', SIGN_IN_AGAIN];
   if (q.failed?.length) {
     const reason = q.failed[0]?.last_error;
     const n = q.failed.length;

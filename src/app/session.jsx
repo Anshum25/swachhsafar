@@ -60,9 +60,18 @@ export function SessionProvider({ db, files, children }) {
     return () => off();
   }, []);
 
+  // Never throws. getIdToken() contacts Firebase to refresh an expired token and fails when the network
+  // is down, when the refresh token has been revoked, or when the account is gone -- and the callers of
+  // this are the sync queue, which must be able to tell "no token" from a crash. It used to reject, and
+  // the rejection escaped the queue's try blocks entirely: sync then did nothing at all, silently, while
+  // the status bar went on showing a stale error from the last pull that did run.
   const getToken = useCallback(async () => {
-    const { auth } = await loadFirebase();
-    return auth.currentUser ? auth.currentUser.getIdToken() : null;
+    try {
+      const { auth } = await loadFirebase();
+      return auth.currentUser ? await auth.currentUser.getIdToken() : null;
+    } catch {
+      return null;
+    }
   }, []);
 
   const remote = useMemo(() => (DEMO_MODE ? null : createApiClient({ getToken })), [getToken]);

@@ -52,3 +52,25 @@ describe('connection status', () => {
     expect(connectionStatus({}, true)[1]).toBe('Online');
   });
 });
+
+describe('no usable sign-in', () => {
+  it('says to sign in again, before anything about the server', () => {
+    // This is the state that produced "Server unreachable" for a reachable server: no token, so the
+    // queue could neither push nor pull, and the stale error from the last pull that did run stayed on
+    // screen for ever. Tapping Sync could not fix it; signing in again is the only thing that can.
+    const [tone, text, detail] = connectionStatus(
+      { ...quiet, authRequired: true, pending: 10, pullError: 'Cannot reach the Swachh Safar server.' }, true);
+    expect([tone, text]).toEqual(['red', 'Sign in again']);
+    expect(detail).toMatch(/signed in/i);
+  });
+
+  it('still reports an exchange in progress and offline ahead of it', () => {
+    expect(connectionStatus({ ...quiet, authRequired: true, running: true }, true)[1]).toBe('Syncing\u2026');
+    expect(connectionStatus({ ...quiet, authRequired: true }, false)[1]).toBe('Offline');
+  });
+
+  it('goes back to the ordinary states once a token is available again', () => {
+    expect(connectionStatus({ ...quiet, authRequired: false, pullError: 'boom' }, true)[1]).toBe('Server unreachable');
+    expect(connectionStatus({ ...quiet, authRequired: false, lastPullAt: 1 }, true)[1]).toBe('Online');
+  });
+});
