@@ -197,20 +197,32 @@ object IsoTemplateMatcher {
      * Compares a probe with an enrolled candidate. Returns 0.0-100.0: the proportion of the smaller print
      * whose minutiae matched, or 0.0 when too few matched for the result to mean anything.
      */
-    fun match(probeBytes: ByteArray, candidateBytes: ByteArray): Double {
-        if (probeBytes.isEmpty() || candidateBytes.isEmpty()) return 0.0
-        if (probeBytes.contentEquals(candidateBytes)) return 100.0
+    fun match(probeBytes: ByteArray, candidateBytes: ByteArray): Double = matchDetail(probeBytes, candidateBytes).score
+
+    /**
+     * The score with what produced it. A score of 0 hides very different things -- a different finger,
+     * a genuine one with fewer than [MIN_MATCHED_MINUTIAE] points lined up, or a record read wrongly --
+     * and [matched] / [comparable] are what tell them apart on the screen.
+     */
+    data class Result(val score: Double, val matched: Int, val comparable: Int)
+
+    fun matchDetail(probeBytes: ByteArray, candidateBytes: ByteArray): Result {
+        if (probeBytes.isEmpty() || candidateBytes.isEmpty()) return Result(0.0, 0, 0)
+        if (probeBytes.contentEquals(candidateBytes)) {
+            val n = parseIso19794(probeBytes).size
+            return Result(100.0, n, n)
+        }
 
         val probe = parseIso19794(probeBytes)
         val candidate = parseIso19794(candidateBytes)
-        if (probe.isEmpty() || candidate.isEmpty()) return 0.0
+        if (probe.isEmpty() || candidate.isEmpty()) return Result(0.0, 0, 0)
 
         val distToleranceSq = DIST_TOLERANCE_PX * DIST_TOLERANCE_PX
         val angleTolerance = Math.toRadians(ANGLE_TOLERANCE_DEG)
         // The smaller print is the ceiling: a partial press cannot be asked to match points it never
         // recorded, and dividing by the larger would punish it for the other print being fuller.
         val comparable = min(probe.size, candidate.size)
-        if (comparable <= 0) return 0.0
+        if (comparable <= 0) return Result(0.0, 0, 0)
 
         // Every pair of minutiae is tried as the alignment anchor, and the best alignment wins. Trying only
         // the eight "strongest" of each print missed the true pair whenever a press put different points
@@ -269,9 +281,9 @@ object IsoTemplateMatcher {
             }
         }
 
-        if (maxMatched < MIN_MATCHED_MINUTIAE) return 0.0
+        if (maxMatched < MIN_MATCHED_MINUTIAE) return Result(0.0, maxMatched, comparable)
         val score = min(100.0, (maxMatched.toDouble() / comparable.toDouble()) * 100.0)
-        return kotlin.math.round(score * 10.0) / 10.0
+        return Result(kotlin.math.round(score * 10.0) / 10.0, maxMatched, comparable)
     }
 
     private fun normalizeAngle(angle: Double): Double {
