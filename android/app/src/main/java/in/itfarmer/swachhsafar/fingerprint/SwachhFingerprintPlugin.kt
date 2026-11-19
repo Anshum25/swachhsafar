@@ -41,6 +41,9 @@ class SwachhFingerprintPlugin : Plugin() {
         const val ACTION_MATCH = "in.acpl.fp.match"
         const val EXTRA_L1_DATA = "ACPL_L1_Data"
         const val VENDOR_ID = 0x34FC
+        // Bumped with each matcher fix, and shown on screen when a template cannot be read, so it is
+        // obvious whether the phone runs an APK that has the fix at all.
+        const val MATCHER_BUILD = 3
     }
 
     private lateinit var executor: ExecutorService
@@ -295,6 +298,7 @@ class SwachhFingerprintPlugin : Plugin() {
             var candidateMinutiae = 0
             var bestScore = 0.0
             var bestFinger: String? = null
+            var firstCandidate: ByteArray? = null
 
             // A finger is registered from several presses, so each candidate carries a list of them and
             // the best one counts: the press being verified has to resemble only one of the impressions
@@ -304,6 +308,7 @@ class SwachhFingerprintPlugin : Plugin() {
                 val finger = obj.optString("finger")
                 for (candB64 in templatesOf(obj)) {
                     val candBytes = Base64.decode(candB64, Base64.DEFAULT)
+                    if (firstCandidate == null) firstCandidate = candBytes
                     candidateMinutiae = maxOf(candidateMinutiae, IsoTemplateMatcher.parseIso19794(candBytes).size)
                     val score = IsoTemplateMatcher.match(probe, candBytes)
                     if (score > bestScore) {
@@ -322,12 +327,22 @@ class SwachhFingerprintPlugin : Plugin() {
                 put("matcher", MATCHER_ID)
                 put("probeMinutiae", probeMinutiae)
                 put("candidateMinutiae", candidateMinutiae)
+                // Diagnostics for a template that still reads as empty: which matcher build this APK
+                // carries (absent = an APK from before the fixes), and the first 24 bytes of each
+                // record -- the header only (format, version, length, image size, resolution), which
+                // ends before the first minutia, so no biometric data is exposed.
+                put("matcherBuild", MATCHER_BUILD)
+                put("probeHeader", headerHex(probe))
+                firstCandidate?.let { put("candidateHeader", headerHex(it)) }
             }
             call.resolve(ret)
         } catch (e: Exception) {
             call.reject("Matching error: ${e.message}", "no_scanner")
         }
     }
+
+    private fun headerHex(bytes: ByteArray): String =
+        bytes.take(24).joinToString("") { "%02X".format(it.toInt() and 0xFF) }
 
     // The impressions stored for one finger: a "templates" list, or the single "template" an app built
     // before multi-press registration still sends.
