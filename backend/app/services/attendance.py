@@ -48,16 +48,45 @@ def _check_fingerprint(db: Session, policy, body: AttendanceIn) -> None:
                                     details={"score": body.fingerprint_score, "required": policy.fingerprint_match_score})
 
 
-def _check_identity(db: Session, policy, body: AttendanceIn) -> str | None:
+def _check_group_photo(db: Session, p: Principal, j: Journey, policy, body: AttendanceIn) -> None:
+    """A capture named out of one photograph of a group. Allowed only where the division turned it on and
+    only from whoever is answerable for the crew, because that is all it proves: not that this person was
+    watched blinking at the camera, but that a named supervisor photographed a group and attested who was
+    in it. The employee may not attest their own presence this way -- that would be a record with no
+    second party to it at all."""
+    if not policy.attendance_group_photo:
+        raise BusinessRuleViolation("Group photo attendance is not enabled for this division", code="group_photo_not_allowed")
+    if not (j.supervisor_id == p.id or p.has("attendance.review", j.division_id)):
+        raise Forbidden("Only the journey supervisor or a reviewer may mark attendance from a group photo",
+                        code="group_photo_not_authorized")
+    # Where a face was recognised the distance is kept as evidence and still has to be within the
+    # division's threshold; where the supervisor named the person themselves there is no distance to judge.
+    if body.face_distance is not None:
+        enrollment = db.get(FaceEnrollment, body.employee_id)
+        if enrollment is None or body.face_model != enrollment.model:
+            raise BusinessRuleViolation("The group photo match does not refer to this employee's registered face",
+                                        code="face_not_verified")
+        if body.face_distance > policy.face_match_threshold:
+            raise BusinessRuleViolation("The group photo does not match the employee's registered face",
+                                        code="face_mismatch",
+                                        details={"distance": body.face_distance, "threshold": policy.face_match_threshold})
+
+
+def _check_identity(db: Session, p: Principal, j: Journey, policy, body: AttendanceIn) -> str | None:
     """How this capture proved who it is, when the division asks for proof at all.
 
     Face and fingerprint are alternatives, never a replacement for one another: the scanner is a separate
     piece of hardware that can be absent or broken, and a phone without it must still be able to mark
     attendance. A capture that offers a fingerprint is judged on the fingerprint; otherwise on the face.
-    Returns "fingerprint", "face" or None (the division asks for neither).
+    Returns "fingerprint", "face", "group_photo" or None (the division asks for neither).
     """
     face_on = policy.attendance_face_verification
     fingerprint_on = policy.attendance_fingerprint_verification
+    # Checked whenever the device claims it, even where the division asks for no proof, so the claim is
+    # never recorded without the rules that go with it having been applied.
+    if body.group_photo:
+        _check_group_photo(db, p, j, policy, body)
+        return "group_photo"
     if not face_on and not fingerprint_on:
         return None
     if fingerprint_on and body.fingerprint_score is not None:
@@ -99,16 +128,17 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
         raise BusinessRuleViolation(f"Stage {body.stage - 1} must be recorded first", code="stage_order",
                                     details={"recorded_stages": sorted(previous)})
 
-    verified_by = _check_identity(db, policy, body)
+    verified_by = _check_identity(db, p, j, policy, body)
     # Liveness is a property of the face photo, so it is only asked of a capture verified by face. A photo
     # is still required whenever the face check is what proved identity.
     evidence = security.check_capture(db, p, policy, body, kind="attendance",
                                       liveness_required=verified_by == "face" and policy.face_liveness_required)
     photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO,
-                           j.division_id, p.id, required=policy.attendance_photo_required or verified_by == "face",
+                           j.division_id, p.id,
+                           required=policy.attendance_photo_required or verified_by in ("face", "group_photo"),
                            label="Attendance photo")
-    record = Attendance(**body.model_dump(exclude={"photo_media_id", "security", "gps_timestamp"}), **evidence,
-                        photo_media_id=photo_id, division_id=j.division_id,
+    record = Attendance(**body.model_dump(exclude={"photo_media_id", "security", "gps_timestamp", "group_photo"}),
+                        **evidence, photo_media_id=photo_id, division_id=j.division_id, identified_by=verified_by,
                         created_by_id=p.id, payload_hash=digest, sync_op_id=sync_op_id)
     db.add(record)
     try:
@@ -131,7 +161,7 @@ def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dic
                             photo_media_id=m.photo_media_id, group_submission_id=body.group_submission_id,
                             face_distance=m.face_distance, face_model=m.face_model,
                             fingerprint_score=m.fingerprint_score, fingerprint_matcher=m.fingerprint_matcher,
-                            fingerprint_finger=m.fingerprint_finger,
+                            fingerprint_finger=m.fingerprint_finger, group_photo=m.group_photo,
                             device_timestamp=body.device_timestamp, latitude=body.latitude, longitude=body.longitude,
                             gps_accuracy_m=body.gps_accuracy_m, gps_timestamp=body.gps_timestamp,
                             security=body.security.model_copy(update={"liveness": m.liveness}) if body.security else None)

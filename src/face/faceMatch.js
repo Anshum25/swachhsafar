@@ -37,3 +37,63 @@ export function enrolmentSpread(descriptors) {
 
 // How similar, for people: 100% at distance 0, 0% at 1.0.
 export const similarityPercent = (d) => (d == null ? null : Math.max(0, Math.min(100, Math.round((1 - d) * 100))));
+
+// ---- identifying several faces at once (group photo) --------------------------------------------------
+// A group photo asks a different question from an attendance selfie. The selfie asks "is this the person
+// we named?" -- one comparison, and a wrong answer needs the photo and the named person to collide. The
+// group photo asks "which of these people is this?", and the answer is the smallest of N distances, so
+// the chance of some wrong candidate falling under the threshold grows with the size of the crew. Two
+// rules hold that down, and both matter:
+//
+//   1. A margin. The closest candidate must beat the runner-up by this much. When two registered people
+//      are both near a face -- brothers, cousins, or simply a 50-pixel face in the back row carrying too
+//      little detail to tell anyone apart -- there is no identification here, only a guess, and it is
+//      returned as `ambiguous` for a human to settle rather than silently resolved.
+//   2. One face, one person. Assignment is global and greedy from the best pair outwards, so a single
+//      registered person can never be matched to two faces in the same photo, nor one face to two people.
+//
+// Nothing here decides attendance on its own: the caller shows every row to the supervisor to confirm.
+export const GROUP_MARGIN = 0.08;
+
+// faces: [{ descriptor, box }]; profiles: [{ user_id, model, descriptors }].
+// Returns one row per detected face: { index, box, userId, distance, runnerUp, status }
+// status: 'identified' | 'ambiguous' | 'unknown'.
+export function identifyFaces({ faces, profiles, threshold, margin = GROUP_MARGIN, model = FACE_MODEL }) {
+  const usable = (profiles ?? []).filter((p) => p.model === model && p.descriptors?.length);
+  // Every face against every candidate, so the margin can be read off the same row it guards.
+  const scored = (faces ?? []).map((f, index) => {
+    const ranked = usable
+      .map((p) => ({ userId: p.user_id, distance: bestDistance(f.descriptor, p.descriptors) }))
+      .filter((c) => Number.isFinite(c.distance))
+      .sort((a, b) => a.distance - b.distance);
+    return { index, box: f.box ?? null, ranked };
+  });
+
+  const takenUser = new Set();
+  const settled = new Map();
+  // Best pair first: a confident match claims its person before a weaker one can take them.
+  const pairs = scored
+    .flatMap((s) => s.ranked.map((c) => ({ face: s.index, ...c })))
+    .filter((c) => c.distance <= threshold)
+    .sort((a, b) => a.distance - b.distance);
+  for (const pair of pairs) {
+    if (settled.has(pair.face) || takenUser.has(pair.userId)) continue;
+    settled.set(pair.face, pair);
+    takenUser.add(pair.userId);
+  }
+
+  return scored.map((s) => {
+    const best = settled.get(s.index) ?? null;
+    // The runner-up is judged among candidates still free, because a person already identified elsewhere
+    // in the photo is not a plausible second reading of this face.
+    const runnerUp = s.ranked.find((c) => c.userId !== best?.userId && !takenUser.has(c.userId)) ?? null;
+    const round = (d) => (d == null ? null : Math.round(d * 1000) / 1000);
+    if (!best) {
+      return { index: s.index, box: s.box, userId: null, distance: round(s.ranked[0]?.distance ?? null),
+        runnerUp: null, status: 'unknown' };
+    }
+    const clear = runnerUp == null || runnerUp.distance - best.distance >= margin;
+    return { index: s.index, box: s.box, userId: best.userId, distance: round(best.distance),
+      runnerUp: round(runnerUp?.distance ?? null), status: clear ? 'identified' : 'ambiguous' };
+  });
+}

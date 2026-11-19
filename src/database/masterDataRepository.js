@@ -162,6 +162,19 @@ export function createMasterDataRepository(db) {
       return row ? { ...row, descriptors: parseJson(row.descriptors, []) } : null;
     },
 
+    // The registered faces of a named set of employees, for identifying faces in a group photo. The
+    // candidates are passed in rather than read from the division, because the only people a group photo
+    // may identify are the ones allocated to this journey and still due the stage: a narrower set is
+    // both a safer identification (fewer ways to be confused with someone) and the only one that could
+    // honestly be marked present here.
+    async faceProfilesFor(userIds) {
+      const ids = [...new Set(userIds ?? [])].filter(Boolean);
+      if (!ids.length) return [];
+      const rows = await db.query(
+        `SELECT * FROM face_profiles WHERE user_id IN (${ids.map(() => '?').join(',')})`, ids);
+      return rows.map((row) => ({ ...row, descriptors: parseJson(row.descriptors, []) }));
+    },
+
     // The complete set of fingerprint profiles from /sync/changes: replaces what this device held, so a
     // registration removed on the server disappears from the phone at the next pull.
     fingerprintProfileStatements(profiles, now) {

@@ -16,6 +16,7 @@ import { FaceCheckNote, faceFields, useFaceCheck } from '../../face/FaceCheck.js
 import { FingerprintButton, FingerprintCheckNote, useFingerprintCheck } from '../../fingerprint/FingerprintCheck.jsx';
 import { DEFAULT_MATCH_SCORE, fingerprintFields } from '../../fingerprint/fingerprintMatch.js';
 import LiveFaceCapture from '../../face/LiveFaceCapture.jsx';
+import GroupPhotoCapture from '../../face/GroupPhotoCapture.jsx';
 import { FACE_MODEL } from '../../face/faceMatch.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 
@@ -128,7 +129,7 @@ function MemberFaceCheck({ photo, member, enabled, threshold, onResult }) {
 }
 
 function GroupDialog({ journey, rows, local, onClose, onDone }) {
-  const { queue } = useSession();
+  const { queue, store, user, canIn } = useSession();
   const notify = useNotify();
   const policy = useResource(`/divisions/${journey.division_id}/policy`);
   // Photo required unless the division policy relaxes it (the strict default while it is loading).
@@ -147,20 +148,66 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [live, setLive] = useState({});
   const gate = useSecurityGate('attendance');
   const threshold = policy.data?.face_match_threshold ?? 0.5;
+  // One group photograph for the whole crew, where the division allows it. It is offered only to whoever
+  // can be held to the attestation -- the same people the server accepts it from -- so the choice never
+  // appears to someone whose submission would then be refused.
+  const mayAttest = journey.supervisor_id === user?.id || canIn('attendance.review', journey.division_id);
+  const groupPhotoOn = policy.data?.attendance_group_photo === true && mayAttest;
+  const [mode, setMode] = useState('each');   // 'each' = a live capture per person, 'photo' = one group photo
+  const [group, setGroup] = useState(null);   // what GroupPhotoCapture confirmed
+  const [profiles, setProfiles] = useState([]);
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const members = stage ? eligible(stage) : [];
   const chosen = members.filter((m) => picked[m.employee_id]);
-  const ready = gps && chosen.length && !policy.loading && gate.allowed
-    && (!liveOn || chosen.every((m) => live[m.employee_id] === 'passed'))
-    && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
-    && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
+  const byId = new Map(members.map((m) => [m.employee_id, m]));
+  // Only the staff still due this stage are offered to the photo, so the only names it can produce are
+  // names that could honestly be marked present here.
+  const memberIds = members.map((m) => m.employee_id).join(',');
+  useEffect(() => {
+    if (!groupPhotoOn || !memberIds) { setProfiles([]); return undefined; }
+    let cancelled = false;
+    store.masters.faceProfilesFor(memberIds.split(',')).then((r) => !cancelled && setProfiles(r), () => !cancelled && setProfiles([]));
+    return () => { cancelled = true; };
+  }, [groupPhotoOn, memberIds, store]);
+
+  const photoMembers = group?.members ?? [];
+  const ready = mode === 'photo'
+    ? gps && photoMembers.length > 0 && !policy.loading && gate.allowed
+    : gps && chosen.length && !policy.loading && gate.allowed
+      && (!liveOn || chosen.every((m) => live[m.employee_id] === 'passed'))
+      && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
+      && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
-    const group = crypto.randomUUID();
+    const submission = crypto.randomUUID();
     const at = deviceTimestamp();
     const results = [];
+    if (mode === 'photo') {
+      for (const row of photoMembers) {
+        const member = byId.get(row.employee_id);
+        const mediaId = crypto.randomUUID();
+        const outcome = await queue.submit({
+          type: 'attendance.create',
+          payload: {
+            id: crypto.randomUUID(), journey_id: journey.id, employee_id: row.employee_id, stage,
+            device_timestamp: at, ...gps, photo_media_id: mediaId, group_submission_id: submission,
+            group_photo: true,
+            // The distance is evidence only where the device recognised this person and the supervisor
+            // agreed. Where the supervisor supplied the name, nothing is claimed about a match.
+            ...(row.confirmed === 'matched' ? { face_distance: row.distance, face_model: FACE_MODEL } : {}),
+            // A single frame cannot show that this face blinked, so no liveness is claimed for it either.
+            ...gate.evidence({ liveness: 'not_required', faceModel: row.confirmed === 'matched' ? FACE_MODEL : null }),
+          },
+          // Each record keeps this person's own face, cut out of the group photo.
+          media: [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: row.crop ?? group.photo }],
+        });
+        results.push({ member: member ?? { name: row.employee_id, employee_id: row.employee_id }, outcome });
+      }
+      finish(results);
+      return;
+    }
     for (const m of chosen) {
       const photo = photos[m.employee_id];
       const mediaId = photo ? crypto.randomUUID() : null;
@@ -168,13 +215,19 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         type: 'attendance.create',
         payload: {
           id: crypto.randomUUID(), journey_id: journey.id, employee_id: m.employee_id, stage, device_timestamp: at, ...gps,
-          photo_media_id: mediaId, group_submission_id: group, ...(faceOn ? faceFields(faces[m.employee_id] ?? {}) : {}),
+          photo_media_id: mediaId, group_submission_id: submission, ...(faceOn ? faceFields(faces[m.employee_id] ?? {}) : {}),
           ...gate.evidence({ liveness: liveOn ? live[m.employee_id] ?? 'failed' : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
         },
         media: photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [],
       });
       results.push({ member: m, outcome });
     }
+    finish(results);
+  }
+
+  // Each member succeeds or fails on their own, as on the server, so the report names whoever was refused
+  // rather than calling the whole group a failure.
+  function finish(results) {
     setBusy(false);
     const saved = results.filter((r) => savedLocally(r.outcome));
     const synced = saved.filter((r) => r.outcome.status === 'synced').length;
@@ -191,8 +244,20 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
       {!stages.length ? <Empty title="No staff are due for a stage right now." /> : (
         <form onSubmit={submit} className="space-y-3">
           <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">Stage</p>
-            <Segmented label="Stage" value={stage} onChange={(v) => { setStage(v); setPicked({}); }} options={stages} /></div>
+            <Segmented label="Stage" value={stage} onChange={(v) => { setStage(v); setPicked({}); setGroup(null); }} options={stages} /></div>
+          {groupPhotoOn && (
+            <div><p className="mb-1.5 text-xs font-medium uppercase text-slate-500">How</p>
+              <Segmented label="How attendance is taken" value={mode} onChange={(v) => { setMode(v); setGroup(null); setPicked({}); }}
+                options={[{ value: 'each', label: 'Each person' }, { value: 'photo', label: 'One group photo' }]} /></div>
+          )}
           <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
+          {mode === 'photo' ? (
+            <>
+              <p className="text-xs font-medium uppercase text-slate-500">Photograph the {members.length} staff due for {STAGES[stage - 1]}</p>
+              <GroupPhotoCapture candidates={members} profiles={profiles} threshold={threshold} onChange={setGroup} />
+            </>
+          ) : (
+          <>
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase text-slate-500">Staff due for {STAGES[stage - 1]} ({chosen.length}/{members.length} selected)</p>
             <button type="button" className="btn-link text-xs" onClick={() => setPicked(Object.fromEntries(members.map((m) => [m.employee_id, true])))}>Select all</button>
@@ -219,8 +284,14 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
               </li>
             ))}
           </ul>
+          </>
+          )}
           {gate.notice}
-          <SubmitBar busy={busy} disabled={!ready} label={chosen.length ? `Mark attendance for ${chosen.length}` : 'Mark attendance'} onCancel={onClose} />
+          <SubmitBar busy={busy} disabled={!ready}
+            label={mode === 'photo'
+              ? (photoMembers.length ? `Mark ${photoMembers.length} present` : 'Mark attendance')
+              : (chosen.length ? `Mark attendance for ${chosen.length}` : 'Mark attendance')}
+            onCancel={onClose} />
         </form>
       )}
     </Dialog>

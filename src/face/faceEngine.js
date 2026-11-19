@@ -157,3 +157,56 @@ export async function describeFrame(input) {
   const faces = await faceapi.detectAllFaces(input, options).withFaceLandmarks().withFaceDescriptors();
   return faces.length === 1 ? Array.from(faces[0].descriptor) : null;
 }
+
+// ---- group photo -------------------------------------------------------------------------------------
+// Every face in one frame, with a descriptor each. A group photo puts faces much further from the camera
+// than an attendance selfie does, so this runs the detector at a far larger input size than the live
+// loop: at 416 a back-row face thirty pixels wide is simply not found, and a person missed here is a
+// person who has to be added by hand. It is slower, but it runs once on a still, not many times a second.
+export const GROUP_INPUT_SIZE = 608;
+// Below this, a face carries too few pixels for its descriptor to mean anything. Such faces are still
+// reported -- the supervisor should see that someone was there -- but never identified automatically.
+export const MIN_FACE_PX = 48;
+
+// Returns { faces: [{ descriptor, box, score, small }], width, height } for a data URL, canvas or video.
+export async function describeAll(src, { inputSize = GROUP_INPUT_SIZE } = {}) {
+  const faceapi = await loadFaceEngine();
+  const input = typeof src === 'string' ? await imageFrom(src) : src;
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.4 });
+  const found = await faceapi.detectAllFaces(input, options).withFaceLandmarks().withFaceDescriptors();
+  const faces = found.map((f) => {
+    const b = f.detection.box;
+    const box = { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) };
+    return {
+      descriptor: Array.from(f.descriptor),
+      box,
+      score: f.detection.score,
+      small: Math.min(box.width, box.height) < MIN_FACE_PX,
+    };
+  // Left to right, so the order on screen is the order in the list.
+  }).sort((a, b) => a.box.x - b.box.x);
+  return {
+    faces,
+    width: input.videoWidth || input.naturalWidth || input.width,
+    height: input.videoHeight || input.naturalHeight || input.height,
+  };
+}
+
+// One person's face cut out of the group photo, with room around it so a reviewer can see who it is.
+// Each attendance record keeps its own crop: the whole group photo is one image and an attendance record
+// may hold only one photo of its own, but more than that, a crop is the part of the evidence that is
+// actually about this employee.
+export async function cropFace(src, box, { margin = 0.45, size = 320 } = {}) {
+  const input = typeof src === 'string' ? await imageFrom(src) : src;
+  const w = input.videoWidth || input.naturalWidth || input.width;
+  const h = input.videoHeight || input.naturalHeight || input.height;
+  const pad = Math.round(Math.max(box.width, box.height) * margin);
+  const side = Math.min(Math.max(box.width, box.height) + pad * 2, Math.min(w, h));
+  // Clamped so a face at the edge of the frame still yields a square crop rather than a stretched one.
+  const x = Math.max(0, Math.min(w - side, Math.round(box.x + box.width / 2 - side / 2)));
+  const y = Math.max(0, Math.min(h - side, Math.round(box.y + box.height / 2 - side / 2)));
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  canvas.getContext('2d').drawImage(input, x, y, side, side, 0, 0, size, size);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}

@@ -68,6 +68,12 @@ class Attendance(CapturedRecord, Base):
     group_submission_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     face_distance: Mapped[float | None] = mapped_column(Float)
     face_model: Mapped[str | None] = mapped_column(String(40))
+    # How identity was established: "face", "fingerprint", "group_photo" or NULL (the division asked for
+    # no proof). A group photo is recorded separately from a live face check because it proves less -- one
+    # frame, many faces, no face watched over time for a blink -- and a report that treats the two alike
+    # would overstate what is known. With "group_photo", face_distance tells the two cases apart: set when
+    # the device recognised the person and the supervisor agreed, NULL when the supervisor named them.
+    identified_by: Mapped[str | None] = mapped_column(String(20))
     # How the fingerprint check went, when that is how this attendance was verified. The score is the
     # scanner SDK's own, so `fingerprint_matcher` records whose scale it is.
     fingerprint_score: Mapped[int | None] = mapped_column(Integer)
