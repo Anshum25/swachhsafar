@@ -89,14 +89,38 @@ token is checked again on the next request that reaches the server.
 ---
 
 ## 5. Migration from Firebase Authentication (one-off)
-Migration `0007` creates `user_credentials`, adds `auth_sessions.token_hash`, and ends every Firebase-era
+Migration `0008` creates `user_credentials`, adds `auth_sessions.token_hash`, and ends every Firebase-era
 session (`revoke_reason = "auth_migrated"`). After deploying:
 
+```bash
+# On the server. systemd-run is not decoration: the settings come from the unit's EnvironmentFile, so a
+# plain `python -m app.cli ...` gets no DATABASE_URL or OTP_PEPPER and stops with "Field required" before
+# it does anything. This runs the command as the service's own user with the service's own environment.
+sudo systemd-run --pty --collect --uid=swachhsafar \
+  --property=EnvironmentFile=/etc/swachhsafar/backend.env \
+  --property=WorkingDirectory=/var/www/html/swachhsafar2.0/swachhsafar/backend \
+  /var/www/html/swachhsafar2.0/swachhsafar/backend/.venv/bin/python \
+  -m app.cli import-firebase-passwords --dry-run
 ```
+
+Drop `--dry-run` to write. The same wrapper runs any other `app.cli` command on the server.
+
+Two things it needs, and it says so plainly if either is missing:
+
+- `firebase-admin`, which is no longer a runtime dependency. If it reports `No module named
+  'firebase_admin'`:
+  `sudo /var/www/html/swachhsafar2.0/swachhsafar/backend/.venv/bin/pip install -e
+  '/var/www/html/swachhsafar2.0/swachhsafar/backend[firebase]'`
+- `FIREBASE_CREDENTIALS_FILE` in `backend.env`, or `--credentials /path/to/service-account.json`. The
+  service account must be able to read the project's password hash parameters, or the hashes it copies
+  cannot be verified afterwards; the command refuses rather than importing hashes nobody can check.
+
+For a development machine, where the settings come from `backend/.env`, the plain form still works:
+
+```bash
 cd backend
 pip install ".[firebase]"                      # only needed for this step
 python -m app.cli import-firebase-passwords --dry-run
-python -m app.cli import-firebase-passwords
 ```
 
 The command reads each employee's password hash and the project's hash parameters from Firebase (read-only)
