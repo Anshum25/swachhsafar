@@ -33,10 +33,10 @@ const STEADY_MS = 1000;
 const STEADY_FRAMES = 6;
 // Below this share of the frame height a face carries too little detail to recognise, so the preview waits
 // rather than taking a picture it cannot read.
-const MIN_FACE_SHARE = 0.07;
+const MIN_FACE_SHARE = 0.02;
 // If the crew never settles, the photo is taken anyway on whatever is in view: a usable answer late beats
 // no answer at all, and the supervisor can retake it.
-const PATIENCE_MS = 8000;
+const PATIENCE_MS = 4000;
 
 export default function GroupPhotoCapture({ candidates, profiles, threshold, onChange }) {
   const video = useRef(null);

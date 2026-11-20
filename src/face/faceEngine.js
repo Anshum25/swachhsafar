@@ -166,7 +166,7 @@ export async function describeFrame(input) {
 export const GROUP_INPUT_SIZE = 608;
 // Below this, a face carries too few pixels for its descriptor to mean anything. Such faces are still
 // reported -- the supervisor should see that someone was there -- but never identified automatically.
-export const MIN_FACE_PX = 48;
+export const MIN_FACE_PX = 24;
 
 // The live preview's own pass: where the faces are, and nothing else. Descriptors are what makes reading a
 // group photo slow, and the preview does not need them -- it only has to know that a steady number of
@@ -187,28 +187,87 @@ export async function detectFaces(input, { inputSize = PREVIEW_INPUT_SIZE } = {}
     .sort((a, b) => a.box.x - b.box.x);
 }
 
+// Intersection over the smaller box: two detections of one face from overlapping tiles overlap almost
+// completely, even when one of them is cut by a tile edge.
+function overlap(a, b) {
+  const x = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+  const y = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  return (x * y) / Math.max(1, Math.min(a.width * a.height, b.width * b.height));
+}
+
+// Every face in a large still, including the small ones at the back of a big crew. The detector only ever
+// sees its input shrunk to `inputSize`, so on a 1920px photo of fifteen people a back-row face shrinks to a
+// dozen pixels and disappears. So the photo is read whole AND in overlapping tiles (each tile is shrunk far
+// less), and the detections are merged.
+async function detectAllTiled(faceapi, input, w, h, inputSize) {
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.4 });
+  const boxes = [];
+  const add = (dets, ox, oy, scale) => {
+    for (const d of dets) {
+      boxes.push({ x: ox + d.box.x / scale, y: oy + d.box.y / scale,
+        width: d.box.width / scale, height: d.box.height / scale, score: d.score });
+    }
+  };
+  add(await faceapi.detectAllFaces(input, options), 0, 0, 1);
+
+  const cols = w >= 1200 ? 3 : 2;
+  const rows = h >= 1000 ? 3 : 2;
+  const tw = Math.ceil(w / cols * 1.3);
+  const th = Math.ceil(h / rows * 1.3);
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const x = Math.round(Math.min(w - tw, (c * (w - tw)) / Math.max(1, cols - 1)));
+      const y = Math.round(Math.min(h - th, (r * (h - th)) / Math.max(1, rows - 1)));
+      const tile = document.createElement('canvas');
+      // Small tiles are enlarged so the faces in them reach the detector at a readable size.
+      const scale = Math.max(1, inputSize / Math.max(tw, th));
+      tile.width = Math.round(tw * scale);
+      tile.height = Math.round(th * scale);
+      tile.getContext('2d').drawImage(input, x, y, tw, th, 0, 0, tile.width, tile.height);
+      add(await faceapi.detectAllFaces(tile, options), x, y, scale);
+    }
+  }
+
+  // Strongest first; any later box that is mostly the same face is dropped.
+  boxes.sort((a, b) => b.score - a.score);
+  const kept = [];
+  for (const b of boxes) if (!kept.some((k) => overlap(k, b) > 0.5)) kept.push(b);
+  return kept;
+}
+
 // Returns { faces: [{ descriptor, box, score, small }], width, height } for a data URL, canvas or video.
+// Each face is read from its own enlarged crop, so a small face still gets a full-size descriptor pass.
 export async function describeAll(src, { inputSize = GROUP_INPUT_SIZE } = {}) {
   const faceapi = await loadFaceEngine();
   const input = typeof src === 'string' ? await imageFrom(src) : src;
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.4 });
-  const found = await faceapi.detectAllFaces(input, options).withFaceLandmarks().withFaceDescriptors();
-  const faces = found.map((f) => {
-    const b = f.detection.box;
+  const w = input.videoWidth || input.naturalWidth || input.width;
+  const h = input.videoHeight || input.naturalHeight || input.height;
+  const found = await detectAllTiled(faceapi, input, w, h, inputSize);
+  const single = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
+
+  const faces = [];
+  for (const b of found) {
     const box = { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) };
-    return {
-      descriptor: Array.from(f.descriptor),
+    const side = Math.max(box.width, box.height) * 2;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const sx = Math.max(0, cx - side / 2);
+    const sy = Math.max(0, cy - side / 2);
+    const crop = document.createElement('canvas');
+    crop.width = crop.height = 320;
+    crop.getContext('2d').drawImage(input, sx, sy, side, side, 0, 0, 320, 320);
+    const d = await faceapi.detectSingleFace(crop, single).withFaceLandmarks().withFaceDescriptor();
+    faces.push({
+      // A face the close-up pass cannot confirm keeps no descriptor: it is shown, never identified.
+      descriptor: d ? Array.from(d.descriptor) : null,
       box,
-      score: f.detection.score,
-      small: Math.min(box.width, box.height) < MIN_FACE_PX,
-    };
+      score: b.score,
+      small: !d || Math.min(box.width, box.height) < MIN_FACE_PX,
+    });
+  }
   // Left to right, so the order on screen is the order in the list.
-  }).sort((a, b) => a.box.x - b.box.x);
-  return {
-    faces,
-    width: input.videoWidth || input.naturalWidth || input.width,
-    height: input.videoHeight || input.naturalHeight || input.height,
-  };
+  faces.sort((a, b) => a.box.x - b.box.x);
+  return { faces, width: w, height: h };
 }
 
 // One person's face cut out of the group photo, with room around it so a reviewer can see who it is.
