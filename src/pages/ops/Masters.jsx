@@ -138,7 +138,7 @@ export default function Masters({ parts = [] }) {
   const title = sections.find((s) => s.key === section)?.label;
   return (
     <>
-      <PageHeader title="Master data" subtitle={<>{title}{division.current?.name ? <span className="text-slate-400"> · {division.current.name}</span> : null}</>}
+      <PageHeader title="Master data" subtitle={<><span className="hidden lg:inline">{title} · </span><span className="text-slate-500">{division.current?.name}</span></>}
         actions={<DivisionPicker division={division} />} />
       <MastersMobileNav path={`/masters/${parts.join('/')}`} />
       {section === 'trains' && <Trains divisionId={division.divisionId} />}

@@ -25,7 +25,7 @@ function useDebounced(value, ms = 300) {
 }
 
 // Row ⋯ menu. Portalled with fixed positioning so the scrolling table never clips it.
-function RowMenu({ user, items }) {
+export function RowMenu({ user, items, label: aria, className = 'icon-btn h-9 w-9' }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btn = useRef(null);
@@ -53,7 +53,7 @@ function RowMenu({ user, items }) {
   const shown = items.filter(Boolean);
   return (
     <>
-      <button ref={btn} type="button" className="icon-btn h-9 w-9" aria-label={`Actions for ${user.name}`} aria-haspopup="menu" aria-expanded={open}
+      <button ref={btn} type="button" className={className} aria-label={aria ?? `Actions for ${user.name}`} aria-haspopup="menu" aria-expanded={open}
         onClick={() => setOpen((v) => !v)}><MoreIcon className="h-5 w-5" /></button>
       {open && pos && createPortal(
         <div ref={menu} role="menu" style={pos} className="fixed z-50 w-56 animate-modal-in overflow-hidden rounded-2xl bg-white py-1.5 shadow-raised ring-1 ring-line">

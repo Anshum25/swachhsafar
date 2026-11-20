@@ -3,10 +3,11 @@
 // biometric registration status (/users/{id}/face, /fingerprint), which carries metadata, never templates.
 import { useState } from 'react';
 import { ROLE_NAMES, useResource } from '../../../app/session.jsx';
-import { ActionMenu, Badge, DetailList, Dialog, ErrorNote, Loading, Panel, fmtDateTime, label } from '../../../components/ui.jsx';
+import { Badge, DetailList, Dialog, ErrorNote, Loading, Panel, fmtDateTime, label } from '../../../components/ui.jsx';
 import { ArrowLeftIcon, FingerprintIcon, KeyIcon, UserIcon } from '../../../components/Icons.jsx';
 import FaceEnrollDialog from './FaceEnrollment.jsx';
 import FingerprintEnrollDialog from './FingerprintEnrollment.jsx';
+import { RowMenu } from './Users.jsx';
 import { EditUserDialog, ResetPasswordDialog, SignInForm, StatusDialog, useCanManageUser } from './UserDialogs.jsx';
 
 const GENDER = { M: 'Male', F: 'Female', O: 'Other' };
@@ -70,9 +71,9 @@ export default function UserProfile({ userId, division }) {
       {back}
       <section className="card mb-4 sm:p-5">
         <div className="flex flex-wrap items-start gap-4">
-          <span className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-brand-700 text-xl font-bold text-white" aria-hidden="true">{initials(user.name)}</span>
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-brand-700 text-lg font-bold text-white sm:h-16 sm:w-16 sm:text-xl" aria-hidden="true">{initials(user.name)}</span>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-xl font-bold text-ink">{user.name}</h2>
+            <h2 className="truncate text-lg font-bold text-ink sm:text-xl">{user.name}</h2>
             <p className="text-sm text-muted">Employee ID {user.emp_id}{user.designation ? ` · ${user.designation}` : ''}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Badge tone="brand">{ROLE_NAMES[user.role_id]}</Badge>
@@ -81,14 +82,15 @@ export default function UserProfile({ userId, division }) {
             </div>
           </div>
           {manage && (
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              <button type="button" className="btn-primary h-10 px-4" onClick={() => setDialog('edit')}>Edit user</button>
+            // Phones: Edit | Password | ⋯ as one even row; from 640px the buttons sit beside the name.
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:items-center">
+              <button type="button" className="btn-primary h-11 min-w-0 px-3 sm:px-4" onClick={() => setDialog('edit')}><span className="truncate">Edit user</span></button>
               {user.password_set
-                ? <button type="button" className="btn-secondary h-10" onClick={() => setDialog('password')}><KeyIcon /> Change password</button>
-                : <button type="button" className="btn-secondary h-10" onClick={() => setDialog('signin')}><KeyIcon /> Create sign-in</button>}
-              <ActionMenu label="More user actions" items={[
-                { label: 'Face registration', onClick: () => setDialog('face') },
-                { label: 'Fingerprint registration', onClick: () => setDialog('finger') },
+                ? <button type="button" className="btn-secondary h-11 min-w-0 px-3" onClick={() => setDialog('password')}><KeyIcon className="h-4 w-4 shrink-0" /><span className="truncate"><span className="hidden min-[400px]:inline">Change </span>password</span></button>
+                : <button type="button" className="btn-secondary h-11 min-w-0 px-3" onClick={() => setDialog('signin')}><KeyIcon className="h-4 w-4 shrink-0" /><span className="truncate">Create sign-in</span></button>}
+              <RowMenu user={user} label="More user actions" className="icon-btn h-11 w-11 rounded-xl ring-1 ring-line" items={[
+                { label: user.face_enrolled ? 'Re-register face' : 'Register face', onClick: () => setDialog('face') },
+                { label: user.fingerprint_enrolled ? 'Re-register fingers' : 'Register fingers', onClick: () => setDialog('finger') },
                 { label: active ? 'Deactivate user' : 'Activate user', danger: active, onClick: () => setDialog('status') },
               ]} />
             </div>

@@ -279,7 +279,7 @@ export default function Layout({ path, children }) {
           <Drawer open={open} onClose={close} path={path} />
           {/* Master Data has a second sidebar next to this one (desktop only); the content column makes room for it. */}
           {masters && <MastersSidebar path={path} />}
-          <div className={masters ? 'lg:pl-128' : 'lg:pl-68'}>
+          <div className={masters ? 'lg:pl-132' : 'lg:pl-68'}>
             <header className="sticky top-0 z-20 bg-white pt-[env(safe-area-inset-top)] shadow-bar">
               <div className={home ? '' : 'hidden'}>
                 {/* Home: menu · centred brand · bell (reference home screen). */}
