@@ -22,6 +22,7 @@ export const CAPTURE_RULES = {
   'complaint.create': { permission: 'complaints.create' },
   'inventory.record': { permission: 'inventory.transact', participantOverride: 'journeys.manage' }, // inventory.py record
   'security.event': { permission: null }, // any signed-in user reports what their device observed
+  'job.save': { permission: null }, // TEMPORARY Jobs test module: shared by every signed-in user
 };
 
 export function isParticipant(journey, userId) {

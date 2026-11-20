@@ -14,6 +14,7 @@ OpType = Literal[
     "complaint.create",
     "inventory.record",
     "security.event",
+    "job.save",
 ]
 
 
@@ -64,3 +65,4 @@ class ChangesOut(StrictModel):
     journeys: list[dict]
     face_profiles: list[dict] = []
     fingerprint_profiles: list[dict] = []
+    jobs: list[dict] = []

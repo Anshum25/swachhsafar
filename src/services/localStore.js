@@ -22,6 +22,7 @@ import { createInventoryRepository } from '../database/inventoryRepository.js';
 import { createMediaStore, dataUrlToBytes } from '../database/mediaStore.js';
 import { createSyncStateRepository } from '../database/syncStateRepository.js';
 import { createSecurityRepository } from '../database/securityRepository.js';
+import { createJobRepository } from '../database/jobRepository.js';
 import { authorizeCapture } from './authorization.js';
 
 export const OUTBOX_ENTITY = 'operation';
@@ -36,6 +37,8 @@ export const OPERATIONS = {
   'complaint.create': { table: 'complaints', entity: 'complaint', repo: 'complaints', prepare: 'prepareCreate' },
   'inventory.record': { table: 'inventory_transactions', entity: 'inventory_transaction', repo: 'inventory', prepare: 'prepareRecord' },
   'security.event': { table: 'security_events', entity: 'security_event', repo: 'security', prepare: 'prepareEvent' },
+  // TEMPORARY Jobs test module. `supersede`: a newer edit replaces the job's queued, not-yet-sent edit.
+  'job.save': { table: 'jobs', entity: 'job', repo: 'jobs', prepare: 'prepareSave', supersede: true },
 };
 
 // Records that may be removed from the device after the server rejected them. Complaints and
@@ -57,7 +60,8 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
   const media = createMediaStore(db, { files });
   const syncState = createSyncStateRepository(db);
   const security = createSecurityRepository(db);
-  const repos = { attendance, inspections, feedback, complaints, inventory, security };
+  const jobs = createJobRepository(db);
+  const repos = { attendance, inspections, feedback, complaints, inventory, security, jobs };
 
   const clock = () => {
     const d = now();
@@ -89,7 +93,7 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
   }
 
   const store = {
-    db, outbox, masters, identity, journeys, attendance, inspections, feedback, complaints, inventory, media, syncState, security,
+    db, outbox, masters, identity, journeys, attendance, inspections, feedback, complaints, inventory, media, syncState, security, jobs,
     clock,
 
     // Saves an operational record locally. `media`: [{ id, kind, dataUrl } | { id, kind, bytes, mimeType }].
@@ -122,7 +126,16 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
           }));
         }
         const outboxId = crypto.randomUUID();
+        // An edit of a job whose previous edit is still queued replaces it (the record carries the latest
+        // state). If that edit is being sent right now the UPDATE matches nothing, the INSERT below hits the
+        // one-open-operation-per-record index, and nothing is saved: the user tries again a moment later.
+        const superseded = op.supersede ? [{
+          sql: `UPDATE sync_outbox SET sync_status = 'completed', last_error = 'Superseded by a newer edit', completed_at = ?, updated_at = ?
+                WHERE entity_type = ? AND entity_id = ? AND operation = ? AND sync_status IN ('pending', 'failed')`,
+          params: [t.now, t.now, OUTBOX_ENTITY, payload.id, type],
+        }] : [];
         await db.transaction([
+          ...superseded,
           ...staged.map((s) => s.statement),
           ...prepared.statements,
           outbox.insertStatement({
@@ -232,6 +245,10 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
       ]);
       let journeysStored = 0;
       let failures = masterOk ? 0 : 1;
+      // Jobs (temporary test module): each in its own transaction, like journeys.
+      for (const job of changes.jobs ?? []) {
+        if (!(await tryIngest(`job ${job.id}`, jobs.serverStatements(job, t.now)))) failures += 1;
+      }
       for (const j of changes.journeys ?? []) {
         if (await syncState.isTombstoned('journey', j.id)) continue;
         if (await tryIngest(`journey ${j.id}`, journeys.serverStatements(j, t.now))) journeysStored += 1;
