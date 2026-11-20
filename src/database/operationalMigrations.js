@@ -686,4 +686,34 @@ const V11 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11];
+// v12: jobs (TEMPORARY test module, src/database/jobRepository.js), pulled from /sync/changes `jobs` and
+// pushed with the 'job.save' operation. `data` holds the server's full JSON for the job. Additive only.
+const V12 = {
+  version: 12,
+  name: 'jobs',
+  statements: [
+    `CREATE TABLE jobs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        location TEXT,
+        priority TEXT NOT NULL DEFAULT 'medium',
+        status TEXT NOT NULL DEFAULT 'open',
+        due_date TEXT,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(data)),
+        created_by_id TEXT,
+        updated_by_id TEXT,
+        server_updated_at TEXT,
+        sync_status TEXT NOT NULL DEFAULT 'synced',
+        last_sync_error TEXT,
+        synced_at TEXT,
+        server_timestamp TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+    'CREATE INDEX idx_jobs_updated ON jobs (is_deleted, updated_at)',
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12];
