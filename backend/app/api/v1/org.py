@@ -23,9 +23,12 @@ from app.schemas.org import (
     KycIn,
     KycOut,
     MeOut,
+    PasswordResetIn,
+    PasswordResetOut,
     PermissionOut,
     RoleOut,
     SignInIn,
+    UserAccountOut,
     UserCreate,
     UserOut,
     UserStatusIn,
@@ -122,6 +125,19 @@ def get_user(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = D
 @users_router.patch("/{user_id}", response_model=UserOut)
 def update_user(user_id: uuid.UUID, body: UserUpdate, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return org.update_user(db, p, user_id, body)
+
+
+@users_router.get("/{user_id}/account", response_model=UserAccountOut)
+def get_account(user_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Creation, sign-in and effective permissions of a user, for the administrator's profile view."""
+    return org.account_summary(db, p, user_id)
+
+
+@users_router.post("/{user_id}/password", response_model=PasswordResetOut)
+def reset_password(user_id: uuid.UUID, body: PasswordResetIn, db: Session = Depends(get_db),
+                   p: Principal = Depends(get_principal)):
+    """An administrator sets a new password for an employee they manage; that employee's sessions are ended."""
+    return PasswordResetOut(sessions_ended=org.reset_password(db, p, user_id, body.new_password))
 
 
 @users_router.post("/{user_id}/status", response_model=UserOut)

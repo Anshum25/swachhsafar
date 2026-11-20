@@ -5,6 +5,50 @@ import { dismissInstall, installDismissed, installInstructions, isStandalone, pr
 import { checkAppUpdate } from '../pwa/appUpdate.js';
 import { applyBundleUpdate, checkBundleUpdate } from '../pwa/bundleUpdate.js';
 import { isNativeApp } from '../security/native.js';
+import { clearAppCache } from '../pwa/clearCache.js';
+import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
+
+// Offered with every "new version" notice: when an update does not seem to take, clearing this device's cached
+// app files and reloading fetches the newest version fresh. Records on this device and the sign-in are kept
+// (src/pwa/clearCache.js). Asks first, and needs the network.
+export function ClearCacheButton({ className = 'rounded-lg px-3 py-1.5 font-semibold text-white underline decoration-white/60 hover:bg-white/10' }) {
+  const online = useNetworkStatus();
+  const [asking, setAsking] = useState(false);
+  const [state, setState] = useState({ busy: false, error: null });
+  async function run() {
+    setState({ busy: true, error: null });
+    try {
+      await clearAppCache();
+    } catch (e) {
+      setState({ busy: false, error: e.message });
+    }
+  }
+  return (
+    <>
+      <button type="button" className={className} disabled={!online} onClick={() => setAsking(true)} data-testid="clear-cache"
+        title={online ? 'Remove cached app files and reload' : 'Needs internet'}>
+        Clear cache
+      </button>
+      {asking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/45 p-4 text-left" onClick={() => !state.busy && setAsking(false)}>
+          <div role="dialog" aria-modal="true" aria-label="Clear app cache" className="w-full max-w-sm rounded-[20px] bg-white p-5 text-sm text-slate-700 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-2 text-[17px] font-bold text-ink">Clear app cache?</h2>
+            <p>This removes the app files stored on this device and reloads, so the newest version is downloaded fresh.</p>
+            <p className="mt-2 font-medium text-emerald-800">Your records (including unsynced ones), your sign-in and form drafts are kept.</p>
+            <p className="mt-2">Save any open form first.</p>
+            {state.error && <p className="mt-2 font-medium text-red-700" role="alert">{state.error}</p>}
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button type="button" className="btn-secondary h-12" disabled={state.busy} onClick={() => setAsking(false)}>Cancel</button>
+              <button type="button" className="btn-primary h-12" disabled={state.busy || !online} onClick={run} data-testid="clear-cache-confirm">
+                {state.busy ? 'Clearing…' : 'Clear and reload'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 // Shown at most once per 30 days while the app is not installed: an Install button when the browser
 // offers installation (Chrome / Edge on Android), otherwise how to install from this browser's menu.
@@ -48,6 +92,7 @@ export function UpdateBanner() {
         A new version of Swachh Safar is ready. {pending ? `Your ${pending} unsynced record(s) are stored on this device and are kept.` : ''} Save any open form first.
       </span>
       <button type="button" className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800" onClick={pwa.update}>Update now</button>
+      <ClearCacheButton />
     </div>
   );
 }
@@ -94,6 +139,7 @@ export function BundleUpdateBanner() {
         Swachh Safar {staged.version} is downloaded and starts the next time you open the app.
         {pending ? ` Your ${pending} unsynced record(s) are stored on this device and are kept.` : ''}
       </span>
+      <ClearCacheButton />
     </div>
   );
 }
@@ -139,6 +185,7 @@ export function AppUpdateBanner() {
     <div className="flex flex-wrap items-center gap-3 bg-sky-700 px-4 py-2 text-sm text-white sm:px-6" role="status" data-testid="apk-update-banner">
       <span className="flex-1">{updateText(update)}</span>
       <a href={update.url} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800">Download</a>
+      <ClearCacheButton />
     </div>
   );
 }
@@ -155,6 +202,7 @@ export function LoginUpdateBanner() {
       <div className="relative z-20 mb-3 flex w-full max-w-md items-center gap-3 rounded-2xl bg-sky-700 px-4 py-2.5 text-sm text-white shadow" role="status" data-testid="apk-update-banner">
         <span className="flex-1">{updateText(appUpdate)}</span>
         <a href={appUpdate.url} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800">Download</a>
+        <ClearCacheButton />
       </div>
     );
   }
@@ -163,6 +211,7 @@ export function LoginUpdateBanner() {
     <div className="relative z-20 mb-3 flex w-full max-w-md items-center gap-3 rounded-2xl bg-sky-700 px-4 py-2.5 text-sm text-white shadow" role="status" data-testid="update-banner">
       <span className="flex-1">A new version of Swachh Safar is ready.</span>
       <button type="button" className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800" onClick={pwa.update}>Update now</button>
+      <ClearCacheButton />
     </div>
   );
 }

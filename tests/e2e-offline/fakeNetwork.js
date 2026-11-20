@@ -216,7 +216,9 @@ export function createFakeNetwork({ users, today }) {
     if (method === 'GET' && path === '/users') {
       const d = query.get('division_id');
       if (d && !member(d)) return outside;
-      return { status: 200, body: { items: masters.staff.filter((u) => u.division_id === d), total: masters.staff.length, page: 1, page_size: 200 } };
+      const q = (query.get('q') ?? '').toLowerCase();
+      const items = masters.staff.filter((u) => u.division_id === d && (!q || [u.name, u.emp_id, u.email].some((v) => v?.toLowerCase().includes(q))));
+      return { status: 200, body: { items, total: items.length, page: 1, page_size: Number(query.get('page_size') ?? 200) } };
     }
     if (method === 'POST' && path === '/users') {
       if (!can('users.manage', body.division_id)) return forbidden;
@@ -241,6 +243,37 @@ export function createFakeNetwork({ users, today }) {
       if (row.password_set) return invalid('This employee can already sign in');
       Object.assign(row, { password_set: true, signin: 'created', temp_password: body.password ? null : 'gen-pass-5678', updated_at: now });
       return { status: 200, body: row };
+    }
+    // ---- one employee: profile, edit, password reset, status (api/v1/org.py) ----------------------------
+    if ((m = path.match(/^\/users\/([^/]+)(\/[a-z]+)?$/)) && m[1] !== 'charge-maps') {
+      const row = masters.staff.find((u) => u.id === m[1]);
+      const sub = m[2] ?? '';
+      if (!row || !member(row.division_id)) return { status: 404, body: { error: { code: 'not_found', message: 'User not found' } } };
+      if (method === 'GET' && sub === '') return { status: 200, body: row };
+      if (method === 'GET' && sub === '/account') {
+        return { status: 200, body: { user_id: row.id, created_at: '2026-01-05T10:00:00Z', updated_at: row.updated_at, created_by: null,
+          division_code: 'E2E', division_name: 'E2E Division', role_name: 'Janitor', password_set: row.password_set,
+          password_changed_at: row.password_set ? '2026-02-01T09:00:00Z' : null, password_set_by: row.password_set ? 'admin' : null,
+          last_sign_in_at: null, active_sessions: 0, permissions: ['attendance.submit', 'journeys.read'] } };
+      }
+      if (method === 'GET' && sub === '/face') return { status: 200, body: { user_id: row.id, enrolled: !!row.face_enrolled, samples: 0 } };
+      if (method === 'GET' && sub === '/fingerprint') return { status: 200, body: { user_id: row.id, enrolled: !!row.fingerprint_enrolled, fingers: [] } };
+      if (!can('users.manage', row.division_id)) return forbidden;
+      if (method === 'PATCH' && sub === '') {
+        if ('emp_id' in body || 'status' in body) return invalid('Extra inputs are not permitted');
+        Object.assign(row, body, { updated_at: now });
+        return { status: 200, body: row };
+      }
+      if (method === 'POST' && sub === '/password') {
+        if (!body?.new_password || body.new_password.length < 8) return invalid('new_password: too short');
+        server.passwordResets = [...(server.passwordResets ?? []), { id: row.id, length: body.new_password.length }];
+        Object.assign(row, { password_set: true, updated_at: now });
+        return { status: 200, body: { sessions_ended: 2 } };
+      }
+      if (method === 'POST' && sub === '/status') {
+        Object.assign(row, { status: body.status, updated_at: now });
+        return { status: 200, body: row };
+      }
     }
     if (method === 'GET' && path === '/complaints/departments') return list(masters.departments);
     if (method === 'GET' && path === '/complaints/categories') return list(masters.categories);

@@ -195,6 +195,55 @@ def update_user(db: Session, p: Principal, user_id: uuid.UUID, body: UserUpdate)
     return user
 
 
+def reset_password(db: Session, p: Principal, user_id: uuid.UUID, new_password: str) -> int:
+    """An administrator sets another employee's password (hashed by auth.set_password, the only password store).
+    Every session of that employee is ended, so whoever held the old password is signed out everywhere.
+    Returns how many sessions were ended. The password itself is never audited or returned."""
+    from app.models import AuthSession
+    from app.services.auth import set_password  # late import, as in _set_signin
+
+    user = get_or_404(db, User, user_id, "User")
+    if user.status == UserStatus.DELETED:
+        raise NotFound("User not found")
+    if user.id == p.id:
+        raise BusinessRuleViolation("Change your own password from your profile.", code="own_password")
+    _assert_manageable(p, user)
+    now = utcnow()
+    set_password(db, user, new_password, source="admin", now=now)
+    ended = 0
+    for session in db.scalars(select(AuthSession).where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))):
+        session.revoked_at, session.revoke_reason = now, "password_reset"
+        ended += 1
+    audit(db, actor_id=p.id, action="user.password.reset", entity=user, division_id=user.division_id,
+          changes={"sessions_ended": ended})
+    db.commit()
+    return ended
+
+
+def account_summary(db: Session, p: Principal, user_id: uuid.UUID) -> dict:
+    """What the administrator's profile view shows beyond the user record: creation, sign-in and permissions."""
+    from app.models import AuthSession, LoginAttempt, UserCredential
+    from app.security.principal import resolve_principal
+
+    user = get_user(db, p, user_id)
+    cred = db.get(UserCredential, user.id)
+    creator = db.get(User, user.created_by_id) if user.created_by_id else None
+    last = db.scalar(select(func.max(LoginAttempt.created_at)).where(
+        LoginAttempt.user_id == user.id, LoginAttempt.success.is_(True),
+        LoginAttempt.method.in_(("password", "otp_verify"))))
+    sessions = db.scalar(select(func.count()).select_from(AuthSession).where(
+        AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))) or 0
+    perms = resolve_principal(db, user).permissions_in(user.division_id)
+    return {
+        "user_id": user.id, "created_at": user.created_at, "updated_at": user.updated_at,
+        "created_by": {"id": creator.id, "name": creator.name, "emp_id": creator.emp_id} if creator else None,
+        "division_code": user.division.code, "division_name": user.division.name, "role_name": user.role.name,
+        "password_set": cred is not None, "password_changed_at": cred.password_changed_at if cred else None,
+        "password_set_by": cred.source if cred else None, "last_sign_in_at": last, "active_sessions": sessions,
+        "permissions": sorted(perms),
+    }
+
+
 def set_user_status(db: Session, p: Principal, user_id: uuid.UUID, status: UserStatus) -> User:
     user = get_or_404(db, User, user_id, "User")
     if user.status == UserStatus.DELETED:
@@ -232,7 +281,8 @@ def list_users(db: Session, p: Principal, params: PageParams, *, role_id: int | 
         stmt = stmt.where(User.role_id == role_id)
     if q:
         like = f"%{q.lower()}%"
-        stmt = stmt.where(or_(func.lower(User.name).like(like), func.lower(User.emp_id).like(like), User.mobile.like(like)))
+        stmt = stmt.where(or_(func.lower(User.name).like(like), func.lower(User.emp_id).like(like), User.mobile.like(like),
+                              func.lower(User.email).like(like)))
     # Sign-in and biometric registration status are shown with every user: load them in three queries, not 3 per row.
     stmt = stmt.options(selectinload(User.credential), selectinload(User.face_enrollment),
                         selectinload(User.fingerprint_enrollment))

@@ -15,6 +15,7 @@ import { DEMO_MODE } from '../services/demoApi.js';
 import { AppUpdateBanner, BundleUpdateBanner, InstallBanner, UpdateBanner } from '../components/PwaPanels.jsx';
 import { requestPersistence } from '../pwa/pwaState.js';
 import { BUILD_SHA } from '../pwa/appUpdate.js';
+import { MastersSidebar } from '../pages/ops/masters/MastersNav.jsx';
 
 const ToastContext = createContext(() => {});
 export const useNotify = () => useContext(ToastContext);
@@ -261,6 +262,7 @@ export default function Layout({ path, children }) {
   // Any navigation (a menu link, the browser/Android back button) closes the menu.
   useEffect(() => setOpen(false), [path]);
   const home = path === '/';
+  const masters = isOn('/masters', path);
 
   return (
     <ToastContext.Provider value={notify}>
@@ -275,7 +277,9 @@ export default function Layout({ path, children }) {
             <div className="min-h-0 flex-1"><MenuContent path={path} onPick={undefined} showBrand={false} /></div>
           </aside>
           <Drawer open={open} onClose={close} path={path} />
-          <div className="lg:pl-68">
+          {/* Master Data has a second sidebar next to this one (desktop only); the content column makes room for it. */}
+          {masters && <MastersSidebar path={path} />}
+          <div className={masters ? 'lg:pl-128' : 'lg:pl-68'}>
             <header className="sticky top-0 z-20 bg-white pt-[env(safe-area-inset-top)] shadow-bar">
               <div className={home ? '' : 'hidden'}>
                 {/* Home: menu · centred brand · bell (reference home screen). */}
