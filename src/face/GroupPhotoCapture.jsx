@@ -65,7 +65,10 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   useEffect(() => stop, [stop]);
 
   const byId = new Map((candidates ?? []).map((c) => [c.employee_id, c]));
-  const named = rows.filter((r) => r.status === 'identified' && byId.has(r.userId));
+  const known = rows.filter((r) => r.status === 'identified' && byId.has(r.userId));
+  // Recognised, but already finished all five stages: shown as completed, never marked again.
+  const finished = known.filter((r) => byId.get(r.userId).completed);
+  const named = known.filter((r) => !byId.get(r.userId).completed);
 
   // The parent is told who was recognised, as soon as it is known. Only a clear recognition counts; a face
   // the app is unsure about is reported to the supervisor on screen but never marked present.
@@ -131,9 +134,20 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
     // Takes the full-resolution frame and hands it to the slow pass.
     const shoot = async () => {
       const canvas = document.createElement('canvas');
-      canvas.width = video.current.videoWidth || 1280;
-      canvas.height = video.current.videoHeight || 720;
-      canvas.getContext('2d').drawImage(video.current, 0, 0);
+      // A real still from the sensor where the browser allows it: several times the pixels of a video
+      // frame, which is what lets a back-row face be recognised at all.
+      let still = null;
+      try {
+        const track = stream.current?.getVideoTracks()[0];
+        if (track && window.ImageCapture) still = await createImageBitmap(await new window.ImageCapture(track).takePhoto());
+      } catch { still = null; }
+      // Very large stills are scaled to 3000px wide: plenty for recognition, and keeps the phone responsive.
+      const srcW = still?.width || video.current.videoWidth || 1280;
+      const srcH = still?.height || video.current.videoHeight || 720;
+      const k = Math.min(1, 3000 / srcW);
+      canvas.width = Math.round(srcW * k);
+      canvas.height = Math.round(srcH * k);
+      canvas.getContext('2d').drawImage(still ?? video.current, 0, 0, canvas.width, canvas.height);
       setPhoto(canvas.toDataURL('image/jpeg', 0.9));
       release();                  // the preview has done its job; free the camera before the slow pass
       await read(canvas, myRun);
@@ -178,7 +192,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   const flip = () => setFacing((f) => (f === 'user' ? 'environment' : 'user'));
 
   const shot = phase === 'done' || phase === 'reading';
-  const unknown = rows.length - named.length;
+  const unknown = rows.length - named.length - finished.length;
 
   return (
     <div className="space-y-2">
@@ -216,6 +230,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
           <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
             <UsersIcon className="h-4 w-4" />
             {rows.length} {rows.length === 1 ? 'face' : 'faces'} {'\u00b7'} {named.length} recognised
+            {finished.length > 0 && <span className="font-normal text-sky-700">{'·'} {finished.length} already completed</span>}
             {unknown > 0 && <span className="font-normal text-amber-700">{'\u00b7'} {unknown} not recognised</span>}
           </p>
           {unknown > 0 && (
@@ -228,6 +243,16 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
             {rows.map((r) => {
               const person = byId.get(r.userId);
               const ok = r.status === 'identified' && person;
+              const complete = ok && person.completed;
+              if (complete) {
+                return (
+                  <li key={r.index} className="w-24 text-center">
+                    <img src={crops[r.index]} alt="" className="h-24 w-24 rounded-xl object-cover ring-2 ring-sky-400" />
+                    <p className="mt-1 truncate text-xs font-semibold text-sky-700" title={person.name}>{person.name}</p>
+                    <p className="text-xs text-sky-700">Attendance completed</p>
+                  </li>
+                );
+              }
               return (
                 <li key={r.index} className="w-24 text-center">
                   <img src={crops[r.index]} alt="" className={`h-24 w-24 rounded-xl object-cover ring-2 ${ok ? 'ring-success' : 'ring-amber-400'}`} />

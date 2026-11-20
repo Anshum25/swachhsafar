@@ -175,7 +175,11 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [profiles, setProfiles] = useState([]);
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const chosen = members.filter((m) => picked[m.employee_id]);
-  const memberIds = members.map((m) => m.employee_id).join(',');
+  // Faces are loaded for EVERY allocated staff member, finished or not: someone who has completed all five
+  // stages still turns up in the crew photo, and must be recognised (and shown as completed) rather than
+  // left as an unknown face or mistaken for a colleague.
+  const memberIds = rows.map((r) => r.employee_id).join(',');
+  const candidates = rows.map((r) => ({ ...r, completed: !byId.has(r.employee_id) }));
   useEffect(() => {
     if (mode !== 'photo' || !memberIds) { setProfiles([]); return undefined; }
     let cancelled = false;
@@ -280,7 +284,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
               {usePlain ? (
                 <PhotoCapture value={plainPhoto} onChange={setPlainPhoto} required stamp={stampLines({ ...gps, address })} />
               ) : (
-                <GroupPhotoCapture key={profiles.length} candidates={members} profiles={profiles}
+                <GroupPhotoCapture key={profiles.length} candidates={candidates} profiles={profiles}
                   threshold={threshold} onChange={setGroup} />
               )}
               <button type="button" className="btn-link text-xs"

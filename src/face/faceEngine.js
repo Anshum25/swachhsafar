@@ -210,7 +210,7 @@ async function detectAllTiled(faceapi, input, w, h, inputSize) {
   };
   add(await faceapi.detectAllFaces(input, options), 0, 0, 1);
 
-  const cols = w >= 1200 ? 3 : 2;
+  const cols = w >= 2400 ? 4 : w >= 1200 ? 3 : 2;
   const rows = h >= 1000 ? 3 : 2;
   const tw = Math.ceil(w / cols * 1.3);
   const th = Math.ceil(h / rows * 1.3);
@@ -256,7 +256,11 @@ export async function describeAll(src, { inputSize = GROUP_INPUT_SIZE } = {}) {
     const crop = document.createElement('canvas');
     crop.width = crop.height = 320;
     crop.getContext('2d').drawImage(input, sx, sy, side, side, 0, 0, 320, 320);
-    const d = await faceapi.detectSingleFace(crop, single).withFaceLandmarks().withFaceDescriptor();
+    // In a tight crew the close-up also holds the neighbours' faces; take the one in the middle, which is
+    // the face this crop was cut for -- not whichever happens to score highest.
+    const all = await faceapi.detectAllFaces(crop, single).withFaceLandmarks().withFaceDescriptors();
+    const mid = (f) => Math.hypot(f.detection.box.x + f.detection.box.width / 2 - 160, f.detection.box.y + f.detection.box.height / 2 - 160);
+    const d = all.sort((a, b) => mid(a) - mid(b)).find((f) => mid(f) < 80) ?? null;
     faces.push({
       // A face the close-up pass cannot confirm keeps no descriptor: it is shown, never identified.
       descriptor: d ? Array.from(d.descriptor) : null,
