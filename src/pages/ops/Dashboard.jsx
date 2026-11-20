@@ -7,7 +7,7 @@ import { navigate } from '../../app/router.js';
 import { SHORT_LABEL, visibleNav } from '../../app/Layout.jsx';
 import { TrainArt } from '../../components/Logo.jsx';
 import {
-  BarChartSolidIcon, BoxIcon, CalendarCheckIcon, ChevronRightIcon, ClipboardListIcon, DatabaseGridIcon, FlagIcon, ThumbUpSolidIcon, TrainSolidIcon, UserSolidIcon,
+  BarChartSolidIcon, BoxIcon, BriefcaseIcon, CalendarCheckIcon, ChevronRightIcon, ClipboardListIcon, DatabaseGridIcon, FlagIcon, ThumbUpSolidIcon, TrainSolidIcon, UserSolidIcon,
 } from '../../components/Icons.jsx';
 
 const SLIDES = [
@@ -53,10 +53,10 @@ function HomeBanner() {
 
 const TILE_ICONS = {
   journeys: TrainSolidIcon, attendance: CalendarCheckIcon, inspections: ClipboardListIcon, feedback: ThumbUpSolidIcon, reports: BarChartSolidIcon,
-  profile: UserSolidIcon, complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon,
+  profile: UserSolidIcon, complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon, jobs: BriefcaseIcon,
 };
 // Reference order first (Journey … Profile), then the further modules this user has.
-const TILE_ORDER = ['journeys', 'attendance', 'inspections', 'feedback', 'reports', 'profile', 'complaints', 'inventory', 'masters'];
+const TILE_ORDER = ['journeys', 'attendance', 'inspections', 'feedback', 'reports', 'profile', 'complaints', 'inventory', 'masters', 'jobs'];
 
 // One tile per module this user can open, plus their profile.
 function ModuleTiles() {
