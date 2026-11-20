@@ -112,6 +112,41 @@ class SignInIn(StrictModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
+class PasswordResetIn(StrictModel):
+    """An administrator sets a new password for another employee. Never echoed back, never logged."""
+
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class PasswordResetOut(StrictModel):
+    sessions_ended: int
+
+
+class UserRef(StrictModel):
+    id: uuid.UUID
+    name: str
+    emp_id: str
+
+
+class UserAccountOut(StrictModel):
+    """Account facts for the administrator's user profile. Holds no password hash and no biometric template."""
+
+    user_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+    created_by: UserRef | None
+    division_code: str
+    division_name: str
+    role_name: str
+    password_set: bool
+    password_changed_at: datetime | None
+    password_set_by: str | None  # "admin" | "user" | "cli" | "firebase"
+    last_sign_in_at: datetime | None
+    active_sessions: int
+    # The role's effective permissions in the user's home division (global grants with division overrides).
+    permissions: list[str]
+
+
 class UserWithSignIn(UserOut):
     """A user plus what just happened to their sign-in.
 

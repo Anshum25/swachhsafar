@@ -1,16 +1,17 @@
-import { useState } from 'react';
-import { useResource, useSession, ROLE_NAMES } from '../../app/session.jsx';
+import { useEffect, useState } from 'react';
+import { useResource, useSession } from '../../app/session.jsx';
 import { DivisionPicker, useDivision } from '../../app/division.jsx';
-import { useNotify } from '../../app/Layout.jsx';
 import { useSave } from './masters/common.jsx';
 import QuestionBanks from './masters/QuestionBanks.jsx';
 import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
 import DivisionPolicy from './masters/DivisionPolicy.jsx';
-import FaceEnrollDialog from './masters/FaceEnrollment.jsx';
-import FingerprintEnrollDialog from './masters/FingerprintEnrollment.jsx';
-import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, Select, SubmitBar, Table, Tabs, label } from '../../components/ui.jsx';
-import { FingerprintIcon, PlusIcon, UserIcon } from '../../components/Icons.jsx';
+import Users from './masters/Users.jsx';
+import UserProfile from './masters/UserProfile.jsx';
+import { MastersMobileNav } from './masters/MastersNav.jsx';
+import { visibleSections } from './masters/sections.js';
+import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, SubmitBar, Table } from '../../components/ui.jsx';
+import { PlusIcon } from '../../components/Icons.jsx';
 
 // "B1 AC, S1, S2" -> [{code:'B1', classification:'AC'}, ...]; coaches default to Non-AC.
 export function parseCoaches(text) {
@@ -92,146 +93,6 @@ function Trains({ divisionId }) {
   );
 }
 
-// Shown once, after a sign-in is created: the password exists nowhere else, so it is this or nothing.
-function SignInCreated({ user, result, onClose }) {
-  return (
-    <div className="space-y-3" data-testid="signin-created">
-      <p className="text-sm text-slate-700">
-        <b>{user.name}</b> can now sign in with employee ID <b>{user.emp_id}</b>{user.email ? <> or <b>{user.email}</b></> : null}.
-      </p>
-      {result.temp_password ? (
-        <>
-          <Field label="Password"><input className="input font-mono" readOnly value={result.temp_password} data-testid="temp-password" /></Field>
-          <p className="text-xs text-amber-800">
-            Write it down and give it to them now. It is not stored anywhere and cannot be shown again.
-          </p>
-        </>
-      ) : (
-        <p className="text-sm text-slate-600">They sign in with the password you chose.</p>
-      )}
-      <button type="button" className="btn-primary h-12 w-full" onClick={onClose}>Done</button>
-    </div>
-  );
-}
-
-function UserForm({ divisionId, onClose, onSaved }) {
-  const { api, user } = useSession();
-  const [created, setCreated] = useState(null);
-  const save = useSave((u) => { setCreated(u); onSaved?.(u); });
-  const [f, setF] = useState({ emp_id: '', name: '', email: '', mobile: '', designation: '', role_id: '5', password: '' });
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target?.value ?? e }));
-  const roles = Object.entries(ROLE_NAMES).filter(([id]) => Number(id) > user.role_id);
-  if (created) return <SignInCreated user={created} result={created} onClose={onClose} />;
-  return (
-    <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/users', { ...f, role_id: Number(f.role_id), division_id: divisionId, email: f.email || null, mobile: f.mobile || null, designation: f.designation || null, password: f.password || null }), 'User created.'); }} className="space-y-3">
-      <ErrorNote error={save.error} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Employee ID"><input className="input" required value={f.emp_id} onChange={set('emp_id')} /></Field>
-        <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={set('name')} /></Field>
-        <Field label="Email" hint="Optional. A sign-in is created when an email or password is given"><input type="email" className="input" value={f.email} onChange={set('email')} /></Field>
-        <Field label="Mobile"><input className="input" pattern="[6-9][0-9]{9}" value={f.mobile} onChange={set('mobile')} /></Field>
-        <Field label="Designation"><input className="input" value={f.designation} onChange={set('designation')} /></Field>
-        <Field label="Role"><Select value={f.role_id} onChange={set('role_id')} options={roles.map(([value, l]) => ({ value, label: l }))} /></Field>
-        {f.email && (
-          <Field label="Password" hint="At least 8 characters. Leave empty and one is generated for you.">
-            <input className="input" type="text" minLength={8} autoComplete="new-password" value={f.password} onChange={set('password')} />
-          </Field>
-        )}
-      </div>
-      <SubmitBar busy={save.busy} label="Create user" onCancel={onClose} />
-    </form>
-  );
-}
-
-// For employees created before sign-ins came with the record: gives them one without a server command.
-function SignInForm({ user, onClose, onSaved }) {
-  const { api } = useSession();
-  const [created, setCreated] = useState(null);
-  const save = useSave((u) => { setCreated(u); onSaved?.(u); });
-  const [password, setPassword] = useState('');
-  if (created) return <SignInCreated user={created} result={created} onClose={onClose} />;
-  return (
-    <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post(`/users/${user.id}/signin`, { password: password || null }), 'Sign-in created.'); }} className="space-y-3">
-      <ErrorNote error={save.error} />
-      <p className="text-sm text-slate-600">
-        <b>{user.name}</b> has no sign-in yet, so they cannot open the app. This creates one for <b>{user.email}</b>.
-      </p>
-      <Field label="Password" hint="At least 8 characters. Leave empty and one is generated for you.">
-        <input className="input" type="text" minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-      </Field>
-      <SubmitBar busy={save.busy} label="Create sign-in" onCancel={onClose} />
-    </form>
-  );
-}
-
-function Users({ divisionId }) {
-  const { canIn, api } = useSession();
-  const manage = canIn('users.manage', divisionId);
-  const notify = useNotify();
-  const [q, setQ] = useState('');
-  const res = useResource('/users', { division_id: divisionId, q, page_size: 200 });
-  const [creating, setCreating] = useState(false);
-  const [faceFor, setFaceFor] = useState(null);
-  const [fingerFor, setFingerFor] = useState(null);
-  const [signInFor, setSignInFor] = useState(null);
-  async function toggle(u) {
-    try {
-      await api.post(`/users/${u.id}/status`, { status: u.status === 'active' ? 'inactive' : 'active' });
-      res.reload();
-    } catch (e) {
-      notify('error', e.message);
-    }
-  }
-  return (
-    <Panel title="Users" actions={manage && <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><PlusIcon /> Add user</button>}>
-      <input className="input mb-3 h-10" placeholder="Search name or employee ID" value={q} onChange={(e) => setQ(e.target.value)} />
-      <DataState res={res} empty="No users found.">
-        {(page) => (
-          <Table rows={page.items} columns={[
-            { key: 'name', label: 'Name', render: (u) => <><span className="font-medium">{u.name}</span><span className="block text-xs text-slate-500">{u.emp_id} · {u.email ?? 'no email'}</span></> },
-            { key: 'role', label: 'Role', render: (u) => ROLE_NAMES[u.role_id] },
-            // "No password" means the employee cannot sign in with a password. Where that can be put right
-            // here and now, the badge is the button that does it, rather than a dead-end label. Face and
-            // fingerprint show whether this employee's biometrics are registered (same user record).
-            { key: 'password_set', label: 'Sign-in', render: (u) => (
-              <div className="flex flex-wrap items-center gap-1">
-                {u.password_set ? <Badge tone="green">Password</Badge>
-                  : manage ? (
-                    <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setSignInFor(u); }}
-                      aria-label={`Create sign-in for ${u.name}`}>Create sign-in</button>
-                  ) : <Badge tone="amber">No password</Badge>}
-                {u.face_enrolled && <Badge tone="green" title="Face registered">Face</Badge>}
-                {u.fingerprint_enrolled && <Badge tone="green" title="Fingerprints registered">Finger</Badge>}
-              </div>
-            ) },
-            { key: 'status', label: 'Status', render: (u) => manage
-              ? <button type="button" onClick={() => toggle(u)}><Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge></button>
-              : <Badge tone={u.status === 'active' ? 'green' : 'slate'}>{label(u.status)}</Badge> },
-            ...(manage ? [{ key: 'face', label: '', render: (u) => (
-              <div className="flex gap-1.5">
-                <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setFaceFor(u); }}
-                  aria-label={`Face registration for ${u.name}`}><UserIcon /> Face</button>
-                <button type="button" className="btn-secondary h-9 text-xs" onClick={(e) => { e.stopPropagation(); setFingerFor(u); }}
-                  aria-label={`Fingerprint registration for ${u.name}`}><FingerprintIcon className="h-4 w-4" /> Finger</button>
-              </div>
-            ) }] : []),
-          ]} />
-        )}
-      </DataState>
-      {faceFor && <FaceEnrollDialog user={faceFor} onClose={() => setFaceFor(null)} />}
-      {fingerFor && <FingerprintEnrollDialog user={fingerFor} onClose={() => setFingerFor(null)} />}
-      <Dialog open={!!signInFor} title="Create sign-in" onClose={() => setSignInFor(null)}>
-        {signInFor && <SignInForm user={signInFor} onClose={() => setSignInFor(null)} onSaved={res.reload} />}
-      </Dialog>
-      <Dialog open={creating} title="Add user" onClose={() => setCreating(false)} wide>
-        {/* The dialog stays open after saving: it now shows the new sign-in's password, which exists
-            nowhere else. Closing it is the "Done" button's job. */}
-        <UserForm divisionId={divisionId} onClose={() => setCreating(false)} onSaved={res.reload} />
-      </Dialog>
-    </Panel>
-  );
-}
-
 function Divisions() {
   const { api, can } = useSession();
   const res = useResource('/divisions');
@@ -261,33 +122,33 @@ function Divisions() {
   );
 }
 
-export default function Masters() {
+export default function Masters({ parts = [] }) {
   const { can } = useSession();
   const division = useDivision();
-  const tabs = [
-    (can('trains.read') || can('trains.manage')) && { value: 'trains', label: 'Trains & coaches' },
-    can('users.read') && { value: 'users', label: 'Users' },
-    { value: 'divisions', label: 'Divisions' },
-    // Readable by every member of the division (backend list endpoints); changes need the manage permission.
-    { value: 'questions', label: 'Question banks' },
-    { value: 'categories', label: 'Complaint categories' },
-    { value: 'departments', label: 'Complaint departments' },
-    { value: 'items', label: 'Inventory items' },
-    { value: 'policy', label: 'Division policy' },
-  ].filter(Boolean);
-  const [tab, setTab] = useState(tabs[0].value);
+  const sections = visibleSections(can);
+  const [section, userId] = parts;
+  const known = sections.some((s) => s.key === section);
+  // #/masters (or a section this user cannot open) lands on the first section, replacing the history
+  // entry so Back does not bounce through the bare route.
+  const first = sections[0]?.key;
+  useEffect(() => {
+    if (!known && first) location.replace(`#/masters/${first}`);
+  }, [known, first]);
+  if (!known) return null;
+  const title = sections.find((s) => s.key === section)?.label;
   return (
     <>
-      <PageHeader title="Master data" subtitle={division.current?.name} actions={<DivisionPicker division={division} />} />
-      <Tabs tabs={tabs} value={tab} onChange={setTab} />
-      {tab === 'trains' && <Trains divisionId={division.divisionId} />}
-      {tab === 'users' && <Users divisionId={division.divisionId} />}
-      {tab === 'divisions' && <Divisions />}
-      {tab === 'questions' && <QuestionBanks divisionId={division.divisionId} />}
-      {tab === 'categories' && <Categories divisionId={division.divisionId} />}
-      {tab === 'departments' && <Departments divisionId={division.divisionId} />}
-      {tab === 'items' && <InventoryItems divisionId={division.divisionId} />}
-      {tab === 'policy' && <DivisionPolicy divisionId={division.divisionId} divisionName={division.current?.name} />}
+      <PageHeader title="Master data" subtitle={<>{title}{division.current?.name ? <span className="text-slate-400"> · {division.current.name}</span> : null}</>}
+        actions={<DivisionPicker division={division} />} />
+      <MastersMobileNav path={`/masters/${parts.join('/')}`} />
+      {section === 'trains' && <Trains divisionId={division.divisionId} />}
+      {section === 'users' && (userId ? <UserProfile key={userId} userId={userId} division={division} /> : <Users division={division} />)}
+      {section === 'divisions' && <Divisions />}
+      {section === 'questions' && <QuestionBanks divisionId={division.divisionId} />}
+      {section === 'categories' && <Categories divisionId={division.divisionId} />}
+      {section === 'departments' && <Departments divisionId={division.divisionId} />}
+      {section === 'items' && <InventoryItems divisionId={division.divisionId} />}
+      {section === 'policy' && <DivisionPolicy divisionId={division.divisionId} divisionName={division.current?.name} />}
     </>
   );
 }

@@ -46,9 +46,17 @@ async function signIn(page, email, firstName) {
   await expect(page.getByRole('heading', { name: `Welcome, ${firstName}` })).toBeVisible();
 }
 
+// Master Data subsections are routes (#/masters/<key>); on a phone they are picked from the section menu.
+const SECTION = {
+  'Inventory items': 'Inventory Items', 'Complaint categories': 'Complaint Categories', 'Complaint departments': 'Complaint Departments',
+  'Division policy': 'Division Policy', 'Question banks': 'Question Banks', Users: 'Users',
+};
 async function openTab(page, name) {
   await page.goto('/#/masters');
-  await page.getByRole('tab', { name }).click();
+  await expect(page).toHaveURL(/#\/masters\/[a-z]+/); // lands on the first section
+  await page.getByTestId('masters-section-button').click();
+  await page.getByRole('dialog', { name: 'Master data sections' }).getByRole('link', { name: SECTION[name] }).click();
+  await expect(page.getByTestId('masters-section-button')).toContainText(SECTION[name]);
 }
 
 // Every flow runs under the production Content-Security-Policy; nothing may be blocked by it.
@@ -220,16 +228,71 @@ test('creating a user creates their sign-in, and an unlinked one can be given it
   await expect(dialog.getByTestId('temp-password')).toHaveValue('gen-pass-1234');
   await expect(dialog.getByText(/cannot be shown again/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Done' }).click();
-  await expect(page.getByRole('row', { name: /New Janitor/ })).toContainText('Linked');
+  await expect(page.getByRole('row', { name: /New Janitor/ })).toContainText('Password');
 
-  // That employee is offered a sign-in, instead of a dead-end "Not linked" label.
-  const row = page.getByRole('row', { name: /Om Unlinked/ });
-  await row.getByRole('button', { name: /Create sign-in/ }).click();
+  // That employee is offered a sign-in from the row's actions menu, instead of a dead-end label.
+  await page.getByRole('button', { name: 'Actions for Om Unlinked' }).click();
+  await page.getByRole('menuitem', { name: 'Create sign-in' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Create sign-in' }).click();
   await expect(dialog.getByTestId('temp-password')).toHaveValue('gen-pass-5678');
   await dialog.getByRole('button', { name: 'Done' }).click();
-  await expect(page.getByRole('row', { name: /Om Unlinked/ })).toContainText('Linked');
+  await expect(page.getByRole('row', { name: /Om Unlinked/ })).toContainText('Password');
+
+  // Face / Finger act in place: they never open the profile underneath.
+  await page.getByRole('button', { name: 'Face registration for Om Unlinked' }).click();
+  await expect(page.getByRole('dialog', { name: /Face registration/ })).toBeVisible();
+  await expect(page).toHaveURL(/#\/masters\/users$/);
+  await page.getByRole('dialog', { name: /Face registration/ }).getByRole('button', { name: 'Close' }).click();
+
+  // Search narrows the list; clicking the row opens that user's profile.
+  await page.getByLabel('Search users').fill('om@exa');
+  await expect(page.getByRole('row', { name: /New Janitor/ })).toHaveCount(0);
+  await page.getByRole('row', { name: /Om Unlinked/ }).click();
+  await expect(page).toHaveURL(/#\/masters\/users\/stuck-user-id$/);
+  const card = page.getByTestId('user-profile');
+  await expect(card.getByRole('heading', { name: 'Om Unlinked' })).toBeVisible();
+  await expect(card.getByTestId('user-permissions')).toContainText('Attendance');
+  await expect(card).not.toContainText('descriptor');
+
+  // Edit persists through the API; unchanged fields are not sent.
+  await card.getByRole('button', { name: 'Edit user' }).click();
+  dialog = page.getByRole('dialog', { name: /Edit user/ });
+  await dialog.getByLabel('Mobile').fill('12');
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await expect(dialog.getByText('A 10-digit mobile number starting with 6–9.')).toBeVisible();
+  await dialog.getByLabel('Mobile').fill('9876501234');
+  await dialog.getByLabel('Designation').fill('Coach attendant');
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await toast(page, 'User updated.');
+  await expect(card).toContainText('9876501234');
+  await expect(card).toContainText('Coach attendant');
+  const edit = net.masters.staff.find((u) => u.id === 'stuck-user-id');
+  expect(edit.mobile).toBe('9876501234');
+
+  // Password reset: confirmation must match; the password goes only to the server.
+  await card.getByRole('button', { name: 'Change password' }).click();
+  dialog = page.getByRole('dialog', { name: 'Change password' });
+  await dialog.getByLabel('New password', { exact: true }).fill('Reset-Pass-77');
+  await dialog.getByLabel('Confirm new password').fill('Reset-Pass-78');
+  await expect(dialog.getByText('The two passwords do not match.')).toBeVisible();
+  await dialog.getByLabel('Confirm new password').fill('Reset-Pass-77');
+  await dialog.getByRole('button', { name: 'Set new password' }).click();
+  await toast(page, 'Password changed for Om Unlinked');
+  expect(server.passwordResets).toEqual([{ id: 'stuck-user-id', length: 13 }]);
+
+  // Deactivate asks first.
+  await card.getByRole('button', { name: 'More user actions' }).click();
+  await page.getByRole('menuitem', { name: 'Deactivate user' }).click();
+  await page.getByRole('dialog', { name: 'Deactivate user' }).getByRole('button', { name: 'Deactivate' }).click();
+  await toast(page, 'Om Unlinked is deactivated.');
+  await expect(card.getByText('Inactive').first()).toBeVisible();
+
+  // Back to the list, and browser Back returns to the card.
+  await card.getByTestId('back-to-users').click();
+  await expect(page).toHaveURL(/#\/masters\/users$/);
+  await page.goBack();
+  await expect(page.getByTestId('user-profile')).toBeVisible();
   await context.close();
   rmSync(profile, { recursive: true, force: true });
 });
