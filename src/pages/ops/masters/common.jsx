@@ -58,8 +58,9 @@ export function matches(row, { q, status }, fields) {
 
 export function FilterBar({ filter, setFilter, placeholder, children }) {
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
-      <input className="input h-10 min-w-0 flex-1" placeholder={placeholder} aria-label="Search" value={filter.q}
+    // Phones: search on its own line, filters two per row at full cell width. From 640px: one wrapping row.
+    <div className="mb-3 grid grid-cols-2 gap-2 max-sm:[&>*]:!w-auto max-sm:[&>*]:min-w-0 sm:flex sm:flex-wrap">
+      <input className="input col-span-2 h-10 min-w-0 flex-1 sm:min-w-[12rem]" placeholder={placeholder} aria-label="Search" value={filter.q}
         onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))} />
       <div className="w-40"><Select value={filter.status} onChange={(v) => setFilter((f) => ({ ...f, status: v }))} options={STATUS_FILTERS} aria-label="Status filter" /></div>
       {children}
