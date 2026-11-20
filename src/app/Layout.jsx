@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import Logo, { RailScene } from '../components/Logo.jsx';
 import Toasts, { useToasts } from '../components/Toasts.jsx';
 import {
-  BarChartIcon, BellIcon, BoxIcon, CalendarCheckIcon, ClipboardListIcon, DatabaseGridIcon, FlagIcon, HomeIcon, KeyIcon,
+  BarChartIcon, BellIcon, BoxIcon, BriefcaseIcon, CalendarCheckIcon, ClipboardListIcon, DatabaseGridIcon, FlagIcon, HomeIcon, KeyIcon,
   LogoutIcon, MenuIcon, MoreIcon, RefreshIcon, ShieldIcon, Spinner, ThumbUpIcon, TrainIcon, UserIcon, XIcon,
 } from '../components/Icons.jsx';
 import { useSecurity } from '../security/SecurityProvider.jsx';
@@ -21,12 +21,12 @@ export const useNotify = () => useContext(ToastContext);
 
 const ICONS = {
   dashboard: HomeIcon, journeys: TrainIcon, attendance: CalendarCheckIcon, inspections: ClipboardListIcon, feedback: ThumbUpIcon,
-  complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon, reports: BarChartIcon, profile: UserIcon,
+  complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon, jobs: BriefcaseIcon, reports: BarChartIcon, profile: UserIcon,
 };
 // Short names for the bottom bar and home tiles (reference: Journey, Attendance, Inspection …).
 export const SHORT_LABEL = {
   dashboard: 'Home', journeys: 'Journey', attendance: 'Attendance', inspections: 'Inspection', feedback: 'Feedback', complaints: 'Complaints',
-  inventory: 'Inventory', masters: 'Masters', reports: 'Reports', profile: 'Profile',
+  inventory: 'Inventory', masters: 'Masters', jobs: 'Jobs', reports: 'Reports', profile: 'Profile',
 };
 
 // Navigation is the module registry (src/app/modules.js) with an icon per module; `menuOnly` entries

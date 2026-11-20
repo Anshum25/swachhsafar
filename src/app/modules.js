@@ -13,6 +13,8 @@ export const MODULES = [
     key: 'masters', cp: 'CP-03', path: '/masters', label: 'Master data',
     any: ['trains.manage', 'users.read', 'divisions.manage', 'questions.manage', 'complaints.masters.manage', 'inventory.items.manage', 'policies.manage'],
   },
+  // TEMPORARY: OTA update test module (src/pages/ops/Jobs.jsx), visible to everyone.
+  { key: 'jobs', path: '/jobs', label: 'Jobs', any: [] },
   { key: 'reports', cp: 'CP-11', path: '/reports', label: 'Reports', any: ['reports.read'] },
   // Everyone's own profile and password; reached from the menu, not listed with the modules.
   { key: 'profile', path: '/profile', label: 'User Profile', any: [], menuOnly: true },

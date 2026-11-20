@@ -23,13 +23,14 @@ const Complaints = lazy(() => import('./pages/ops/Complaints.jsx'));
 const Masters = lazy(() => import('./pages/ops/Masters.jsx'));
 const Inventory = lazy(() => import('./pages/ops/Inventory.jsx'));
 const Reports = lazy(() => import('./pages/ops/Reports.jsx'));
+const Jobs = lazy(() => import('./pages/ops/Jobs.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
 const SecurityStatus = lazy(() => import('./pages/SecurityStatus.jsx'));
 
 // One screen per module key in src/app/modules.js.
 const SCREENS = {
   dashboard: Dashboard, journeys: Journeys, attendance: Attendance, inspections: Inspections,
-  feedback: Feedback, complaints: Complaints, inventory: Inventory, masters: Masters, reports: Reports, profile: Profile, security: SecurityStatus,
+  feedback: Feedback, complaints: Complaints, inventory: Inventory, masters: Masters, jobs: Jobs, reports: Reports, profile: Profile, security: SecurityStatus,
 };
 
 function Shell() {
