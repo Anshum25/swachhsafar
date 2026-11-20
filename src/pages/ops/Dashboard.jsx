@@ -209,7 +209,7 @@ export default function Dashboard() {
   return (
     <>
       {/* Whose session this is (devices are shared between staff). */}
-      <h1 className="mb-3 truncate text-[17px] font-bold text-ink">Welcome, {user.name.split(' ')[0]}</h1>
+      <h1 className="mb-3 truncate text-[17px] font-bold text-ink">Welcome123, {user.name.split(' ')[0]}</h1>
       <HomeBanner />
       <ModuleTiles />
       {division.divisions.length > 1 && (
