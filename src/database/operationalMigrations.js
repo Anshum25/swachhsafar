@@ -686,10 +686,23 @@ const V11 = {
   ],
 };
 
-// v12: jobs (TEMPORARY test module, src/database/jobRepository.js), pulled from /sync/changes `jobs` and
-// pushed with the 'job.save' operation. `data` holds the server's full JSON for the job. Additive only.
+// v12: progressive group attendance. One group photograph records each person at their own next stage;
+// group_submission_id keeps those records associated, identified_by says how identity was established
+// (backend attendance.identified_by). Additive only: existing rows keep NULL.
 const V12 = {
   version: 12,
+  name: 'attendance group capture',
+  statements: [
+    'ALTER TABLE attendance_records ADD COLUMN group_submission_id TEXT',
+    'ALTER TABLE attendance_records ADD COLUMN identified_by TEXT',
+    'CREATE INDEX idx_attendance_group ON attendance_records (group_submission_id) WHERE group_submission_id IS NOT NULL',
+  ],
+};
+
+// v13: jobs (TEMPORARY test module, src/database/jobRepository.js), pulled from /sync/changes `jobs` and
+// pushed with the 'job.save' operation. `data` holds the server's full JSON for the job. Additive only.
+const V13 = {
+  version: 13,
   name: 'jobs',
   statements: [
     `CREATE TABLE jobs (
@@ -716,4 +729,4 @@ const V12 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12];
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13];

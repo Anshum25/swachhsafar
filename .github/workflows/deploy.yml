@@ -184,13 +184,28 @@ jobs:
       # adds a native plugin method the web code starts calling, or phones on the older APK will be handed
       # a bundle that cannot start -- and a phone whose bundle does not start cannot ask for a better one.
       - name: Publish and release
+        # Everything below reaches the script through the environment, never spliced into the command
+        # line. A commit message is text somebody else wrote: interpolating it into a shell script runs
+        # it, on a runner holding the deploy SSH key and the publish token, and even an honest message
+        # breaks the step the moment it contains an apostrophe or a second line. Quoted "$VAR" is not
+        # re-parsed by the shell, so the message stays data.
         env:
           RELEASE_API_BASE: ${{ vars.APK_API_BASE_URL || 'https://ehk.itfarmer.in/api/v1' }}
           RELEASE_PUBLISH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
           VITE_API_BASE_URL: ${{ vars.APK_API_BASE_URL || 'https://ehk.itfarmer.in/api/v1' }}
           GITHUB_SHA: ${{ github.sha }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          MIN_NATIVE: ${{ vars.MIN_NATIVE_VERSION || '0.0.0' }}
+          ROLLOUT: ${{ vars.RELEASE_CHANNEL_ROLLOUT || 100 }}
+          COMMIT_NOTES: ${{ github.event.head_commit.message }}
         run: |
-          node scripts/publish-bundle.mjs             --dir bundle-web             --build ${{ github.run_number }}             --min-native "${{ vars.MIN_NATIVE_VERSION || '0.0.0' }}"             --rollout "${{ vars.RELEASE_CHANNEL_ROLLOUT || 100 }}"             --notes "${{ github.event.head_commit.message }}"             --release
+          node scripts/publish-bundle.mjs \
+            --dir bundle-web \
+            --build "$BUILD_NUMBER" \
+            --min-native "$MIN_NATIVE" \
+            --rollout "$ROLLOUT" \
+            --notes "$COMMIT_NOTES" \
+            --release
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !cancelled() && needs.build-web.result == 'success' && needs.build-apk.result != 'failure'

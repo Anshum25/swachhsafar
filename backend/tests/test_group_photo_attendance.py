@@ -39,7 +39,10 @@ def test_records_how_identity_was_established(world, db):
     r, _ = group_punch(world, "jan")
     assert r.status_code == 201
     assert r.json()["identified_by"] == "group_photo"
-    assert db.get(Attendance, r.json()["id"]).identified_by == "group_photo"
+    # uuid.UUID, not the raw string: the primary key is sa.Uuid, and SQLite's binding asks the value for
+    # its .hex, which a str does not have. PostgreSQL's driver accepts either, so a string only fails on
+    # the local single-PC deployment -- the rest of the suite already converts (tests/test_security.py).
+    assert db.get(Attendance, uuid.UUID(r.json()["id"])).identified_by == "group_photo"
     # An ordinary capture in a division asking for no proof claims nothing about how it was identified.
     r2, _ = punch(world, "jan", 2)
     assert r2.json()["identified_by"] is None
@@ -93,3 +96,94 @@ def test_every_other_attendance_rule_still_applies(world):
     assert r.status_code == 409 and r.json()["error"]["code"] == "duplicate_attendance"
     r, _ = group_punch(world, "jan2", 1)
     assert r.status_code == 422 and r.json()["error"]["code"] == "not_allocated"
+
+
+# --- Progressive, employee-wise group attendance -------------------------------------------------------
+# One group photo is a shared capture, but stage progression belongs to each employee: everyone in the
+# photo is recorded at their own next pending stage.
+import uuid
+
+from sqlalchemy import select
+
+from tests.factories import now_iso, upload
+
+GROUP = "/api/v1/attendance/group"
+
+
+def _crew(world):
+    world.client.post(f"/api/v1/staff-allocation/{world.journey['id']}", headers=world.h("manager"),
+                      json={"user_ids": [str(world.jan2.id)]})
+    return {"a": world.sup, "b": world.jan, "c": world.jan2}
+
+
+def _group_photo(world, people, ids=None):
+    members = [dict(id=(ids or {}).get(k, str(uuid.uuid4())), employee_id=str(u.id), group_photo=True,
+                    photo_media_id=upload(world.client, world.sup, world.a.id, "attendance_photo"))
+               for k, u in people.items()]
+    body = dict(group_submission_id=str(uuid.uuid4()), journey_id=world.journey["id"], device_timestamp=now_iso(),
+                latitude=23.18, longitude=79.98, members=members)
+    r = world.client.post(GROUP, headers=world.h("sup"), json=body)
+    assert r.status_code == 200, r.text
+    return {m["employee_id"]: m for m in r.json()}, body
+
+
+def _stages(db, user):
+    # End whatever read transaction an earlier assertion left open before looking. The attendance is
+    # written by the API through its own sessions; this one, having already read once, sits inside a
+    # transaction that on SQLite holds the snapshot it started with, so those later writes are invisible
+    # to it. PostgreSQL reads at READ COMMITTED and refreshes per statement, which hides the problem
+    # there. The session never writes, so ending its transaction costs nothing.
+    db.rollback()
+    return sorted(db.scalars(select(Attendance.stage).where(Attendance.employee_id == user.id)))
+
+
+def test_each_member_gets_their_own_next_stage(world, db):
+    set_policy(world, attendance_group_photo=True)
+    crew = _crew(world)
+    a, b, c = crew["a"], crew["b"], crew["c"]
+    # Test 1: A and B photographed; both get stage 1, C untouched.
+    out, _ = _group_photo(world, {"a": a, "b": b})
+    assert all(m["outcome"] == "created" and m["record"]["stage"] == 1 for m in out.values())
+    assert _stages(db, c) == []
+    # Test 2: all three; A and B get stage 2, C gets stage 1.
+    out, _ = _group_photo(world, crew)
+    assert {k: out[str(u.id)]["record"]["stage"] for k, u in crew.items()} == {"a": 2, "b": 2, "c": 1}
+    # Test 3: A and C; A gets 3, C gets 2. Test 4: B absent stays at 2.
+    out, _ = _group_photo(world, {"a": a, "c": c})
+    assert out[str(a.id)]["record"]["stage"] == 3 and out[str(c.id)]["record"]["stage"] == 2
+    assert _stages(db, a) == [1, 2, 3] and _stages(db, b) == [1, 2] and _stages(db, c) == [1, 2]
+    # Each record of one photo shares the group submission id.
+    groups = {r.group_submission_id for r in db.scalars(select(Attendance).where(Attendance.stage == 3))}
+    assert len(groups) == 1
+
+
+def test_retry_replays_instead_of_advancing(world, db):
+    # Test 5: a resent submission (e.g. after a dropped response) must not record the next stage.
+    set_policy(world, attendance_group_photo=True)
+    crew = _crew(world)
+    out, body = _group_photo(world, crew)
+    again = world.client.post(GROUP, headers=world.h("sup"), json=body).json()
+    assert {m["outcome"] for m in again} == {"replayed"}
+    assert all(_stages(db, u) == [1] for u in crew.values())
+
+
+def test_explicit_member_stage_still_validated(world):
+    set_policy(world, attendance_group_photo=True)
+    crew = _crew(world)
+    members = [dict(id=str(uuid.uuid4()), employee_id=str(crew["b"].id), group_photo=True, stage=2,
+                    photo_media_id=upload(world.client, world.sup, world.a.id, "attendance_photo"))]
+    body = dict(group_submission_id=str(uuid.uuid4()), journey_id=world.journey["id"], device_timestamp=now_iso(),
+                latitude=23.18, longitude=79.98, members=members)
+    r = world.client.post(GROUP, headers=world.h("sup"), json=body).json()
+    assert r[0]["outcome"] == "rejected" and r[0]["error"]["code"] == "stage_order"
+
+
+def test_all_five_stages_then_complete(world, db):
+    set_policy(world, attendance_group_photo=True)
+    crew = _crew(world)
+    for _ in range(5):
+        _group_photo(world, {"b": crew["b"]})
+    assert _stages(db, crew["b"]) == [1, 2, 3, 4, 5]
+    out, _ = _group_photo(world, {"b": crew["b"]})
+    assert out[str(crew["b"].id)]["outcome"] == "rejected"
+    assert out[str(crew["b"].id)]["error"]["code"] == "attendance_complete"

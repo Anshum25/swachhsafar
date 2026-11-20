@@ -122,7 +122,14 @@ function fail(message) {
 const dir = arg('dir', 'dist');
 const build = arg('build');
 const minNative = arg('min-native', '0.0.0');
-const notes = arg('notes', null);
+// CI passes the whole commit message. The release note wants its subject line, and the column holds 500
+// characters, so a long message would otherwise be refused by the server after the upload had been sent.
+const notes = (() => {
+  const raw = arg('notes', null);
+  if (typeof raw !== 'string') return null;
+  const subject = raw.split('\n')[0].trim();
+  return subject ? subject.slice(0, 500) : null;
+})();
 const rollout = Number(arg('rollout', 100));
 const channel = arg('channel', 'stable');
 const release = arg('release', false) === true;

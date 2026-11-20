@@ -65,3 +65,41 @@ describe('APK update check', () => {
     expect(calls[0][1].cache).toBe('no-store');
   });
 });
+
+// Once a phone can take web bundles over the air, almost every release reaches it by itself. Offering an
+// APK for those is not merely noise: it teaches field staff to sideload APKs they do not need, and the
+// one time it matters -- a release that really does change native code -- it looks identical.
+describe('APK update check on a phone that has over-the-air updates', () => {
+  const latest = (version_name, sha = PUBLISHED) => answer({ sha, version_name, url: '/downloads/swachh-safar-x.apk' });
+  const ask = (body, native) =>
+    checkAppUpdate({ fetchImpl: body, sha: BUILT, native, url: '/downloads/latest.json', downloadUrl: '/d.apk' });
+
+  it('says nothing when the published APK is the same version, however different the commit', async () => {
+    // The everyday case: CI rebuilt an APK for a web-only change, and the change is already on its way
+    // over the air.
+    expect(await ask(latest('2.1.0'), '2.1.0')).toEqual({ available: false });
+  });
+
+  it('offers the install only when the published APK is genuinely newer', async () => {
+    expect(await ask(latest('2.2.0'), '2.1.0')).toMatchObject({ available: true, version: '2.2.0' });
+    expect(await ask(latest('3.0.0'), '2.1.0')).toMatchObject({ available: true });
+    expect(await ask(latest('2.1.1'), '2.1.0')).toMatchObject({ available: true });
+  });
+
+  it('says nothing when the phone is ahead of what is published', async () => {
+    // An APK rollback, or a test build on this phone: nobody should be asked to install backwards.
+    expect(await ask(latest('2.0.9'), '2.1.0')).toEqual({ available: false });
+  });
+
+  it('ignores a version it cannot read rather than guessing', async () => {
+    expect(await ask(latest('nightly'), '2.1.0')).toEqual({ available: false });
+    expect(await ask(latest(undefined), '2.1.0')).toEqual({ available: false });
+  });
+
+  // Phones from before the updater plugin report no native version. They keep the old commit comparison,
+  // because installing is exactly how they get the plugin that makes everything else work.
+  it('still offers the install to a phone that predates over-the-air updates', async () => {
+    expect(await ask(latest('2.1.0'), null)).toMatchObject({ available: true });
+    expect(await ask(latest('2.1.0', BUILT), null)).toEqual({ available: false });
+  });
+});

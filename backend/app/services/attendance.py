@@ -154,10 +154,18 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
 
 
 def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dict]:
-    """Supervisor records one stage for several staff. Each member succeeds or fails independently."""
+    """Supervisor records attendance for several staff from one capture. Stage progression is per
+    employee: each member is recorded at their own stage (the member's, else the group's, else that
+    employee's next pending stage), never one stage forced on everyone. Each member succeeds or fails
+    independently; create() still refuses skipped and duplicate stages."""
     results = []
     for m in body.members:
-        item = AttendanceIn(id=m.id, journey_id=body.journey_id, employee_id=m.employee_id, stage=body.stage,
+        stage = m.stage or body.stage or _member_stage(db, body.journey_id, m.id, m.employee_id)
+        if stage is None:
+            results.append(dict(id=m.id, employee_id=m.employee_id, outcome="rejected",
+                                error={"code": "attendance_complete", "message": "All five stages are already recorded"}))
+            continue
+        item = AttendanceIn(id=m.id, journey_id=body.journey_id, employee_id=m.employee_id, stage=stage,
                             photo_media_id=m.photo_media_id, group_submission_id=body.group_submission_id,
                             face_distance=m.face_distance, face_model=m.face_model,
                             fingerprint_score=m.fingerprint_score, fingerprint_matcher=m.fingerprint_matcher,
@@ -176,6 +184,22 @@ def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dic
                                 error={"code": exc.code, "message": exc.message}))
     db.commit()
     return results
+
+
+def next_stage(db: Session, journey_id: uuid.UUID, employee_id: uuid.UUID) -> int | None:
+    """The employee's first stage not yet recorded on this journey, or None when all five are."""
+    done = set(db.scalars(select(Attendance.stage).where(
+        Attendance.journey_id == journey_id, Attendance.employee_id == employee_id)))
+    return next((int(s) for s in AttendanceStage if s not in done), None)
+
+
+def _member_stage(db: Session, journey_id: uuid.UUID, record_id: uuid.UUID, employee_id: uuid.UUID) -> int | None:
+    # A retried submission keeps the stage its first delivery was recorded at, so it replays instead of
+    # being mistaken for a capture of the following stage.
+    existing = db.get(Attendance, record_id)
+    if existing is not None and existing.employee_id == employee_id:
+        return int(existing.stage)
+    return next_stage(db, journey_id, employee_id)
 
 
 def review(db: Session, p: Principal, attendance_id: uuid.UUID, body: ReviewIn) -> Attendance:
