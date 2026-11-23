@@ -94,6 +94,12 @@ class Client(UUIDPk, Timestamps, Base):
     # Below this, the app shows the client's administrators a top-up warning. 0 turns the warning off.
     low_credit_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
 
+    # ---- where the office works (migration 0017) ----
+    # Set by the Super Admin; the office's Admin then picks this city's stations and their trains.
+    state: Mapped[str | None] = mapped_column(String(60))
+    city: Mapped[str | None] = mapped_column(String(100))
+    setup_completed_at: Mapped[datetime | None] = mapped_column(TZDateTime())
+
     divisions: Mapped[list["Division"]] = relationship(  # noqa: F821
         back_populates="client", lazy="select", viewonly=True
     )

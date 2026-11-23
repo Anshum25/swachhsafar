@@ -161,7 +161,9 @@ class Principal:
 
 
 def resolve_principal(db: Session, user: User) -> Principal:
-    """Role and divisions (home division plus any active temporary charge) of an authenticated employee."""
+    """Role and divisions of an authenticated employee: the home division plus any active temporary charge,
+    and for an office's Admin every division of their own office (its headquarters and every station it
+    has set up) -- an Admin runs the office, not one station of it. Never another office's."""
     today = today_ist()
     charge = db.scalars(
         select(ChargeMap.division_id).where(
@@ -171,7 +173,13 @@ def resolve_principal(db: Session, user: User) -> Principal:
             ChargeMap.to_date >= today,
         )
     ).all()
-    return Principal(user=user, division_ids=frozenset({user.division_id, *charge}), _db=db)
+    office: list = []
+    if user.role_id == RoleId.ADMIN:
+        from app.models import Division
+
+        client_id = select(Division.client_id).where(Division.id == user.division_id).scalar_subquery()
+        office = list(db.scalars(select(Division.id).where(Division.client_id == client_id)))
+    return Principal(user=user, division_ids=frozenset({user.division_id, *charge, *office}), _db=db)
 
 
 def get_principal(request: Request, authorization: str | None = Header(default=None),

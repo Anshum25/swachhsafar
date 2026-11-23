@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     pnr_api_host: str | None = None
     pnr_api_key: SecretStr | None = None
 
+    # RailRadar station timetables for client setup (app/providers/railradar.py), used under the operator's
+    # written permission from RailRadar. On by default; RAILRADAR_ENABLED=false turns the train list off.
+    railradar_enabled: bool = True
+    railradar_base_url: str = "https://railradar.in"
+
     # Reverse geocoding: coordinates -> a street address, stamped on attendance and inspection photos.
     # "disabled" (the default) keeps everything working and simply shows coordinates; nothing leaves the
     # server without a key. The key is a SERVER key: restrict it by the server's IP, not by HTTP referrer.

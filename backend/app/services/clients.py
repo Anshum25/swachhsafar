@@ -136,6 +136,16 @@ def update_client(db: Session, p: Principal, client_id: uuid.UUID, body: ClientU
     _require_super_admin(p, "modify clients")
     client = get_client(db, client_id)
     updates = body.model_dump(exclude_unset=True)
+    if "state" in updates or "city" in updates:
+        from app.services.railway import list_cities, list_states
+
+        state = updates.get("state", client.state)
+        city = updates.get("city", client.city)
+        if state is not None and state not in list_states(db):
+            raise BusinessRuleViolation(f"{state} is not a state of the railway station list", code="unknown_state")
+        if city is not None and (state is None or city not in list_cities(db, state)):
+            raise BusinessRuleViolation(f"{city} is not a city of {state or 'that state'} in the railway station list",
+                                        code="unknown_city")
     audit(db, actor_id=p.id, action="client.update", entity=client, division_id=None, changes=diff(client, updates))
     for key, value in updates.items():
         setattr(client, key, value)

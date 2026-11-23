@@ -1,0 +1,11 @@
+[Unit]
+Description=Swachh Safar 2.0: plan journeys for set-up trains, charge those starting today
+After=swachhsafar-api.service
+Wants=swachhsafar-api.service
+
+[Service]
+Type=oneshot
+User=swachhsafar
+WorkingDirectory=/var/www/html/swachhsafar2.0/swachhsafar/backend
+EnvironmentFile=/etc/swachhsafar/backend.env
+ExecStart=/var/www/html/swachhsafar2.0/swachhsafar/backend/.venv/bin/python -m app.cli plan-journeys

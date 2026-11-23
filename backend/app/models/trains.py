@@ -39,6 +39,14 @@ class Train(UUIDPk, Timestamps, Base):
     before_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     after_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ---- from RailRadar (migration 0017) ----
+    origin_code: Mapped[str | None] = mapped_column(String(8))
+    destination_code: Mapped[str | None] = mapped_column(String(8))
+    destination_name: Mapped[str | None] = mapped_column(String(120))
+    # "mon,tue,..."; None = not known, so journeys are planned every day.
+    run_days: Mapped[str | None] = mapped_column(String(27))
+    # Journeys are created for this train every day, a few days ahead (services/railway.plan_journeys).
+    auto_journeys: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
     coaches: Mapped[list["TrainCoach"]] = relationship(
         back_populates="train", cascade="all, delete-orphan", order_by="TrainCoach.position"

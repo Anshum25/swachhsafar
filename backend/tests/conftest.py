@@ -102,7 +102,7 @@ def _checkpoint(path: Path) -> None:
     con.close()
 
 
-KEEP = {"roles", "permissions", "alembic_version"}
+KEEP = {"roles", "permissions", "alembic_version", "railway_stations"}  # reference data the migrations load
 
 
 @pytest.fixture(scope="session")

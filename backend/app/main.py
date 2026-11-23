@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.v1 import (
-    clients, complaints, feedback, geo, inventory, journeys, media, operations, org, releases, reports,
+    clients, complaints, feedback, geo, inventory, journeys, media, operations, org, railway, releases, reports,
     security, sync, trains,
 )
 from app.config import get_settings
@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
         operations.attendance_router, operations.inspections_router, feedback.router, complaints.router,
         inventory.router, reports.router, reports.dashboard_router, sync.router, media.router,
         security.signin_router, security.security_router, geo.router, releases.router,
-        clients.router,
+        clients.router, railway.router, railway.setup_router,
     ):
         v1.include_router(router)
     app.include_router(v1)

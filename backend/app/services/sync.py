@@ -175,7 +175,10 @@ def changes(db: Session, p: Principal, since: datetime | None) -> dict:
         jstmt = jstmt.where(or_(Journey.updated_at > after, Journey.id.in_(touched)))
     journeys = []
     for j in db.scalars(jstmt).unique():
-        if not journey_svc.can_see(db, p, j):
+        # A planned journey with no supervisor yet is not sent to phones: nobody can work on it, and the
+        # device database requires a supervisor (src/database/operationalMigrations.js). It goes out once
+        # one is assigned, which touches updated_at.
+        if j.supervisor_id is None or not journey_svc.can_see(db, p, j):
             continue
         out = JourneyOut.model_validate(journey_svc.to_out(j)).model_dump(mode="json")
         out["staff"] = [{k: str(v) if v is not None and not isinstance(v, int) else v for k, v in s.items()}

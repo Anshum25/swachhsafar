@@ -53,6 +53,8 @@ class DivisionKind(StrEnum):
 
 class Division(UUIDPk, Timestamps, Base):
     __tablename__ = "divisions"
+    # One division per railway station per office; divisions that are not a station (NULL) never collide.
+    __table_args__ = (Index("uq_divisions_client_station", "client_id", "station_code", unique=True),)
 
     code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -64,6 +66,8 @@ class Division(UUIDPk, Timestamps, Base):
     kind: Mapped[DivisionKind] = mapped_column(
         str_enum(DivisionKind, 12), nullable=False, default=DivisionKind.STATION, server_default="station"
     )
+    # The railway station this division stands for (railway_stations.code), when it was set up from one.
+    station_code: Mapped[str | None] = mapped_column(String(8))
 
     # lazy="select": a Division is loaded on every authenticated request (through User.division), and the
     # client is not needed there. The two places that do need it ask for it by name: Principal.modules_in

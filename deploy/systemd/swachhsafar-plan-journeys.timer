@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Swachh Safar 2.0 journey planning (00:05 India time)
+
+[Timer]
+# 00:05 IST: planned journeys starting today are charged (or cancelled for want of credits) as the day
+# begins, and the next days are topped up. Persistent: a missed run happens at the next boot.
+OnCalendar=*-*-* 18:35:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

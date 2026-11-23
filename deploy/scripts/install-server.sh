@@ -43,9 +43,10 @@ backend/.venv/bin/pip install -q -e backend
 
 echo "== systemd"
 install -m 644 deploy/systemd/swachhsafar-api.service deploy/systemd/swachhsafar-db-backup.service \
-  deploy/systemd/swachhsafar-db-backup.timer /etc/systemd/system/
+  deploy/systemd/swachhsafar-db-backup.timer deploy/systemd/swachhsafar-plan-journeys.service   deploy/systemd/swachhsafar-plan-journeys.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now swachhsafar-db-backup.timer
+systemctl enable --now swachhsafar-plan-journeys.timer
 systemctl enable swachhsafar-api.service
 systemctl restart swachhsafar-api.service
 

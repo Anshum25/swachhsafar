@@ -376,7 +376,8 @@ def to_out(j: Journey) -> dict:
         return_end_time=j.return_end_time, duration_days=j.duration_days, operational_days=j.operational_days,
         daywise=j.daywise, inspection_rounds_per_day=j.inspection_rounds_per_day,
         before_inspection_enabled=j.before_inspection_enabled, after_inspection_enabled=j.after_inspection_enabled,
-        supervisor_id=j.supervisor_id, supervisor_name=j.supervisor.name, created_by_id=j.created_by_id,
+        supervisor_id=j.supervisor_id, supervisor_name=j.supervisor.name if j.supervisor else None,
+        created_by_id=j.created_by_id, auto_created=j.auto_created, charged=j.charged,
         state=journey_state(j), cancel_reason=j.cancel_reason, cancelled_at=j.cancelled_at, version=j.version,
         coaches=j.coaches, updated_at=j.updated_at,
     )

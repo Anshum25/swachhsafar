@@ -45,6 +45,9 @@ class Journey(UUIDPk, Timestamps, Base):
             name="outbound_end_range",
         ),
         Index("ix_journeys_division_dates", "division_id", "journey_date", "end_date"),
+        # The planner may run twice a day: one planned journey per train per day.
+        Index("uq_journeys_auto_train_date", "train_id", "journey_date", unique=True,
+              postgresql_where=text("auto_created"), sqlite_where=text("auto_created")),
     )
 
     division_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("divisions.id"), nullable=False)
@@ -65,8 +68,14 @@ class Journey(UUIDPk, Timestamps, Base):
     inspection_rounds_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
     before_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     after_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    supervisor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    created_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # Empty on a journey the planner created, until somebody assigns a supervisor (migration 0017).
+    supervisor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    # Empty when the planner created it (auto_created).
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    auto_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # Whether the client's wallet has paid for it. A journey somebody creates is paid for at once; a planned
+    # one on its start day (services/railway.charge_due_journeys), and cancelled if the wallet cannot.
+    charged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
     status: Mapped[JourneyStatus] = mapped_column(str_enum(JourneyStatus, 10), nullable=False, default=JourneyStatus.PLANNED)
     cancelled_at: Mapped[datetime | None] = mapped_column(TZDateTime())
     cancelled_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
@@ -77,7 +86,7 @@ class Journey(UUIDPk, Timestamps, Base):
 
     train: Mapped[Train] = relationship(foreign_keys=[train_id], lazy="joined")
     linked_train: Mapped[Train | None] = relationship(foreign_keys=[linked_train_id], lazy="joined")
-    supervisor: Mapped[User] = relationship(foreign_keys=[supervisor_id], lazy="joined")
+    supervisor: Mapped[User | None] = relationship(foreign_keys=[supervisor_id], lazy="joined")
     coaches: Mapped[list["JourneyCoach"]] = relationship(
         back_populates="journey", cascade="all, delete-orphan", order_by="JourneyCoach.position"
     )

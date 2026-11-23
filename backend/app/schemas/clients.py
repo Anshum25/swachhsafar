@@ -47,6 +47,10 @@ class ClientUpdate(StrictModel):
     address: str | None = Field(default=None, max_length=1000)
     status: ClientStatus | None = None
     low_credit_threshold: int | None = Field(default=None, ge=0, le=100000)
+    # Where the office works: a state and city of the railway station list (services/clients.update_client
+    # checks them). Its Admin then picks this city's stations and trains (services/railway.py).
+    state: str | None = Field(default=None, min_length=1, max_length=60)
+    city: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class ClientModulesIn(StrictModel):
@@ -102,6 +106,9 @@ class ClientOut(ReadModel):
     credit_balance: int
     credit_per_journey: int
     low_credit_threshold: int
+    state: str | None = None
+    city: str | None = None
+    setup_completed_at: datetime | None = None
     updated_at: datetime
 
 

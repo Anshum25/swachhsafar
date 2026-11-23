@@ -89,9 +89,12 @@ class JourneyOut(ReadModel):
     inspection_rounds_per_day: int
     before_inspection_enabled: bool
     after_inspection_enabled: bool
-    supervisor_id: uuid.UUID
-    supervisor_name: str
-    created_by_id: uuid.UUID
+    # Empty on a planned journey until somebody assigns a supervisor (services/railway.py).
+    supervisor_id: uuid.UUID | None
+    supervisor_name: str | None
+    created_by_id: uuid.UUID | None
+    auto_created: bool = False
+    charged: bool = True
     state: JourneyState
     cancel_reason: str | None
     cancelled_at: datetime | None
