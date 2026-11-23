@@ -125,8 +125,20 @@ def _require_super_admin(p: Principal, what: str) -> None:
         raise Forbidden(f"Only Super Admin can {what}", code="permission_denied")
 
 
+def _check_area(db: Session, state: str | None, city: str | None) -> None:
+    """A state and city must come from the railway station list: the office's stations are that city's."""
+    from app.services.railway import list_cities, list_states
+
+    if state is not None and state not in list_states(db):
+        raise BusinessRuleViolation(f"{state} is not a state of the railway station list", code="unknown_state")
+    if city is not None and (state is None or city not in list_cities(db, state)):
+        raise BusinessRuleViolation(f"{city} is not a city of {state or 'that state'} in the railway station list",
+                                    code="unknown_city")
+
+
 def create_client(db: Session, p: Principal, body: ClientCreate) -> Client:
     _require_super_admin(p, "create clients")
+    _check_area(db, body.state, body.city)
     client = Client(**body.model_dump())
     db.add(client)
     flush_or_conflict(db, "Office ID already exists", code="office_id_taken")
@@ -140,15 +152,7 @@ def update_client(db: Session, p: Principal, client_id: uuid.UUID, body: ClientU
     client = get_client(db, client_id)
     updates = body.model_dump(exclude_unset=True)
     if "state" in updates or "city" in updates:
-        from app.services.railway import list_cities, list_states
-
-        state = updates.get("state", client.state)
-        city = updates.get("city", client.city)
-        if state is not None and state not in list_states(db):
-            raise BusinessRuleViolation(f"{state} is not a state of the railway station list", code="unknown_state")
-        if city is not None and (state is None or city not in list_cities(db, state)):
-            raise BusinessRuleViolation(f"{city} is not a city of {state or 'that state'} in the railway station list",
-                                        code="unknown_city")
+        _check_area(db, updates.get("state", client.state), updates.get("city", client.city))
     audit(db, actor_id=p.id, action="client.update", entity=client, division_id=None, changes=diff(client, updates))
     for key, value in updates.items():
         setattr(client, key, value)

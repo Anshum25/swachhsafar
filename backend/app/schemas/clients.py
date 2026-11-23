@@ -31,6 +31,9 @@ class ClientCreate(StrictModel):
     # explains the balance.
     credit_per_journey: int = Field(default=1, ge=0, le=1000)
     low_credit_threshold: int = Field(default=10, ge=0, le=100000)
+    # Where the office works (railway station list); can also be set later on the office's page.
+    state: str | None = Field(default=None, min_length=1, max_length=60)
+    city: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator("enabled_modules")
     @classmethod

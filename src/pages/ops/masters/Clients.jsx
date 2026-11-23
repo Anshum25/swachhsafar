@@ -15,7 +15,7 @@ import {
 } from '../../../components/ui.jsx';
 import { ConfirmDialog, useSave } from './common.jsx';
 import Divisions, { kindLabel } from './Divisions.jsx';
-import { AreaEditor, SetupWizard } from './OfficeSetup.jsx';
+import { AreaEditor, SetupWizard, StateCityFields } from './OfficeSetup.jsx';
 import RolePermissions from './RolePermissions.jsx';
 import AddCreditsDialog from './AddCreditsDialog.jsx';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
@@ -64,6 +64,7 @@ function ClientForm({ onSaved, onClose }) {
   const [f, setF] = useState({
     office_id: '', name: '', contact_name: '', contact_mobile: '', contact_email: '', gstin: '',
     credit_per_journey: '1', low_credit_threshold: '10', enabled_modules: GATEABLE.map((m) => m.key),
+    state: '', city: '',
   });
   const [errors, setErrors] = useState({});
   const save = useSave((created) => { onSaved(created); onClose(); });
@@ -75,6 +76,7 @@ function ClientForm({ onSaved, onClose }) {
     if (f.contact_mobile && !/^[6-9][0-9]{9}$/.test(f.contact_mobile)) found.contact_mobile = '10 digits, starting 6-9';
     if (f.gstin && !/^[0-9A-Z]{15}$/.test(f.gstin)) found.gstin = '15 characters, capitals and digits';
     if (!(Number(f.credit_per_journey) >= 0)) found.credit_per_journey = '0 or more';
+    if (f.state && !f.city) found.city = 'Choose the city too, or clear the state';
     return found;
   };
 
@@ -93,6 +95,8 @@ function ClientForm({ onSaved, onClose }) {
       enabled_modules: f.enabled_modules,
       credit_per_journey: Number(f.credit_per_journey),
       low_credit_threshold: Number(f.low_credit_threshold),
+      state: f.state || null,
+      city: f.city || null,
     }), `Office ${f.office_id} created.`);
   };
 
@@ -136,6 +140,9 @@ function ClientForm({ onSaved, onClose }) {
           <input className="input" inputMode="numeric" value={f.low_credit_threshold}
             onChange={(e) => setF({ ...f, low_credit_threshold: e.target.value.replace(/\D/g, '') })} />
         </Field>
+        {/* Where it works: its Admin then picks this city's stations and trains. Can also be set later. */}
+        <StateCityFields state={f.state} city={f.city} onChange={(v) => setF({ ...f, ...v })} />
+        {errors.city && <p className="text-xs font-medium text-red-600 sm:col-span-2">{errors.city}</p>}
       </div>
 
       <fieldset className="rounded-2xl p-3 ring-1 ring-slate-200">
@@ -481,6 +488,9 @@ export default function Clients() {
             columns={[
               { key: 'office_id', label: 'Office ID', render: (r) => <span className="font-medium">{r.office_id}</span> },
               { key: 'name', label: 'Name' },
+              { key: 'city', label: 'City', render: (r) => (r.city
+                ? <span>{r.city}<span className="block text-xs text-slate-500">{r.state}</span></span>
+                : <span className="text-xs font-medium text-amber-700">Not set</span>) },
               { key: 'enabled_modules', label: 'Modules', render: (r) => (r.enabled_modules.length ? r.enabled_modules.length : 'Platform only') },
               {
                 key: 'credit_balance',

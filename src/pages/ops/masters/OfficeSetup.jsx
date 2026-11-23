@@ -18,6 +18,24 @@ const SUPER_ADMIN = 1;
 
 // ---- the office's state and city (Super Admin) ---------------------------------------------------------
 
+// State, then city, from the railway station list. Used when creating an office (Clients.jsx) and on its page.
+export function StateCityFields({ state, city, onChange }) {
+  const states = useResource('/railway/states');
+  const cities = useResource(state ? '/railway/cities' : null, state ? { state } : null);
+  return (
+    <>
+      <Field label="State">
+        <Select value={state} onChange={(v) => onChange({ state: v, city: '' })} placeholder="Choose a state"
+          options={(states.data ?? []).map((s) => ({ value: s, label: s }))} />
+      </Field>
+      <Field label="City" hint="Its stations are the ones this office can set up (a big city includes its suburbs)">
+        <Select value={city} onChange={(v) => onChange({ state, city: v })} placeholder={state ? 'Choose a city' : 'Choose a state first'}
+          disabled={!state} options={(cities.data ?? []).map((c) => ({ value: c, label: c }))} />
+      </Field>
+    </>
+  );
+}
+
 export function AreaEditor({ client, onSaved }) {
   const { api, me } = useSession();
   const online = useNetworkStatus();
@@ -25,8 +43,6 @@ export function AreaEditor({ client, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [state, setState] = useState(client.state ?? '');
   const [city, setCity] = useState(client.city ?? '');
-  const states = useResource(editing ? '/railway/states' : null);
-  const cities = useResource(editing && state ? '/railway/cities' : null, state ? { state } : null);
   const save = useSave(() => { setEditing(false); onSaved?.(); });
   const changed = state !== (client.state ?? '') || city !== (client.city ?? '');
 
@@ -42,14 +58,7 @@ export function AreaEditor({ client, onSaved }) {
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); save.run(() => api.patch(`/clients/${client.id}`, { state, city }), 'State and city saved.'); }}>
           <ErrorNote error={save.error} />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="State">
-              <Select value={state} onChange={(v) => { setState(v); setCity(''); }} placeholder="Choose a state"
-                options={(states.data ?? []).map((s) => ({ value: s, label: s }))} />
-            </Field>
-            <Field label="City" hint="A big city lists its suburb stations too (Ahmedabad: Sabarmati, Maninagar, ...)">
-              <Select value={city} onChange={setCity} placeholder={state ? 'Choose a city' : 'Choose a state first'} disabled={!state}
-                options={(cities.data ?? []).map((c) => ({ value: c, label: c }))} />
-            </Field>
+            <StateCityFields state={state} city={city} onChange={(v) => { setState(v.state); setCity(v.city); }} />
           </div>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-secondary h-10" onClick={() => { setEditing(false); setState(client.state ?? ''); setCity(client.city ?? ''); }}>Cancel</button>

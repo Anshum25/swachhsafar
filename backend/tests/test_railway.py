@@ -342,3 +342,14 @@ def test_the_office_admin_sees_their_wallet_and_what_is_coming(world, rr):
 def test_another_office_cannot_read_the_wallet(world):
     assert world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("manager_b")).status_code == 404
     assert world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("sa")).status_code == 200
+
+
+def test_an_office_can_be_created_with_its_state_and_city(world):
+    h = world.h("sa")
+    r = world.client.post(f"{API}/clients", headers=h, json={"office_id": "OFF-ADI", "name": "Ahmedabad office",
+                                                             "state": "Gujarat", "city": "Ahmedabad"})
+    assert r.status_code == 201, r.text
+    assert (r.json()["state"], r.json()["city"]) == ("Gujarat", "Ahmedabad")
+    r = world.client.post(f"{API}/clients", headers=h, json={"office_id": "OFF-X", "name": "Nowhere", "state": "Gujarat",
+                                                             "city": "Atlantis"})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "unknown_city"
