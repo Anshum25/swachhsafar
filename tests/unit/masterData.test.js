@@ -266,3 +266,29 @@ describe('master-data offline reads and division isolation', () => {
     expect((await store.masters.listItems({ divisionId: IDS.division })).map((i) => i.name)).toEqual(['Hand towels', 'Phenyl']);
   });
 });
+
+describe('division policy defaults', () => {
+  // The policy form validates the whole policy before it asks to save, so a field the app has no default
+  // for leaves the form unsaveable (masterData.offline.spec.js hung on exactly that). Read the server's
+  // PolicySettings field names straight from the schema so a new server field cannot be missed here.
+  const schema = readFileSync(new URL('../../backend/app/schemas/policy.py', import.meta.url), 'utf8');
+  const body = schema.slice(schema.indexOf('class PolicySettings'));
+  const serverFields = [...body.matchAll(/^ {4}([a-z_]+): /gm)].map((m) => m[1]).sort();
+
+  it('has a default for every server policy field, and no others', async () => {
+    const { DEFAULT_POLICY } = await import('../../src/database/masterDataRepository.js');
+    expect(serverFields.length).toBeGreaterThan(20);
+    expect(Object.keys(DEFAULT_POLICY).sort()).toEqual(serverFields);
+  });
+
+  it('puts every server policy field on the form', async () => {
+    const { POLICY_FIELDS } = await import('../../src/utils/masterValidation.js');
+    expect(POLICY_FIELDS.map((f) => f.key).sort()).toEqual(serverFields);
+  });
+
+  it('is a policy the form accepts as it stands', async () => {
+    const { DEFAULT_POLICY } = await import('../../src/database/masterDataRepository.js');
+    const { validatePolicy } = await import('../../src/utils/masterValidation.js');
+    expect(validatePolicy({ ...DEFAULT_POLICY })).toEqual({});
+  });
+});

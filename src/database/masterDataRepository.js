@@ -17,6 +17,22 @@ export const DEFAULT_POLICY = Object.freeze({
   complaint_default_sla_hours: 72,
   attendance_face_verification: false,
   face_match_threshold: 0.5,
+  // Every PolicySettings field needs its server default here (backend/app/schemas/policy.py): the policy
+  // form validates the whole policy, so a field missing from this object makes it unsaveable, and the
+  // offline copy of a division's policy falls back on these. tests/unit/masterData.test.js holds the two
+  // to the same field list.
+  attendance_fingerprint_verification: false,
+  fingerprint_match_score: 40,
+  face_liveness_required: false,
+  attendance_group_photo: false,
+  gps_enforced: true,
+  gps_block_app: false,
+  gps_max_age_seconds: 120,
+  gps_max_accuracy_m: 100,
+  gps_timeout_seconds: 20,
+  gps_max_speed_kmh: 250,
+  vpn_policy: 'block',
+  offline_session_hours: 24,
 });
 
 const synced = (row, now) => ({ sync_status: 'synced', server_updated_at: row.updated_at ?? null, created_at: now, updated_at: now });
