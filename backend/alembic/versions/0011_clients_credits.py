@@ -47,10 +47,6 @@ def _sqlite() -> bool:
     return op.get_bind().dialect.name == "sqlite"
 
 
-def _now():
-    return sa.text("(strftime('%Y-%m-%d %H:%M:%f', 'now'))") if _sqlite() else sa.text("now()")
-
-
 def upgrade() -> None:
     op.create_table(
         "clients",
@@ -165,8 +161,6 @@ def upgrade() -> None:
         sa.column("permission_code", sa.String),
         sa.column("division_id", sa.Uuid),
         sa.column("effect", sa.String),
-        sa.column("created_at", sa.DateTime(timezone=True)),
-        sa.column("updated_at", sa.DateTime(timezone=True)),
     )
     # Inserted only where missing. Migration 0002 seeds the catalog by importing app.security.catalog, so
     # a database created after this commit already has these three rows and their grants; one created
@@ -179,10 +173,10 @@ def upgrade() -> None:
     existing_grants = set(
         bind.execute(sa.text("SELECT role_id, permission_code FROM role_permissions WHERE division_id IS NULL")).all()
     )
-    now = _now()
+    # created_at/updated_at are left to their server defaults: bulk_insert binds every value as a
+    # parameter, and a SQL expression such as now() cannot be bound (psycopg refuses it outright).
     new_grants = [
-        dict(id=uuid.uuid4(), role_id=role, permission_code=code, division_id=None, effect="allow",
-             created_at=now, updated_at=now)
+        dict(id=uuid.uuid4(), role_id=role, permission_code=code, division_id=None, effect="allow")
         for role, codes in NEW_GRANTS.items()
         for code in codes
         if (role, code) not in existing_grants

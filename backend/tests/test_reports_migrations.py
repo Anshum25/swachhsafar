@@ -114,3 +114,28 @@ def test_migrations_downgrade_and_upgrade(pg):
     with engine.connect() as conn:
         assert conn.exec_driver_sql("SELECT count(*) FROM roles").scalar() == 6
     engine.dispose()
+
+
+def test_0011_grants_a_database_created_before_the_client_permissions(pg):
+    """Production was migrated before clients.* and credits.manage existed, so 0011 has to insert their
+    grants itself. A fresh test database already has them from 0002's catalog snapshot and skips that
+    branch, which is how a bulk_insert that could not run on PostgreSQL got as far as the server."""
+    server, url_for = pg
+    server.psql("DROP DATABASE IF EXISTS swachh_pre0011 WITH (FORCE);")
+    server.psql("CREATE DATABASE swachh_pre0011;")
+    url = url_for("swachh_pre0011")
+    run_migrations(url, "0010")
+    engine = create_engine(url)
+    new_codes = "('clients.read', 'clients.manage', 'credits.manage')"
+    with engine.begin() as conn:
+        conn.exec_driver_sql(f"DELETE FROM role_permissions WHERE permission_code IN {new_codes}")
+        conn.exec_driver_sql(f"DELETE FROM permissions WHERE code IN {new_codes}")
+
+    run_migrations(url)
+
+    with engine.connect() as conn:
+        grants = set(conn.exec_driver_sql(
+            "SELECT role_id, permission_code FROM role_permissions "
+            f"WHERE division_id IS NULL AND permission_code IN {new_codes} AND created_at IS NOT NULL").all())
+    assert grants == {(1, "clients.read"), (1, "clients.manage"), (1, "credits.manage"), (2, "clients.read")}
+    engine.dispose()
