@@ -222,8 +222,9 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
           // The distance is evidence only where the device recognised this person and the supervisor
           // agreed. Where the supervisor supplied the name, nothing is claimed about a match.
           ...(hit ? { face_distance: hit.distance, face_model: FACE_MODEL } : {}),
-          // A single frame cannot show that this face blinked, so no liveness is claimed for it either.
-          ...gate.evidence({ liveness: 'not_required', faceModel: hit ? FACE_MODEL : null }),
+          // The face was followed in the live preview and showed real 3-D depth as the person turned their
+          // head (GroupPhotoCapture); a picture of a face never gets this, and is never in `recognised`.
+          ...gate.evidence({ liveness: hit?.liveness ?? 'not_required', faceModel: hit ? FACE_MODEL : null }),
         };
         // Each record keeps this person's own face cut out of the group photo; a person named by hand
         // keeps the whole photograph.

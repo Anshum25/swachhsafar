@@ -192,7 +192,10 @@ export default function LiveFaceCapture({ onDone, name, autoStart = true }) {
           if (neutralPts.length > MAX_NEUTRAL_FRAMES) neutralPts.shift();
         }
         if (r.extreme && movedPts.length < MAX_MOVED_FRAMES) movedPts.push(m.points);
-        if (!first && r.calibrating) {
+        // The identity at the start. Tried on every near-frontal frame until it is read: tried only during
+        // the few calibration frames, one unlucky miss left `first` empty and every attempt then failed as
+        // "face changed", even for the right person standing still.
+        if (!first && (r.calibrating || Math.abs(m.yaw) < 0.12) && !r.extreme) {
           first = await describeFrame(video.current).catch(() => null);
           if (!owns() || settled) return;
         }
@@ -210,7 +213,12 @@ export default function LiveFaceCapture({ onDone, name, autoStart = true }) {
       canvas.width = video.current.videoWidth || 640;
       canvas.height = video.current.videoHeight || 480;
       canvas.getContext('2d').drawImage(video.current, 0, 0);
-      const last = await describeFrame(canvas).catch(() => null);
+      let last = await describeFrame(canvas).catch(() => null);
+      // One missed read of the final frame is not a different person: read a few more live frames.
+      for (let i = 0; !last && i < 3 && owns(); i += 1) {
+        canvas.getContext('2d').drawImage(video.current, 0, 0);
+        last = await describeFrame(canvas).catch(() => null);
+      }
       cleanup();
       if (run !== runId.current) return;
       const depth = depthVerdict(neutralPts, movedPts);

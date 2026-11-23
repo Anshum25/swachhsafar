@@ -195,6 +195,27 @@ export async function detectFaces(input, { inputSize = PREVIEW_INPUT_SIZE } = {}
     .sort((a, b) => a.box.x - b.box.x);
 }
 
+// Every face in a video frame with what the group liveness check needs (groupLiveness.js): its box, its
+// yaw (as in analyseFrame) and the DEPTH_LANDMARKS. Slower than detectFaces -- landmarks for each face --
+// but the preview needs them to tell a real head from a picture of one.
+export async function analyseFaces(input, { inputSize = PREVIEW_INPUT_SIZE } = {}) {
+  const faceapi = await loadFaceEngine();
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.4 });
+  const found = await faceapi.detectAllFaces(input, options).withFaceLandmarks();
+  return found.map((f) => {
+    const pts = f.landmarks.positions;
+    const eyeL = pts[36]; const eyeR = pts[45]; const nose = pts[30];
+    const span = dist(eyeL, eyeR) || 1;
+    const d = f.detection.box;
+    return {
+      box: { x: Math.round(d.x), y: Math.round(d.y), width: Math.round(d.width), height: Math.round(d.height) },
+      score: f.detection.score,
+      yaw: (nose.x - (eyeL.x + eyeR.x) / 2) / span,
+      points: DEPTH_LANDMARKS.map((i) => [pts[i].x, pts[i].y]),
+    };
+  }).sort((a, b) => a.box.x - b.box.x);
+}
+
 // Intersection over the smaller box: two detections of one face from overlapping tiles overlap almost
 // completely, even when one of them is cut by a tile edge.
 function overlap(a, b) {
