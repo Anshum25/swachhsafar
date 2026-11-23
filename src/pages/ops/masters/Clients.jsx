@@ -17,6 +17,7 @@ import { ConfirmDialog, useSave } from './common.jsx';
 import Divisions, { kindLabel } from './Divisions.jsx';
 import { AreaEditor, SetupWizard } from './OfficeSetup.jsx';
 import RolePermissions from './RolePermissions.jsx';
+import AddCreditsDialog from './AddCreditsDialog.jsx';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
 
 // The modules a client may subscribe to, in the order the super admin reads them. Must match
@@ -437,6 +438,7 @@ export default function Clients() {
   const res = useResource('/clients');
   const [selected, setSelected] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState(null); // the office whose wallet is being topped up
   const [filter, setFilter] = useState({ q: '', status: '' });
   const isSuperAdmin = me?.user?.role_id === 1;
 
@@ -492,10 +494,17 @@ export default function Clients() {
               { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
               // Rows open on a click too, but nothing said so: this is the visible way in.
               { key: 'manage', label: '', render: (r) => (
-                <button type="button" className="btn-secondary h-9 text-xs" aria-label={`Manage ${r.office_id}`}
-                  onClick={(e) => { e.stopPropagation(); setSelected(r.id); }}>
-                  {isSuperAdmin ? 'Manage' : 'Open'}
-                </button>
+                <span className="flex justify-end gap-1.5">
+                  {/* Top up straight from the list: the office's page has the full wallet. */}
+                  {isSuperAdmin && (
+                    <button type="button" className="btn-primary h-9 whitespace-nowrap text-xs" aria-label={`Add credits to ${r.office_id}`}
+                      disabled={!online} onClick={(e) => { e.stopPropagation(); setAdding(r); }}>+ Credits</button>
+                  )}
+                  <button type="button" className="btn-secondary h-9 text-xs" aria-label={`Manage ${r.office_id}`}
+                    onClick={(e) => { e.stopPropagation(); setSelected(r.id); }}>
+                    {isSuperAdmin ? 'Manage' : 'Open'}
+                  </button>
+                </span>
               ) },
             ]}
             rows={shown(rows)}
@@ -504,6 +513,7 @@ export default function Clients() {
         )}
       </DataState>
 
+      <AddCreditsDialog office={adding} onClose={() => setAdding(null)} onSaved={res.reload} />
       <Dialog open={creating} title="New office" wide onClose={() => setCreating(false)}>
         <ClientForm onSaved={() => res.reload()} onClose={() => setCreating(false)} />
       </Dialog>
