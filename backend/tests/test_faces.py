@@ -63,7 +63,11 @@ def test_attendance_blocked_without_a_verified_match_when_required(world):
     assert r.json()["error"]["code"] == "face_not_verified"
     r, _ = punch(world, "jan", 1, face_distance=0.61, face_model=MODEL)
     assert r.status_code == 422 and r.json()["error"]["code"] == "face_mismatch"
-    r, body = punch(world, "jan", 1, face_distance=0.31, face_model=MODEL)
+    # A matching face alone is not enough: it must have been proved live (tests/test_liveness.py).
+    r, _ = punch(world, "jan", 1, face_distance=0.31, face_model=MODEL)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "liveness_proof_required"
+    from tests.test_liveness import live_face
+    r, body = punch(world, "jan", 1, **{**live_face(world), "face_distance": 0.31})
     assert r.status_code == 201, r.text
     assert r.json()["face_distance"] == 0.31 and r.json()["face_model"] == MODEL
     # A photo is required while face verification is on.

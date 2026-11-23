@@ -6,6 +6,7 @@ from pydantic import Field, field_validator
 
 from app.models import InspectionPhase, VerificationStatus
 from app.schemas.common import Accuracy, AwareDatetime, Captured, CoachCode, Latitude, Longitude, ReadModel, StrictModel
+from app.schemas.liveness import LivenessProof
 from app.schemas.security import CaptureSecurity
 
 
@@ -31,6 +32,9 @@ class AttendanceIn(Captured):
     # When the location fix was taken (device clock), and the capture conditions the app reports.
     gps_timestamp: AwareDatetime | None = None
     security: CaptureSecurity | None = None
+    # Proof of a server-issued liveness challenge performed in front of the camera. Required whenever the
+    # face check is what identifies the employee (app.services.liveness).
+    liveness_proof: LivenessProof | None = None
 
 
 class GroupMember(StrictModel):
@@ -45,6 +49,7 @@ class GroupMember(StrictModel):
     fingerprint_matcher: str | None = Field(default=None, max_length=40)
     fingerprint_finger: str | None = Field(default=None, max_length=20)
     liveness: Literal["passed", "failed", "not_required", "unavailable"] | None = None
+    liveness_proof: LivenessProof | None = None
     # Set when this member was named from the group photograph rather than captured individually.
     group_photo: bool = False
     # This member's own stage. Progress is per employee, so one group capture can record different

@@ -24,10 +24,15 @@ describe('face-verified attendance on the device', () => {
     await expect(store.capture(attendancePayload({ face_distance: 0.62, face_model: MODEL }))).rejects.toMatchObject({ code: 'face_mismatch' });
     await expect(store.capture(attendancePayload({ face_distance: 0.4, face_model: MODEL, photo_media_id: null }))).rejects.toMatchObject({ code: 'photo_required' });
 
-    const ok = attendancePayload({ face_distance: 0.31, face_model: MODEL });
+    // A match alone is not enough: the live challenge's proof must come with it, even offline.
+    await expect(store.capture(attendancePayload({ face_distance: 0.31, face_model: MODEL }))).rejects.toMatchObject({ code: 'liveness_proof_required' });
+
+    const proof = { challenge_id: 'c1', signature: 'a'.repeat(64), steps: [{ action: 'blink', at: new Date().toISOString() }] };
+    const ok = attendancePayload({ face_distance: 0.31, face_model: MODEL, liveness_proof: proof });
     await store.capture(ok);
     const [queued] = await store.db.query("SELECT payload FROM sync_outbox WHERE entity_id = ?", [ok.payload.id]);
-    expect(JSON.parse(queued.payload).op.payload).toMatchObject({ face_distance: 0.31, face_model: MODEL }); // sent to the server
+    // Sent to the server, which checks and consumes the challenge at sync.
+    expect(JSON.parse(queued.payload).op.payload).toMatchObject({ face_distance: 0.31, face_model: MODEL, liveness_proof: proof });
   });
 
   it('replaces face profiles on every pull and leaves them alone when the server sends none', async () => {

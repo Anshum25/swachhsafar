@@ -10,7 +10,7 @@ from app.models import (Attendance, AttendanceStage, FaceEnrollment, Fingerprint
 from app.schemas.common import PageParams
 from app.schemas.operations import AttendanceIn, GroupAttendanceIn, ReviewIn
 from app.security.principal import Principal
-from app.services import security
+from app.services import liveness, security
 from app.services import media
 from app.services.common import audit, check_replay, get_or_404, paginate, payload_hash
 from app.services.journeys import check_capture_window, get_journey, is_allocated
@@ -133,11 +133,17 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
     # is still required whenever the face check is what proved identity.
     evidence = security.check_capture(db, p, policy, body, kind="attendance",
                                       liveness_required=verified_by == "face" and policy.face_liveness_required)
+    if verified_by == "face":
+        # A face match alone never authorises attendance: the face must also have been proved live, with a
+        # challenge this server issued and that no other record has used.
+        proof = liveness.verify_and_consume(db, p, attendance_id=body.id, device_timestamp=body.device_timestamp,
+                                            proof=body.liveness_proof)
+        evidence["security"] = {**(evidence["security"] or {}), "liveness_proof": proof}
     photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO,
                            j.division_id, p.id,
                            required=policy.attendance_photo_required or verified_by in ("face", "group_photo"),
                            label="Attendance photo")
-    record = Attendance(**body.model_dump(exclude={"photo_media_id", "security", "gps_timestamp", "group_photo"}),
+    record = Attendance(**body.model_dump(exclude={"photo_media_id", "security", "gps_timestamp", "group_photo", "liveness_proof"}),
                         **evidence, photo_media_id=photo_id, division_id=j.division_id, identified_by=verified_by,
                         created_by_id=p.id, payload_hash=digest, sync_op_id=sync_op_id)
     db.add(record)
@@ -172,7 +178,8 @@ def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dic
                             fingerprint_finger=m.fingerprint_finger, group_photo=m.group_photo,
                             device_timestamp=body.device_timestamp, latitude=body.latitude, longitude=body.longitude,
                             gps_accuracy_m=body.gps_accuracy_m, gps_timestamp=body.gps_timestamp,
-                            security=body.security.model_copy(update={"liveness": m.liveness}) if body.security else None)
+                            security=body.security.model_copy(update={"liveness": m.liveness}) if body.security else None,
+                            liveness_proof=m.liveness_proof)
         savepoint = db.begin_nested()
         try:
             record, replayed = create(db, p, item, commit=False)

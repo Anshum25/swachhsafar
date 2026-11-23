@@ -19,6 +19,7 @@ import { isOnline, subscribeConnectivity, subscribeForeground } from '../service
 import { solveCaptcha } from '../security/captcha.js';
 import { getDevice } from '../security/device.js';
 import { getCachedLease, saveCachedLease, validateOfflineLease } from '../security/lease.js';
+import { refillTickets } from '../face/livenessTickets.js';
 import { clearToken, getAuth, getToken as storedToken, saveAccount, saveToken, subscribeAuth } from '../security/authToken.js';
 
 const SessionContext = createContext(null);
@@ -135,6 +136,10 @@ export function SessionProvider({ db, files, children }) {
       }
       saveAccount({ userId: profile.user.id, email: profile.user.email ?? null, empId: profile.user.emp_id });
       setMe(profile);
+      // Face attendance challenges for offline use: fetched whenever the session is checked online, so a
+      // device that then loses its connection can still capture (each is accepted once, at sync). Never
+      // blocks sign-in; a user without attendance rights is simply refused and holds none.
+      refillTickets((path, body) => remote.post(path, body), profile.user.id);
       await store.identity.saveAuthorization(profile, { now: new Date().toISOString() })
         .catch((e) => console.warn('[session] could not cache authorization', e));
     } catch (e) {
