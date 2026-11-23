@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.errors import Forbidden, Unauthenticated
-from app.models import ChargeMap, PermissionEffect, RoleId, RolePermission, User
-from app.security.catalog import MANAGEABLE_ROLES
+from app.models import ALWAYS_ON_MODULES, GATEABLE_MODULES, ChargeMap, PermissionEffect, RoleId, RolePermission, User
+from app.security.catalog import ALL_MODULES, MANAGEABLE_ROLES, PERMISSION_MODULE
 from app.timeutil import today_ist
 
 
@@ -20,6 +20,7 @@ class Principal:
     division_ids: frozenset[uuid.UUID]
     _db: Session
     _perm_cache: dict[uuid.UUID, frozenset[str]] = field(default_factory=dict)
+    _module_cache: dict[uuid.UUID, frozenset[str]] = field(default_factory=dict)
     # Backend sign-in session and its device.
     session_id: uuid.UUID | None = None
     device_id: str | None = None
@@ -39,6 +40,30 @@ class Principal:
     def can_access_division(self, division_id: uuid.UUID) -> bool:
         return self.is_super_admin or division_id in self.division_ids
 
+    def modules_in(self, division_id: uuid.UUID) -> frozenset[str]:
+        """What the division's client is subscribed to, plus the always-on platform. A Super Admin is not
+        gated: they configure the subscriptions, so they must be able to see what they are configuring."""
+        if self.is_super_admin:
+            return ALL_MODULES
+        if division_id not in self._module_cache:
+            from app.models import Client, Division
+
+            modules = self._db.scalar(
+                select(Client.enabled_modules).join(Division, Division.client_id == Client.id).where(
+                    Division.id == division_id
+                )
+            )
+            enabled = {m for m in (modules or []) if m in GATEABLE_MODULES}
+            self._module_cache[division_id] = ALWAYS_ON_MODULES | frozenset(enabled)
+        return self._module_cache[division_id]
+
+    def module_enabled(self, permission: str, division_id: uuid.UUID) -> bool:
+        """Whether the module a permission belongs to is part of the division's client subscription. A
+        permission outside the catalog is treated as always-on: this gate is a subscription check, not a
+        second place for a typo to become a silent denial."""
+        module = PERMISSION_MODULE.get(permission)
+        return module is None or module in self.modules_in(division_id)
+
     def permissions_in(self, division_id: uuid.UUID) -> frozenset[str]:
         if division_id not in self._perm_cache:
             rows = self._db.execute(
@@ -51,7 +76,14 @@ class Principal:
             for code, div, eff in rows:
                 if div is not None:
                     (granted.add if eff == PermissionEffect.ALLOW else granted.discard)(code)
-            self._perm_cache[division_id] = frozenset(granted)
+            # The client's subscription caps the role: what the office has not bought, nobody in it holds.
+            # Doing it here means /auth/me, every list endpoint and every require() agree without each
+            # having to remember the check.
+            allowed_modules = self.modules_in(division_id)
+            self._perm_cache[division_id] = frozenset(
+                code for code in granted
+                if PERMISSION_MODULE.get(code) is None or PERMISSION_MODULE[code] in allowed_modules
+            )
         return self._perm_cache[division_id]
 
     def has(self, permission: str, division_id: uuid.UUID) -> bool:
@@ -60,13 +92,30 @@ class Principal:
     def require(self, permission: str, division_id: uuid.UUID) -> None:
         if not self.can_access_division(division_id):
             raise Forbidden("Outside your authorized divisions", code="division_forbidden")
+        # Said apart from permission_denied so the answer is actionable: the role is right, the office has
+        # not subscribed to this module, and only the Super Admin can change that.
+        if not self.module_enabled(permission, division_id):
+            raise Forbidden(
+                f"The {PERMISSION_MODULE[permission]} module is not enabled for this client",
+                code="module_disabled",
+                details={"module": PERMISSION_MODULE[permission]},
+            )
         if permission not in self.permissions_in(division_id):
             raise Forbidden(f"Missing permission {permission}", code="permission_denied")
 
     def require_any_division(self, permission: str) -> list[uuid.UUID]:
         """Divisions in which the caller holds the permission (for list endpoints). Empty -> forbidden."""
-        divisions = [d for d in self.scope_divisions() if permission in self.permissions_in(d)]
+        scope = self.scope_divisions()
+        divisions = [d for d in scope if permission in self.permissions_in(d)]
         if not divisions:
+            # Distinguish "your office has not bought this module" from "your role lacks this permission".
+            # Both are 403, but only one of them is something the user can ask to have changed.
+            if scope and not any(self.module_enabled(permission, d) for d in scope):
+                raise Forbidden(
+                    f"The {PERMISSION_MODULE[permission]} module is not enabled for this client",
+                    code="module_disabled",
+                    details={"module": PERMISSION_MODULE[permission]},
+                )
             raise Forbidden(f"Missing permission {permission}", code="permission_denied")
         return divisions
 

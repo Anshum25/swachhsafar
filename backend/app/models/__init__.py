@@ -1,4 +1,12 @@
 from app.models.base import Base
+from app.models.clients import (
+    ALWAYS_ON_MODULES,
+    GATEABLE_MODULES,
+    Client,
+    ClientStatus,
+    CreditLedger,
+    LedgerReason,
+)
 from app.models.complaints import (
     Complaint,
     ComplaintAttachment,

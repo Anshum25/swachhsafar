@@ -54,17 +54,27 @@ function Shell() {
     );
   }
 
-  const route = resolveRoute(parts, session.can);
+  const route = resolveRoute(parts, session.can, session.modules);
   const Screen = route.allowed ? SCREENS[route.module.key] : null;
   return (
     <SecurityProvider>
       <Layout path={path}>
         <Suspense fallback={<Loading />}>
-          {Screen ? <Screen parts={route.rest} /> : <ErrorNote error={{ message: route.module ? 'This screen is not available for your role.' : 'This page does not exist.' }} />}
+          {Screen ? <Screen parts={route.rest} /> : <ErrorNote error={{ message: route.module ? routeDeniedMessage(route.module, session) : 'This page does not exist.' }} />}
         </Suspense>
       </Layout>
     </SecurityProvider>
   );
+}
+
+// Why a screen the user navigated to is not theirs. Two different answers, and telling them apart is
+// the difference between "ask your administrator for the permission" and "your office does not pay for
+// this module, and only the Super Admin can change that".
+function routeDeniedMessage(module, session) {
+  if (module.module && session.modules && !session.modules.includes(module.module)) {
+    return `${module.label} is not part of your organisation's subscription. Ask the Super Admin to enable it.`;
+  }
+  return 'This screen is not available for your role.';
 }
 
 // The share link https://<host>/install (or #/install) opens the install page, before any sign-in.

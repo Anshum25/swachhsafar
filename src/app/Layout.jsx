@@ -10,7 +10,7 @@ import { BLOCKS } from '../security/messages.js';
 import { BarSlotContext } from '../components/ui.jsx';
 import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
 import { ROLE_NAMES, useQueueState, useSession } from './session.jsx';
-import { MODULES } from './modules.js';
+import { MODULES, moduleAllowed } from './modules.js';
 import { DEMO_MODE } from '../services/demoApi.js';
 import { AppUpdateBanner, BundleUpdateBanner, InstallBanner, UpdateBanner } from '../components/PwaPanels.jsx';
 import { requestPersistence } from '../pwa/pwaState.js';
@@ -42,7 +42,8 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev
 // compares, and what /downloads/latest.json publishes, so the two can be read against each other.
 const BUILD_ID = BUILD_SHA ? BUILD_SHA.slice(0, 7) : '';
 
-export const visibleNav = (can) => NAV.filter((n) => !n.any.length || n.any.some(can));
+// `modules`: the client's subscription (me.client.modules), or null for no gating. See src/app/modules.js.
+export const visibleNav = (can, modules = null) => NAV.filter((n) => moduleAllowed(n, modules) && (!n.any.length || n.any.some(can)));
 const isOn = (p, path) => (p === '/' ? path === '/' : path === p || path.startsWith(`${p}/`));
 
 function QueueIndicator() {
@@ -166,8 +167,8 @@ function MenuRow({ href, onClick, Icon, label, on, tone }) {
 }
 
 function MenuContent({ path, onPick, showBrand = true }) {
-  const { user, can, signOut } = useSession();
-  const items = visibleNav(can).filter((m) => m.key !== 'dashboard');
+  const { user, can, modules, signOut } = useSession();
+  const items = visibleNav(can, modules).filter((m) => m.key !== 'dashboard');
   return (
     <div className="flex h-full min-h-0 flex-col">
       {showBrand && (
@@ -246,7 +247,7 @@ function SecurityBanner({ path }) {
 const NAV_COLS = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' };
 
 export default function Layout({ path, children }) {
-  const { can, me } = useSession();
+  const { can, me, modules } = useSession();
   const online = useNetworkStatus();
   // The SQLite database lives in OPFS: ask the browser not to evict it once a user works on this device.
   useEffect(() => {
@@ -255,7 +256,7 @@ export default function Layout({ path, children }) {
   const { toasts, notify, dismiss } = useToasts();
   const [open, setOpen] = useState(false);
   const [slot, setSlot] = useState(null);
-  const items = visibleNav(can);
+  const items = visibleNav(can, modules);
   // Bottom bar (phones/tablets): Home + the first two other screens the user has, then More (the menu).
   const bottom = [items[0], ...items.slice(1, 3)].filter(Boolean);
   const close = () => setOpen(false);

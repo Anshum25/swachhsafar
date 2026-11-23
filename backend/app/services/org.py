@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound
-from app.models import ChargeMap, Division, EmployeeKyc, Permission, Role, RoleId, RolePermission, User, UserStatus
+from app.models import ChargeMap, Client, Division, EmployeeKyc, Permission, Role, RoleId, RolePermission, User, UserStatus
 from app.schemas.common import PageParams
 from app.schemas.org import ChargeMapCreate, DivisionCreate, DivisionUpdate, GrantIn, KycIn, UserCreate, UserUpdate
 from app.security.catalog import CHARGE_ELIGIBLE_ROLES
@@ -20,7 +20,8 @@ from app.timeutil import utcnow
 def create_division(db: Session, p: Principal, body: DivisionCreate) -> Division:
     if not p.is_super_admin:
         raise Forbidden("Only Super Admin can create divisions", code="permission_denied")
-    division = Division(code=body.code, name=body.name)
+    get_or_404(db, Client, body.client_id, "Client")
+    division = Division(code=body.code, name=body.name, client_id=body.client_id)
     db.add(division)
     flush_or_conflict(db, "Division code already exists")
     audit(db, actor_id=p.id, action="division.create", entity=division, division_id=division.id, changes=body.model_dump())

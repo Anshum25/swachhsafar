@@ -51,12 +51,14 @@ audit_router = APIRouter(prefix="/audit", tags=["audit"])
 @auth_router.get("/me", response_model=MeOut)
 def me(p: Principal = Depends(get_principal), db: Session = Depends(get_db)):
     from app.security.lease import issue_offline_lease
+    from app.services.clients import client_summary
     from app.services.policy import get_policy
     pol = get_policy(db, p.user.division_id) if p.user.division_id else None
     offline_hours = pol.offline_session_hours if pol else 24
     lease = issue_offline_lease(p.user, p.device_id, p.session_id, offline_hours=offline_hours)
     return MeOut(user=UserOut.model_validate(p.user),
                  divisions={d: sorted(p.permissions_in(d)) for d in p.division_ids},
+                 client=client_summary(db, p),
                  offline_lease=lease)
 
 

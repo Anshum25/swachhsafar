@@ -33,6 +33,14 @@ class Forbidden(AppError):
     code = "forbidden"
 
 
+class PaymentRequired(AppError):
+    """The client's prepaid wallet cannot cover this action (app/services/clients.py). Distinct from 403:
+    the caller holds the permission, the office has simply run out of credits."""
+
+    status_code = 402
+    code = "credits_exhausted"
+
+
 class Conflict(AppError):
     status_code = 409
     code = "conflict"
