@@ -13,7 +13,7 @@ one `journey_refund` per journey, so a retried create or a double cancel cannot 
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.errors import BusinessRuleViolation, Forbidden, NotFound, PaymentRequired
@@ -302,3 +302,42 @@ __all__ = [
     "top_up",
     "update_client",
 ]
+
+
+# ---- the wallet at a glance --------------------------------------------------------------------------------
+
+
+def wallet_summary(db: Session, p: Principal, client_id: uuid.UUID, *, today) -> dict:
+    """What the office's home screen shows about its wallet: the balance and rate, what moved this month,
+    and what is coming -- planned journeys not paid for yet, which are charged on their start day and
+    cancelled if the balance cannot cover them then (services/railway.py)."""
+    from datetime import datetime, time
+
+    from app.models import Journey, JourneyStatus
+    from app.timeutil import IST
+
+    client = readable_client(db, p, client_id)
+    month_start = datetime.combine(today.replace(day=1), time.min, IST)
+    moved = dict(db.execute(
+        select(CreditLedger.reason, func.coalesce(func.sum(CreditLedger.delta), 0))
+        .where(CreditLedger.client_id == client.id, CreditLedger.created_at >= month_start)
+        .group_by(CreditLedger.reason)).all())
+    upcoming = db.scalar(
+        select(func.count()).select_from(Journey).join(Division, Division.id == Journey.division_id)
+        .where(Division.client_id == client.id, Journey.auto_created, Journey.charged.is_(False),
+               Journey.status == JourneyStatus.PLANNED, Journey.journey_date >= today)) or 0
+    rate = client.credit_per_journey
+    recent = list(db.scalars(select(CreditLedger).where(CreditLedger.client_id == client.id)
+                             .order_by(CreditLedger.created_at.desc(), CreditLedger.id.desc()).limit(5)))
+    return dict(
+        client_id=client.id, office_id=client.office_id, name=client.name, status=client.status,
+        credit_balance=client.credit_balance, credit_per_journey=rate,
+        low_credit_threshold=client.low_credit_threshold,
+        low_credit=client.low_credit_threshold > 0 and rate > 0 and client.credit_balance <= client.low_credit_threshold,
+        journeys_covered=(client.credit_balance // rate) if rate else None,
+        added_this_month=int(moved.get(LedgerReason.TOP_UP, 0)),
+        spent_this_month=int(-(moved.get(LedgerReason.JOURNEY_CHARGE, 0) + moved.get(LedgerReason.JOURNEY_REFUND, 0))),
+        upcoming_journeys=upcoming,
+        upcoming_cost=upcoming * rate,
+        recent=recent,
+    )

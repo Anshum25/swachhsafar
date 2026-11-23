@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.clients import GATEABLE_MODULES, ClientStatus, LedgerReason
 from app.schemas.common import Mobile, ReadModel, StrictModel
@@ -143,6 +143,27 @@ class CreditLedgerOut(ReadModel):
     note: str | None
     created_by_id: uuid.UUID | None
     is_system: bool
+
+
+class WalletOut(BaseModel):
+    """An office's wallet at a glance (services/clients.wallet_summary)."""
+
+    client_id: uuid.UUID
+    office_id: str
+    name: str
+    status: ClientStatus
+    credit_balance: int
+    credit_per_journey: int
+    low_credit_threshold: int
+    low_credit: bool
+    # How many more journeys the balance pays for at the current rate; None when journeys are free.
+    journeys_covered: int | None
+    added_this_month: int
+    spent_this_month: int
+    # Planned journeys from today on that are not paid for yet: charged on their start day.
+    upcoming_journeys: int
+    upcoming_cost: int
+    recent: list[CreditLedgerOut]
 
 
 __all__ = [

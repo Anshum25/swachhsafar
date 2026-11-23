@@ -319,3 +319,26 @@ def test_me_tells_the_office_admin_when_setup_is_due(world, rr):
     assert (me()["state"], me()["city"]) == ("Gujarat", "Ahmedabad")
     _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
     assert me()["setup_completed_at"]
+
+
+# ---- the wallet at a glance ------------------------------------------------------------------------------
+
+
+def test_the_office_admin_sees_their_wallet_and_what_is_coming(world, rr):
+    _set_area(world, world.a.client_id)
+    _wallet(world, world.a.client_id, rate=2, credits=10)
+    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    w = world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("admin")).json()
+    assert (w["credit_balance"], w["credit_per_journey"], w["journeys_covered"]) == (10, 2, 5)
+    assert w["added_this_month"] == 10 and w["spent_this_month"] == 0
+    assert (w["upcoming_journeys"], w["upcoming_cost"]) == (3, 6)  # three planned, none paid yet
+    assert w["recent"][0]["reason"] == "top_up"
+
+    charge_due_journeys(world.db, today=today_ist())
+    w = world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("admin")).json()
+    assert (w["credit_balance"], w["spent_this_month"], w["upcoming_journeys"]) == (8, 2, 2)
+
+
+def test_another_office_cannot_read_the_wallet(world):
+    assert world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("manager_b")).status_code == 404
+    assert world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("sa")).status_code == 200

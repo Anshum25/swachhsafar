@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useResource } from '../../app/session.jsx';
 import { navigate } from '../../app/router.js';
+import AddCreditsDialog from './masters/AddCreditsDialog.jsx';
 import { Badge, DataState, Segmented, Select, Table } from '../../components/ui.jsx';
 import {
   CalendarCheckIcon, ClipboardListIcon, FlagIcon, TrainIcon,
@@ -275,7 +276,7 @@ function Donut({ title, subtitle, parts, centerLabel, empty, className = '' }) {
 
 // ---- offices -------------------------------------------------------------------------------------------
 
-function Offices({ offices, onPick }) {
+function Offices({ offices, onPick, onAddCredits }) {
   const maxCredits = Math.max(1, ...offices.map((o) => o.credit_balance));
   return (
     <Card title="Offices" subtitle="Pick one to filter the dashboard to it"
@@ -298,6 +299,11 @@ function Offices({ offices, onPick }) {
         ) },
         { key: 'credits_spent', label: 'Spent', render: (o) => fmt(o.credits_spent) },
         { key: 'status', label: 'Status', render: (o) => <Badge tone={o.status === 'active' ? 'green' : 'red'}>{o.status === 'active' ? 'Active' : 'Suspended'}</Badge> },
+        // The row itself filters the dashboard; this button tops the wallet up without leaving it.
+        { key: 'add', label: '', render: (o) => (
+          <button type="button" className="btn-secondary h-8 whitespace-nowrap text-xs" aria-label={`Add credits to ${o.office_id}`}
+            onClick={(e) => { e.stopPropagation(); onAddCredits(o); }}>+ Credits</button>
+        ) },
       ]} />
     </Card>
   );
@@ -314,6 +320,7 @@ export default function SuperAdminDashboard() {
     ...(filters.divisionId ? { division_id: filters.divisionId } : {}),
   }), [range.date_from, range.date_to, filters.clientId, filters.divisionId]); // eslint-disable-line react-hooks/exhaustive-deps
   const res = useResource('/dashboard/overview', query);
+  const [adding, setAdding] = useState(null); // the office whose wallet is being topped up
   const rangeLabel = range.date_from === range.date_to ? shortDate(range.date_to) : `${shortDate(range.date_from)} – ${shortDate(range.date_to)}`;
   const offices = res.data?.offices ?? [];
   const scopeLabel = filters.clientId
@@ -371,11 +378,13 @@ export default function SuperAdminDashboard() {
                     { key: 'railway', label: 'Railway officials', value: t.railway_feedback }]} />
               </div>
 
-              <Offices offices={o.offices} onPick={(id) => setFilters((f) => ({ ...f, clientId: id, divisionId: '' }))} />
+              <Offices offices={o.offices} onPick={(id) => setFilters((f) => ({ ...f, clientId: id, divisionId: '' }))}
+                onAddCredits={setAdding} />
             </div>
           );
         }}
       </DataState>
+      <AddCreditsDialog office={adding} onClose={() => setAdding(null)} onSaved={res.reload} />
     </div>
   );
 }

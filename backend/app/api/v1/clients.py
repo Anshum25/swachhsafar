@@ -19,6 +19,7 @@ from app.schemas.clients import (
     CreditLedgerOut,
     CreditRateIn,
     CreditTopUpIn,
+    WalletOut,
 )
 from app.schemas.common import Page, PageParams
 from app.security.principal import Principal, get_principal
@@ -75,6 +76,15 @@ def adjust(client_id: uuid.UUID, body: CreditAdjustIn, db: Session = Depends(get
            p: Principal = Depends(get_principal)):
     """A correction in either direction. Never takes a balance below zero."""
     return svc.adjust(db, p, client_id, body)
+
+
+@router.get("/{client_id}/wallet", response_model=WalletOut)
+def wallet(client_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Balance, rate, this month's movements and what planned journeys will cost. The Super Admin, or a
+    user of this office with clients.read (its Admin)."""
+    from app.timeutil import today_ist
+
+    return svc.wallet_summary(db, p, client_id, today=today_ist())
 
 
 @router.get("/{client_id}/ledger", response_model=Page[CreditLedgerOut])
