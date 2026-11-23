@@ -20,7 +20,7 @@ from collections.abc import Iterable
 from sqlalchemy import func, or_, select
 
 from app.db import get_sessionmaker, write_intent
-from app.models import Division, RoleId, User, UserCredential, UserStatus
+from app.models import GATEABLE_MODULES, Client, Division, RoleId, User, UserCredential, UserStatus
 from app.security import passwords
 from app.services.common import audit
 from app.timeutil import utcnow
@@ -51,6 +51,21 @@ def set_password(db, user: User, password: str, *, actor: str = "cli") -> None:
     db.commit()
 
 
+def _default_client(db) -> Client:
+    """A division must belong to a client (office). Bootstrapping a deployment from the command line
+    should not need one to exist first, so the first division creates `OFF-001` with every module and
+    journeys free; the super admin then renames it and sets a rate from Master data → Clients."""
+    client = db.scalar(select(Client).order_by(Client.created_at).limit(1))
+    if client is not None:
+        return client
+    client = Client(office_id="OFF-001", name="Default Office", enabled_modules=list(GATEABLE_MODULES),
+                    credit_per_journey=0, low_credit_threshold=0)
+    db.add(client)
+    db.flush()
+    print(f"client {client.office_id} {client.id} (created; journeys are free until a rate is set)")
+    return client
+
+
 def _division(db, code: str, name: str) -> int:
     existing = db.scalar(select(Division).where(Division.code == code))
     if existing is not None:
@@ -59,7 +74,7 @@ def _division(db, code: str, name: str) -> int:
             return 2
         print(f"division {existing.code} {existing.id} (already exists)")
         return 0
-    division = Division(code=code, name=name)
+    division = Division(code=code, name=name, client_id=_default_client(db).id)
     db.add(division)
     db.flush()
     audit(db, actor_id=None, action="division.create.cli", entity=division, division_id=division.id)

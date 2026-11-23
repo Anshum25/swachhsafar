@@ -45,12 +45,17 @@ describe('clearAppCache', () => {
 });
 
 describe('master data sections', () => {
-  it('lists all eight subsections for a full administrator, gated ones hidden otherwise', () => {
-    expect(MASTER_SECTIONS.map((s) => s.key)).toEqual(['trains', 'users', 'divisions', 'questions', 'categories', 'departments', 'items', 'policy']);
-    expect(visibleSections(() => true)).toHaveLength(8);
+  it('lists all ten subsections for a full administrator, gated ones hidden otherwise', () => {
+    expect(MASTER_SECTIONS.map((s) => s.key)).toEqual(
+      ['trains', 'users', 'divisions', 'clients', 'roles', 'questions', 'categories', 'departments', 'items', 'policy'],
+    );
+    expect(visibleSections(() => true)).toHaveLength(10);
     const keys = visibleSections(() => false).map((s) => s.key);
     expect(keys).not.toContain('users');
     expect(keys).not.toContain('trains');
+    // Clients and credits are the Super Admin's screens, and role rights need permissions.manage.
+    expect(keys).not.toContain('clients');
+    expect(keys).not.toContain('roles');
   });
 
   it('reads the section from the hash path', () => {

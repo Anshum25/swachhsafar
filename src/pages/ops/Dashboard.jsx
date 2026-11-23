@@ -60,8 +60,8 @@ const TILE_ORDER = ['journeys', 'attendance', 'inspections', 'feedback', 'report
 
 // One tile per module this user can open, plus their profile.
 function ModuleTiles() {
-  const { can } = useSession();
-  const tiles = [...visibleNav(can).filter((m) => m.key !== 'dashboard'), { key: 'profile', path: '/profile', label: 'Profile' }]
+  const { can, modules } = useSession();
+  const tiles = [...visibleNav(can, modules).filter((m) => m.key !== 'dashboard'), { key: 'profile', path: '/profile', label: 'Profile' }]
     .sort((x, y) => TILE_ORDER.indexOf(x.key) - TILE_ORDER.indexOf(y.key));
   return (
     <nav aria-label="Modules" className="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-6">
@@ -202,6 +202,27 @@ function RecentActivity({ divisionId }) {
   );
 }
 
+// The office's prepaid wallet is running out. Shown to whoever can see it (clients.read -- an
+// administrator or the Super Admin), not to field staff, who can do nothing about it. It appears before
+// anything stops working, because the first symptom otherwise is a refused journey.
+function LowCreditNote() {
+  const { client, can } = useSession();
+  if (!client?.low_credit || !can('clients.read')) return null;
+  const left = client.credit_per_journey > 0 ? Math.floor(client.credit_balance / client.credit_per_journey) : null;
+  return (
+    <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200" data-testid="low-credit-note">
+      <p className="font-semibold">
+        {client.credit_balance === 0 ? 'No credits left' : `Only ${client.credit_balance} credits left`}
+      </p>
+      <p className="mt-0.5 text-xs">
+        {client.credit_balance === 0
+          ? `No new journeys can be created for ${client.office_id} until the Super Admin adds credits. Journeys already running are not affected.`
+          : `Enough for about ${left} more ${left === 1 ? 'journey' : 'journeys'} at ${client.credit_per_journey} per journey. Ask the Super Admin to add credits for ${client.office_id}.`}
+      </p>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { can, user } = useSession();
   const division = useDivision();
@@ -210,6 +231,7 @@ export default function Dashboard() {
     <>
       {/* Whose session this is (devices are shared between staff). */}
       <h1 className="mb-3 truncate text-[17px] font-bold text-ink">Welcome, {user.name.split(' ')[0]}</h1>
+      <LowCreditNote />
       <HomeBanner />
       <ModuleTiles />
       {division.divisions.length > 1 && (

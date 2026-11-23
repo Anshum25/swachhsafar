@@ -14,6 +14,9 @@ ROLES = [
 
 PERMISSIONS: dict[str, tuple[str, str]] = {
     "divisions.manage": ("admin", "Create and modify divisions"),
+    "clients.read": ("admin", "View clients, their modules and credit balance"),
+    "clients.manage": ("admin", "Create and modify clients and their module subscription"),
+    "credits.manage": ("admin", "Add credits, set the per-journey rate, adjust a balance"),
     "policies.manage": ("admin", "Modify division operational policies"),
     "permissions.manage": ("admin", "Modify role permission grants"),
     "charge.manage": ("admin", "Manage temporary division charge"),
@@ -51,6 +54,11 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "media.upload": ("media", "Upload media evidence"),
 }
 
+# Which module each permission belongs to, and every module there is. A client's subscription is checked
+# against these (app/security/principal.py), so a new permission is gated by its module automatically.
+PERMISSION_MODULE: dict[str, str] = {code: module for code, (module, _) in PERMISSIONS.items()}
+ALL_MODULES: frozenset[str] = frozenset(PERMISSION_MODULE.values())
+
 _ALL = set(PERMISSIONS)
 _FIELD = {
     "trains.read", "journeys.read", "attendance.submit", "attendance.read", "inspections.submit", "inspections.read",
@@ -58,9 +66,14 @@ _FIELD = {
     "inventory.read", "inventory.transact", "media.upload",
 }
 
+# Only the Super Admin creates clients and moves credits: an administrator inside a client must not be
+# able to subscribe their own office to another module or top up its own wallet. Reading the balance is
+# fine, and is what shows them when to ask for a top-up.
+SUPER_ADMIN_ONLY = {"divisions.manage", "clients.manage", "credits.manage"}
+
 DEFAULT_GRANTS: dict[RoleId, set[str]] = {
     RoleId.SUPER_ADMIN: _ALL,
-    RoleId.ADMIN: _ALL - {"divisions.manage"},
+    RoleId.ADMIN: _ALL - SUPER_ADMIN_ONLY,
     RoleId.MANAGER: {
         "users.read", "users.manage", "trains.read", "trains.manage", "journeys.read", "journeys.read_all",
         "journeys.manage", "staff.manage", "attendance.read", "attendance.review", "inspections.read",

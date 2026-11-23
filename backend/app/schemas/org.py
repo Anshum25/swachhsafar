@@ -5,12 +5,15 @@ from typing import Literal
 from pydantic import EmailStr, Field, model_validator
 
 from app.models import PermissionEffect, UserStatus
+from app.schemas.clients import ClientSummary
 from app.schemas.common import Mobile, ReadModel, StrictModel
 
 
 class DivisionCreate(StrictModel):
     code: str = Field(min_length=2, max_length=16, pattern=r"^[A-Z0-9_]+$")
     name: str = Field(min_length=2, max_length=100)
+    # The client (office) whose wallet this division's journeys spend and whose modules its users see.
+    client_id: uuid.UUID
 
 
 class DivisionUpdate(StrictModel):
@@ -23,6 +26,7 @@ class DivisionOut(ReadModel):
     code: str
     name: str
     is_active: bool
+    client_id: uuid.UUID
     updated_at: datetime
 
 
@@ -162,6 +166,9 @@ class UserWithSignIn(UserOut):
 class MeOut(StrictModel):
     user: UserOut
     divisions: dict[uuid.UUID, list[str]]
+    # The user's own client (office): which modules it has subscribed to, and how its wallet stands. None
+    # for a Super Admin, who works across every client. The app shows only the modules listed here.
+    client: ClientSummary | None = None
     offline_lease: dict | None = None
 
 

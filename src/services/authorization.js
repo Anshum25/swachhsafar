@@ -14,16 +14,23 @@ export const divisionsWith = (permissions, ...perms) =>
 // Capture permission per operation, and the permission that lets a non-participant (not the
 // journey's supervisor or allocated staff) capture anyway. Attendance has its own participant rule
 // (employee / supervisor / attendance.review) in attendanceRepository.
+// `module`: the client (office) module this capture belongs to. The office's subscription is checked
+// before the user's permission, because "your organisation does not have this module" and "you do not
+// have this permission" are different answers and only one of them is about the person holding the phone.
 export const CAPTURE_RULES = {
-  'attendance.create': { permission: 'attendance.submit' },
-  'inspection.create': { permission: 'inspections.submit', participantOverride: 'inspections.review' }, // services/inspections.py create
-  'feedback.passenger.start': { permission: 'feedback.collect', participantOverride: 'feedback.review' }, // feedback.py _require_journey_staff
-  'feedback.railway.create': { permission: 'feedback.railway.submit', participantOverride: 'feedback.review' },
-  'complaint.create': { permission: 'complaints.create' },
-  'inventory.record': { permission: 'inventory.transact', participantOverride: 'journeys.manage' }, // inventory.py record
-  'security.event': { permission: null }, // any signed-in user reports what their device observed
-  'job.save': { permission: null }, // TEMPORARY Jobs test module: shared by every signed-in user
+  'attendance.create': { permission: 'attendance.submit', module: 'attendance' },
+  'inspection.create': { permission: 'inspections.submit', participantOverride: 'inspections.review', module: 'inspections' }, // services/inspections.py create
+  'feedback.passenger.start': { permission: 'feedback.collect', participantOverride: 'feedback.review', module: 'feedback' }, // feedback.py _require_journey_staff
+  'feedback.railway.create': { permission: 'feedback.railway.submit', participantOverride: 'feedback.review', module: 'feedback' },
+  'complaint.create': { permission: 'complaints.create', module: 'complaints' },
+  'inventory.record': { permission: 'inventory.transact', participantOverride: 'journeys.manage', module: 'inventory' }, // inventory.py record
+  'security.event': { permission: null, module: null }, // any signed-in user reports what their device observed
+  'job.save': { permission: null, module: null }, // TEMPORARY Jobs test module: shared by every signed-in user
 };
+
+// The modules the actor's client is subscribed to, or null when there is nothing to gate (Super Admin,
+// demo mode). `actor.modules` is set from the cached /auth/me client summary, so this holds offline too.
+export const captureModuleAllowed = (rule, modules) => !rule.module || !modules || modules.includes(rule.module);
 
 export function isParticipant(journey, userId) {
   return journey.supervisor_id === userId || journey.staff.some((s) => s.user_id === userId && !s.removed_at);
@@ -34,6 +41,11 @@ export function authorizeCapture(type, { actor, divisionId, journey }) {
   if (!actor?.id) throw new LocalRuleError('unauthenticated', 'Sign in to record operational data.');
   const rule = CAPTURE_RULES[type];
   if (!rule) throw new LocalRuleError('unsupported_operation', `Operation ${type} cannot be captured offline.`);
+  // Refused on the device as well as on the server: a record captured offline for a module the office
+  // does not pay for would only be rejected at sync, hours later, with the work already done.
+  if (!captureModuleAllowed(rule, actor.modules)) {
+    throw new LocalRuleError('module_disabled', `${rule.module} is not part of your organisation's subscription.`);
+  }
   if (rule.permission === null) return;
   if (!divisionId) return; // the record's own validation reports the missing journey/division
   if (!actor.permissions?.[divisionId]) throw new LocalRuleError('division_forbidden', 'Outside your authorized divisions.');

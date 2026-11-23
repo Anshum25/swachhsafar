@@ -111,7 +111,14 @@ export function SessionProvider({ db, files, children }) {
       getApi: async () => (!DEMO_MODE && (await getToken()) ? remote : null),
       getActor: () => {
         const current = meRef.current;
-        return current ? { actor: { id: current.user.id, permissions: current.divisions }, divisions: Object.keys(current.divisions) } : null;
+        // `modules`: the client's subscription, so a capture for a module the office does not pay for is
+        // refused here and now rather than at the next sync (src/services/authorization.js).
+        return current
+          ? {
+            actor: { id: current.user.id, permissions: current.divisions, modules: current.client?.modules ?? null },
+            divisions: Object.keys(current.divisions),
+          }
+          : null;
       },
       captureDisabledReason: DEMO_MODE ? DEMO_CAPTURE_REASON : null,
     }),
@@ -278,6 +285,11 @@ export function SessionProvider({ db, files, children }) {
   const value = useMemo(() => {
     const divisions = me ? Object.keys(me.divisions) : [];
     const perms = new Set(divisions.flatMap((d) => me.divisions[d]));
+    // The user's client (office): which modules it is subscribed to and how its prepaid wallet stands.
+    // Comes from /auth/me, is refreshed by every /sync/changes pull, and is part of the cached
+    // authorization snapshot, so it is just as available offline. Null for a Super Admin, who works
+    // across every client and is gated by none of them -- and in demo mode.
+    const client = me?.client ?? null;
     return {
       status: !account ? 'signedOut' : me ? 'ready' : meError ? 'error' : 'loading',
       account,
@@ -286,6 +298,12 @@ export function SessionProvider({ db, files, children }) {
       meError,
       user: me?.user ?? null,
       divisions,
+      client,
+      // The modules this client has, or null for "do not gate" (Super Admin, demo mode). The server has
+      // already stripped the permissions of unsubscribed modules from `me.divisions`, so this list is a
+      // second, explicit layer rather than the only one. See src/app/modules.js.
+      modules: client?.modules ?? null,
+      moduleEnabled: (key) => !client?.modules || client.modules.includes(key),
       // `can`: held in any division (navigation). `canIn`: held in that division (actions on a record).
       can: (perm) => perms.has(perm),
       canIn: (perm, divisionId) => !!me?.divisions?.[divisionId]?.includes(perm),

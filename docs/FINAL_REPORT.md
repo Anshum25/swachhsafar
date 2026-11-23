@@ -792,6 +792,7 @@ for the PWA), `VITE_GOOGLE_MAPS_API_KEY` / `_REGION` / `_LANGUAGE`, `VITE_BUILD_
 | `docs/SECURITY.md` | Threat model, policy engine, evidence collection, what liveness proves |
 | `docs/SECURITY_TEST_REPORT.md` | Security test results |
 | `docs/AUTHENTICATION.md` | Auth architecture, tables, hashes, sessions, the Firebase migration |
+| `docs/CLIENTS_AND_CREDITS.md` | Clients (offices), per-client module subscriptions, role rights, the prepaid credit wallet |
 | `docs/FINGERPRINT.md` | Matcher internals, plugin contract, why an RD Service cannot be used |
 | `docs/FACE_ENROLLMENT.md` | Enrolment procedure |
 | `docs/OTA_UPDATES.md` | Bundle/channel model, native gate, rollout, rollback |
