@@ -105,8 +105,8 @@ def upgrade() -> None:
     # One charge and one refund per journey, however often a caller retries.
     op.create_index("uq_credit_ledger_journey_reason", "credit_ledger", ["journey_id", "reason"], unique=True)
 
-    # The ledger records how a balance got where it is and is never rewritten. PostgreSQL has rules for
-    # this in 0002's style; SQLite gets the same guarantee through triggers.
+    # The ledger records how a balance got where it is and is never rewritten. SQLite's triggers are here;
+    # PostgreSQL's forbid_mutation() trigger is attached in 0012.
     if _sqlite():
         for event in ("UPDATE", "DELETE"):
             op.execute(
