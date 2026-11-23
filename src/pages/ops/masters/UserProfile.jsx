@@ -186,7 +186,7 @@ export default function UserProfile({ userId, division }) {
           )}
       </Section>
 
-      {dialog === 'edit' && <EditUserDialog user={user} divisions={division.divisions} onClose={close} onSaved={reloadAll} />}
+      {dialog === 'edit' && <EditUserDialog user={user} division={division} onClose={close} onSaved={reloadAll} />}
       {dialog === 'password' && <ResetPasswordDialog user={user} onClose={close} onDone={reloadAll} />}
       {dialog === 'status' && <StatusDialog user={user} onClose={close} onDone={reloadAll} />}
       {dialog === 'face' && <FaceEnrollDialog user={user} onClose={() => { close(); reloadAll(); }} />}

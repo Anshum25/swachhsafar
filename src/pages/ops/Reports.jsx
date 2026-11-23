@@ -4,7 +4,7 @@
 // this device can be shown instead, with its timestamp. Nothing here is estimated or invented.
 import { useEffect, useState } from 'react';
 import { useQueueState, useResource, useSession } from '../../app/session.jsx';
-import { DivisionPicker, useDivision } from '../../app/division.jsx';
+import { DivisionPicker, divisionLabel, useDivision } from '../../app/division.jsx';
 import { responseCacheKey } from '../../services/localFirstApi.js';
 import {
   Badge, DataState, Field, PageHeader, Panel, STATE_TONE, Segmented, Stat, Table, Tabs, fmtDate, fmtDateTime, label,
@@ -218,7 +218,7 @@ export default function Reports() {
   const q = { date_from: from, date_to: to, division_id: division.divisionId };
   return (
     <>
-      <PageHeader title="Reports" subtitle={division.current?.name} actions={<DivisionPicker division={division} />} />
+      <PageHeader title="Reports" subtitle={division.current && divisionLabel(division, division.current)} actions={<DivisionPicker division={division} />} />
       <Panel className="mb-4">
         <div className="grid gap-3 sm:max-w-md sm:grid-cols-2">
           <Field label="From"><input type="date" className="input" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></Field>

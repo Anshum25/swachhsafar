@@ -57,7 +57,9 @@ def me(p: Principal = Depends(get_principal), db: Session = Depends(get_db)):
     offline_hours = pol.offline_session_hours if pol else 24
     lease = issue_offline_lease(p.user, p.device_id, p.session_id, offline_hours=offline_hours)
     return MeOut(user=UserOut.model_validate(p.user),
-                 divisions={d: sorted(p.permissions_in(d)) for d in p.division_ids},
+                 # scope_divisions, not division_ids: a Super Admin works in every division, and the web app
+                 # only lets anyone open a division /auth/me lists.
+                 divisions={d: sorted(p.permissions_in(d)) for d in p.scope_divisions()},
                  client=client_summary(db, p),
                  offline_lease=lease)
 

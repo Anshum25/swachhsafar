@@ -2,6 +2,7 @@
 // reset, create sign-in and activate/deactivate. Every one writes through the FastAPI /users endpoints.
 import { useEffect, useMemo, useState } from 'react';
 import { ROLE_NAMES, useSession } from '../../../app/session.jsx';
+import { divisionLabel } from '../../../app/division.jsx';
 import { useNotify } from '../../../app/Layout.jsx';
 import { ConfirmDialog, Dialog, ErrorNote, Field, Select, SubmitBar } from '../../../components/ui.jsx';
 import PasswordInput from '../../../components/PasswordInput.jsx';
@@ -79,7 +80,9 @@ function useLeaveGuard(dirty) {
 const GENDERS = [{ value: 'M', label: 'Male' }, { value: 'F', label: 'Female' }, { value: 'O', label: 'Other' }];
 const LANGS = [{ value: 'en', label: 'English' }, { value: 'hi', label: 'हिन्दी (Hindi)' }];
 
-export function EditUserDialog({ user, divisions, onClose, onSaved }) {
+// `division`: the page's useDivision(). Division choices are labelled with their office when the editor
+// sees more than one, since two offices may well both have a "Headquarters".
+export function EditUserDialog({ user, division, onClose, onSaved }) {
   const { api, user: me } = useSession();
   const notify = useNotify();
   const initial = useMemo(() => userToForm(user), [user]);
@@ -99,7 +102,7 @@ export function EditUserDialog({ user, divisions, onClose, onSaved }) {
   // The user's current role/division stay selectable even where the editor could not assign them anew.
   const roles = roleOptions(me.role_id);
   if (!roles.some((r) => r.value === String(user.role_id))) roles.unshift({ value: String(user.role_id), label: ROLE_NAMES[user.role_id] });
-  const divs = divisions.map((d) => ({ value: String(d.id), label: d.name }));
+  const divs = division.divisions.map((d) => ({ value: String(d.id), label: divisionLabel(division, d) }));
   if (!divs.some((d) => d.value === String(user.division_id))) divs.unshift({ value: String(user.division_id), label: 'Current division' });
   const sensitive = 'role_id' in changes || 'division_id' in changes;
 
@@ -274,8 +277,19 @@ export function SignInCreated({ user, result, onClose }) {
   );
 }
 
-export function UserForm({ divisionId, onClose, onSaved }) {
-  const { api, user } = useSession();
+// `division`: the page's useDivision(). The new user starts in the office and division the page is showing;
+// the form lets that be changed to any office and division where the signed-in user may manage users.
+export function UserForm({ division, onClose, onSaved }) {
+  const { api, user, canIn } = useSession();
+  const [clientId, setClientId] = useState(division.clientId);
+  const [divisionId, setDivisionId] = useState(division.divisionId);
+  const manageable = division.divisions.filter((d) => canIn('users.manage', d.id));
+  const offices = division.clients.filter((c) => manageable.some((d) => d.client_id === c.id));
+  const officeDivisions = manageable.filter((d) => !offices.length || d.client_id === clientId);
+  const chooseOffice = (cid) => {
+    setClientId(cid);
+    setDivisionId(manageable.find((d) => d.client_id === cid)?.id ?? null);
+  };
   const [created, setCreated] = useState(null);
   const save = useSave((u) => { setCreated(u); onSaved?.(u); });
   const [f, setF] = useState({ emp_id: '', name: '', email: '', mobile: '', designation: '', role_id: '5', password: '' });
@@ -289,6 +303,7 @@ export function UserForm({ divisionId, onClose, onSaved }) {
     const found = validateUserFields(f);
     if (!f.emp_id.trim()) found.emp_id = 'Employee ID is required.';
     if (f.password && validatePassword(f.password)) found.password = validatePassword(f.password);
+    if (!divisionId) found.division_id = 'Choose a division.';
     setErrors(found);
     if (Object.keys(found).length) return;
     save.run(() => api.post('/users', {
@@ -300,6 +315,18 @@ export function UserForm({ divisionId, onClose, onSaved }) {
     <form onSubmit={submit} className="space-y-3" noValidate>
       <ErrorNote error={save.error} />
       <div className="grid gap-3 sm:grid-cols-2">
+        {offices.length > 1 && (
+          <Field label="Client (office)" hint="Whose modules and credits this user works under">
+            <Select value={clientId ?? ''} onChange={chooseOffice} options={offices.map((c) => ({ value: c.id, label: c.name }))} />
+          </Field>
+        )}
+        {(offices.length > 1 || officeDivisions.length > 1) && (
+          <Field label="Division" error={errors.division_id}>
+            <Select value={divisionId ?? ''} onChange={(v) => { setDivisionId(v); setErrors((x) => ({ ...x, division_id: undefined })); }}
+              placeholder={officeDivisions.length ? undefined : 'No division you can add users to'}
+              options={officeDivisions.map((d) => ({ value: d.id, label: d.name }))} />
+          </Field>
+        )}
         <Field label="Employee ID" error={errors.emp_id}><input className="input" required value={f.emp_id} onChange={set('emp_id')} /></Field>
         <Field label="Name" error={errors.name}><input className="input" required value={f.name} onChange={set('name')} /></Field>
         <Field label="Email" error={errors.email} hint="Optional. A sign-in is created when an email or password is given"><input type="email" className="input" value={f.email} onChange={set('email')} /></Field>

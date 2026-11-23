@@ -402,3 +402,61 @@ def test_a_janitor_sees_only_their_own_modules(world):
                      headers=auth(world.users["sa"]), json={"enabled_modules": ["inspections"]})
     me = world.client.get("/api/v1/auth/me", headers=auth(world.users["jan"])).json()
     assert "attendance.submit" not in me["divisions"][str(world.a.id)]
+
+
+# ---- client filter -------------------------------------------------------------------------------------
+
+
+def _ids(r):
+    assert r.status_code == 200, r.text
+    body = r.json()
+    return {row["id"] for row in (body["items"] if isinstance(body, dict) else body)}
+
+
+def test_super_admin_lists_one_client_at_a_time(world):
+    """`?client_id=` narrows every list to that office's divisions: B's office has no journeys and only B's
+    people, A's office has the journey."""
+    h = auth(world.users["sa"])
+    a_client, b_client = world.a.client_id, world.b.client_id
+
+    assert _ids(world.client.get(f"/api/v1/divisions?client_id={b_client}", headers=h)) == {str(world.b.id)}
+    assert _ids(world.client.get(f"/api/v1/journeys?client_id={b_client}", headers=h)) == set()
+    assert world.journey["id"] in _ids(world.client.get(f"/api/v1/journeys?client_id={a_client}", headers=h))
+
+    b_users = _ids(world.client.get(f"/api/v1/users?client_id={b_client}&page_size=100", headers=h))
+    assert b_users == {str(world.users[n].id) for n in ("manager_b", "sup_b", "jan_b")}
+
+    # Without the filter a Super Admin still sees every office.
+    assert _ids(world.client.get("/api/v1/divisions", headers=h)) >= {str(world.a.id), str(world.b.id)}
+
+
+def test_a_division_outside_the_chosen_client_is_refused(world):
+    r = world.client.get(f"/api/v1/users?client_id={world.b.client_id}&division_id={world.a.id}",
+                         headers=auth(world.users["sa"]))
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "division_forbidden"
+
+
+def test_the_client_filter_never_widens_what_a_user_sees(world):
+    """A filter, not a grant: naming another office leaves a division manager with nothing, not with it."""
+    h = auth(world.users["manager"])
+    assert _ids(world.client.get(f"/api/v1/divisions?client_id={world.b.client_id}", headers=h)) == set()
+    assert world.client.get(f"/api/v1/journeys?client_id={world.b.client_id}", headers=h).status_code == 403
+    # Their own office is unchanged by naming it.
+    assert world.journey["id"] in _ids(world.client.get(f"/api/v1/journeys?client_id={world.a.client_id}", headers=h))
+
+
+def test_a_malformed_client_id_is_a_bad_request(world):
+    r = world.client.get("/api/v1/journeys?client_id=not-a-uuid", headers=auth(world.users["sa"]))
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_client_id"
+
+
+def test_me_gives_a_super_admin_every_division(world):
+    """The web app only opens divisions /auth/me lists, so a Super Admin must get all of them -- otherwise
+    choosing another office's division springs back to their own."""
+    me = world.client.get("/api/v1/auth/me", headers=auth(world.users["sa"])).json()
+    assert {str(world.a.id), str(world.b.id)} <= set(me["divisions"])
+    # Everyone else still gets only their own.
+    me = world.client.get("/api/v1/auth/me", headers=auth(world.users["manager"])).json()
+    assert set(me["divisions"]) == {str(world.a.id)}

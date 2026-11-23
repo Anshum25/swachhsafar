@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useResource, useSession } from '../../app/session.jsx';
-import { DivisionPicker, useDivision } from '../../app/division.jsx';
+import { DivisionPicker, divisionLabel, useDivision } from '../../app/division.jsx';
 import { useSave } from './masters/common.jsx';
 import QuestionBanks from './masters/QuestionBanks.jsx';
 import { Categories, Departments } from './masters/ComplaintMasters.jsx';
@@ -147,7 +147,7 @@ export default function Masters({ parts = [] }) {
   const title = sections.find((s) => s.key === section)?.label;
   return (
     <>
-      <PageHeader title="Master data" subtitle={<><span className="hidden lg:inline">{title} · </span><span className="text-slate-500">{division.current?.name}</span></>}
+      <PageHeader title="Master data" subtitle={<><span className="hidden lg:inline">{title} · </span><span className="text-slate-500">{division.current && divisionLabel(division, division.current)}</span></>}
         actions={<DivisionPicker division={division} />} />
       <MastersMobileNav path={`/masters/${parts.join('/')}`} />
       {section === 'trains' && <Trains divisionId={division.divisionId} />}

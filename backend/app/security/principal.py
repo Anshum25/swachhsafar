@@ -1,12 +1,12 @@
 import uuid
 from dataclasses import dataclass, field
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.errors import Forbidden, Unauthenticated
+from app.errors import AppError, Forbidden, Unauthenticated
 from app.models import ALWAYS_ON_MODULES, GATEABLE_MODULES, ChargeMap, PermissionEffect, RoleId, RolePermission, User
 from app.security.catalog import ALL_MODULES, MANAGEABLE_ROLES, PERMISSION_MODULE
 from app.timeutil import today_ist
@@ -24,6 +24,9 @@ class Principal:
     # Backend sign-in session and its device.
     session_id: uuid.UUID | None = None
     device_id: str | None = None
+    # Optional `?client_id=` on the request: narrows every list to that client's divisions. A filter, never a
+    # grant -- it can only take divisions away from what the caller may already see.
+    client_id: uuid.UUID | None = None
 
     @property
     def id(self) -> uuid.UUID:
@@ -120,11 +123,19 @@ class Principal:
         return divisions
 
     def scope_divisions(self) -> list[uuid.UUID]:
-        if self.is_super_admin:
-            from app.models import Division
+        """Every division the caller may see: all of them for a Super Admin, otherwise their home division and
+        active charges. With a client filter, only the ones belonging to that client."""
+        from app.models import Division
 
-            return list(self._db.scalars(select(Division.id)))
-        return list(self.division_ids)
+        if self.is_super_admin:
+            stmt = select(Division.id)
+        elif self.client_id is None:
+            return list(self.division_ids)
+        else:
+            stmt = select(Division.id).where(Division.id.in_(self.division_ids))
+        if self.client_id is not None:
+            stmt = stmt.where(Division.client_id == self.client_id)
+        return list(self._db.scalars(stmt.order_by(Division.name)))
 
     def can_manage_role(self, role_id: int) -> bool:
         return RoleId(role_id) in MANAGEABLE_ROLES[self.role]
@@ -144,8 +155,13 @@ def resolve_principal(db: Session, user: User) -> Principal:
     return Principal(user=user, division_ids=frozenset({user.division_id, *charge}), _db=db)
 
 
-def get_principal(authorization: str | None = Header(default=None), db: Session = Depends(get_db)) -> Principal:
-    """The caller, from the session token issued by the backend sign-in (app/services/auth.py)."""
+def get_principal(request: Request, authorization: str | None = Header(default=None),
+                  db: Session = Depends(get_db)) -> Principal:
+    """The caller, from the session token issued by the backend sign-in (app/services/auth.py).
+
+    `?client_id=` on any request narrows the caller's division scope to that client (scope_divisions), so
+    every list endpoint filters by client without each declaring the parameter. It is read from the query
+    string here rather than declared, because /clients/{client_id}/... already uses the name for a path."""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise Unauthenticated("Missing bearer token")
     from app.services.auth import authenticate  # late import: services depend on this module
@@ -153,4 +169,10 @@ def get_principal(authorization: str | None = Header(default=None), db: Session 
     session, user = authenticate(db, authorization.split(" ", 1)[1].strip())
     principal = resolve_principal(db, user)
     principal.session_id, principal.device_id = session.id, session.device_id
+    raw = request.query_params.get("client_id")
+    if raw:
+        try:
+            principal.client_id = uuid.UUID(raw)
+        except ValueError:
+            raise AppError("client_id is not a valid UUID", code="invalid_client_id") from None
     return principal

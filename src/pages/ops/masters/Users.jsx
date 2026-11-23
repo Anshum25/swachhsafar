@@ -143,7 +143,7 @@ export default function Users({ division }) {
       </DataState>
       {dialog?.kind === 'face' && <FaceEnrollDialog user={dialog.user} onClose={() => { closeDialog(); res.reload(); }} />}
       {dialog?.kind === 'finger' && <FingerprintEnrollDialog user={dialog.user} onClose={() => { closeDialog(); res.reload(); }} />}
-      {dialog?.kind === 'edit' && <EditUserDialog user={dialog.user} divisions={division.divisions} onClose={closeDialog} onSaved={res.reload} />}
+      {dialog?.kind === 'edit' && <EditUserDialog user={dialog.user} division={division} onClose={closeDialog} onSaved={res.reload} />}
       {dialog?.kind === 'password' && <ResetPasswordDialog user={dialog.user} onClose={closeDialog} />}
       {dialog?.kind === 'status' && <StatusDialog user={dialog.user} onClose={closeDialog} onDone={res.reload} />}
       <Dialog open={dialog?.kind === 'signin'} title="Create sign-in" onClose={closeDialog}>
@@ -152,7 +152,7 @@ export default function Users({ division }) {
       <Dialog open={creating} title="Add user" onClose={() => setCreating(false)} wide>
         {/* The dialog stays open after saving: it now shows the new sign-in's password, which exists
             nowhere else. Closing it is the "Done" button's job. */}
-        <UserForm divisionId={divisionId} onClose={() => setCreating(false)} onSaved={res.reload} />
+        <UserForm division={division} onClose={() => setCreating(false)} onSaved={res.reload} />
       </Dialog>
     </Panel>
   );
