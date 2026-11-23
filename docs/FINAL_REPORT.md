@@ -78,7 +78,6 @@ together — a single registry rather than three lists that drift apart.
 | Inventory | CP-10 | `inventory.read`, `inventory.transact` | **yes** — issue/return with SQL-enforced balance |
 | Master data | CP-03 | 7 management permissions | reads only |
 | Reports | CP-11 | `reports.read` | **yes** — device-scope figures, labelled as such |
-| Jobs | — | open (temporary) | **yes** — added 19–20 Nov as the OTA proving ground, now server-backed |
 | Profile / Security status | — | own account | yes |
 
 ### 2.2 The two biometric paths
@@ -422,7 +421,7 @@ hold. Three iterations, driven by how the camera is actually held in a coach.
 | Release-bundle work committed by accident | Reverted cleanly |
 | Deploy script exiting before its own rollback | Fixed — it now always reaches the rollback and prints why the API did not start |
 | OTA path | Proven with a deliberately visible change: the dashboard greeting became `Welcome1234`, then `AAvo`, then `Welcome` — three releases whose only purpose was to watch the over-the-air path work on real phones |
-| OTA, second proof | A whole temporary **Jobs** module shipped over the air, then (20 Nov) backed with a server API, Alembic `0010`, and phone schema **v13** |
+| OTA, second proof | A whole temporary **Jobs** module shipped over the air, then (20 Nov) backed with a server API, Alembic `0010`, and phone schema **v13**. Removed once it had proved the path, which is the other half of a test module being honest about itself |
 | "Install the APK" prompts for web-only changes | Stopped — asking people to install something for a change that arrives on its own is noise |
 
 ### What this log shows
@@ -607,7 +606,6 @@ is a written **retention and deletion-on-exit policy**, and a check of DPDP Act 
   vestigial now that Firestore and Firebase Auth are gone.
 - Cached authorization has no maximum age (the 24-h lease bounds the session, not the cached permissions).
 - `alembic upgrade head` on service start will, at some table size, mean a deploy that blocks on a lock.
-- The temporary **Jobs** module is visible to everyone with no permission gate.
 - A 6-day TLS certificate makes renewal failure urgent, and nothing currently alerts on it.
 
 ---
@@ -622,52 +620,50 @@ is a written **retention and deletion-on-exit policy**, and a check of DPDP Act 
 2. **Rehearse a database restore end to end** on a throwaway host, from the actual backup the systemd timer
    produces, and write down the elapsed time. An untested backup is not a backup. *(9.3.)*
 3. **Rotate the Maps key and replace it in `.env.example` with a placeholder.** *(9.8.)*
-4. **Gate or remove the temporary Jobs module.** It now has a real server API and schema; either give it a
-   permission in `modules.js` or drop it before the next release. *(9.8.)*
-5. **Add an alert on certificate renewal and on API health.** With a 6-day certificate, silent renewal
+4. **Add an alert on certificate renewal and on API health.** With a 6-day certificate, silent renewal
    failure takes the whole deployment down within a week.
 
 ### Short term — the next two to four weeks
 
-6. **Measure the fingerprint matcher.** Collect genuine and impostor pairs from real enrolments, compute
+5. **Measure the fingerprint matcher.** Collect genuine and impostor pairs from real enrolments, compute
    FAR/FRR, publish the curve, and set `fingerprint_match_score` from it rather than from field complaints.
    *(9.2 — the single highest-value engineering task on this list.)*
-7. **Move PostgreSQL to a managed instance, or add a hot standby plus point-in-time recovery.** Managed is
+6. **Move PostgreSQL to a managed instance, or add a hot standby plus point-in-time recovery.** Managed is
    better on every axis except cost and data residency. *(9.3.)*
-8. **Add crash and error reporting** (Sentry, or a first-party endpoint — the latter keeps data in-house and
+7. **Add crash and error reporting** (Sentry, or a first-party endpoint — the latter keeps data in-house and
    fits the existing security envelope). Right now a crash in the field is invisible. *(9.5.)*
-9. **Write the biometric retention and deletion policy**, including deletion on employee exit, and check it
+8. **Write the biometric retention and deletion policy**, including deletion on employee exit, and check it
    against DPDP Act obligations. *(9.7.)*
-10. **Delete the vestigial Firebase scripts** and the `firebase_uid` references that no longer serve the
+9. **Delete the vestigial Firebase scripts** and the `firebase_uid` references that no longer serve the
     import path, so nobody rebuilds a dependency that was deliberately removed. *(9.8.)*
-11. **Mirror the APK to GitHub Releases** alongside `/downloads/`. Free, CDN-backed, better for field
+10. **Mirror the APK to GitHub Releases** alongside `/downloads/`. Free, CDN-backed, better for field
     downloads, and `latest.json` can keep the certificate pin either way.
 
 ### Medium term — one to three months
 
-12. **Sample server-side biometric re-computation.** Send the descriptor for a configurable percentage of
+11. **Sample server-side biometric re-computation.** Send the descriptor for a configurable percentage of
     attendance submissions and recompute the distance server-side. This converts "strong evidence" into
     something closer to proof without giving up offline capture. *(9.1.)*
-13. **Close the online-only write gaps** by adding sync operations for review/approval and journey
+12. **Close the online-only write gaps** by adding sync operations for review/approval and journey
     administration with base-version conflict handling. Review is the most-requested of these, and the
     backend already has the version machinery. *(CP-04, 05, 06, 08, 09.)*
-14. **Publish the Android shell to a Play Store closed track**, keeping OTA for everything web. Best of
+13. **Publish the Android shell to a Play Store closed track**, keeping OTA for everything web. Best of
     both: Play's crash reporting, staged native rollout and trust signal, with the existing instant web
     delivery untouched. *(9.5.)*
-15. **Add a maximum age to cached authorization**, so a permission revoked while a device is offline
+14. **Add a maximum age to cached authorization**, so a permission revoked while a device is offline
     expires rather than persisting until the next successful sync. *(9.8.)*
-16. **Add the second scanner vendor** if procurement is likely to need it, and budget the re-enrolment that
+15. **Add the second scanner vendor** if procurement is likely to need it, and budget the re-enrolment that
     comes with it. The matcher is already vendor-neutral at the template level. *(9.6.)*
-17. **Make migrations explicit for large tables.** Keep auto-upgrade for small ones, but add a pre-deploy
+16. **Make migrations explicit for large tables.** Keep auto-upgrade for small ones, but add a pre-deploy
     check that refuses to start a migration estimated to hold a long lock. *(9.8.)*
 
 ### Longer term — architectural, only if the driver appears
 
-18. **Containerise the API** the moment a second host exists. Not before — systemd is serving it well.
-19. **Evaluate MediaPipe** to replace face-api.js if first-load size or match latency becomes a complaint.
+17. **Containerise the API** the moment a second host exists. Not before — systemd is serving it well.
+18. **Evaluate MediaPipe** to replace face-api.js if first-load size or match latency becomes a complaint.
     Budget re-enrolment: a different model means different descriptors.
-20. **Consider Argon2id** for password hashing if a compliance standard requires it. Not otherwise.
-21. **Route-level code splitting** only if 2G first-load becomes a field complaint — and split the 6.4 MB
+19. **Consider Argon2id** for password hashing if a compliance standard requires it. Not otherwise.
+20. **Route-level code splitting** only if 2G first-load becomes a field complaint — and split the 6.4 MB
     face model out first, not the screens.
 
 ### Explicitly *not* recommended

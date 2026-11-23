@@ -25,7 +25,6 @@ export const CAPTURE_RULES = {
   'complaint.create': { permission: 'complaints.create', module: 'complaints' },
   'inventory.record': { permission: 'inventory.transact', participantOverride: 'journeys.manage', module: 'inventory' }, // inventory.py record
   'security.event': { permission: null, module: null }, // any signed-in user reports what their device observed
-  'job.save': { permission: null, module: null }, // TEMPORARY Jobs test module: shared by every signed-in user
 };
 
 // The modules the actor's client is subscribed to, or null when there is nothing to gate (Super Admin,

@@ -86,7 +86,6 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | Sync, releases, temporary | [`sync_operations`](#sync_operations) | - |
 | Sync, releases, temporary | [`web_bundles`](#web_bundles) | - |
 | Sync, releases, temporary | [`web_channels`](#web_channels) | - |
-| Sync, releases, temporary | [`jobs`](#jobs) | - |
 
 ## Clients and billing (scope level 1: the office)
 
@@ -873,21 +872,4 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `created_at` | DATETIME | not null |
 | `updated_at` | DATETIME | not null |
 
-### jobs
-
-| Column | Type | Keys / rules |
-|---|---|---|
-| `title` | VARCHAR(120) | not null |
-| `description` | VARCHAR(500) |  |
-| `location` | VARCHAR(60) |  |
-| `priority` | VARCHAR(8) | not null |
-| `status` | VARCHAR(12) | not null |
-| `due_date` | DATE |  |
-| `extra` | JSON | not null |
-| `is_deleted` | BOOLEAN | not null |
-| `created_by_id` | UUID | → users.id |
-| `updated_by_id` | UUID | → users.id |
-| `id` | UUID | PK |
-| `created_at` | DATETIME | not null |
-| `updated_at` | DATETIME | not null |
 

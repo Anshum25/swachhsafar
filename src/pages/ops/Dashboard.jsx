@@ -53,10 +53,10 @@ function HomeBanner() {
 
 const TILE_ICONS = {
   journeys: TrainSolidIcon, attendance: CalendarCheckIcon, inspections: ClipboardListIcon, feedback: ThumbUpSolidIcon, reports: BarChartSolidIcon,
-  profile: UserSolidIcon, complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon, jobs: BriefcaseIcon,
+  profile: UserSolidIcon, complaints: FlagIcon, inventory: BoxIcon, masters: DatabaseGridIcon,
 };
 // Reference order first (Journey … Profile), then the further modules this user has.
-const TILE_ORDER = ['journeys', 'attendance', 'inspections', 'feedback', 'reports', 'profile', 'complaints', 'inventory', 'masters', 'jobs'];
+const TILE_ORDER = ['journeys', 'attendance', 'inspections', 'feedback', 'reports', 'profile', 'complaints', 'inventory', 'masters'];
 
 // One tile per module this user can open, plus their profile.
 function ModuleTiles() {
