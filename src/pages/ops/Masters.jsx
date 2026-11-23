@@ -7,10 +7,12 @@ import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
 import DivisionPolicy from './masters/DivisionPolicy.jsx';
 import Users from './masters/Users.jsx';
+import Clients from './masters/Clients.jsx';
+import RolePermissions from './masters/RolePermissions.jsx';
 import UserProfile from './masters/UserProfile.jsx';
 import { MastersMobileNav } from './masters/MastersNav.jsx';
 import { visibleSections } from './masters/sections.js';
-import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, SubmitBar, Table } from '../../components/ui.jsx';
+import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, Select, SubmitBar, Table } from '../../components/ui.jsx';
 import { PlusIcon } from '../../components/Icons.jsx';
 
 // "B1 AC, S1, S2" -> [{code:'B1', classification:'AC'}, ...]; coaches default to Non-AC.
@@ -96,8 +98,11 @@ function Trains({ divisionId }) {
 function Divisions() {
   const { api, can } = useSession();
   const res = useResource('/divisions');
+  // Every division belongs to a client (office): whose wallet its journeys spend and whose module
+  // subscription its users see. Only a Super Admin creates divisions, and they can read every client.
+  const clients = useResource(can('divisions.manage') ? '/clients' : null);
   const [creating, setCreating] = useState(false);
-  const [f, setF] = useState({ code: '', name: '' });
+  const [f, setF] = useState({ code: '', name: '', client_id: '' });
   const save = useSave(() => { setCreating(false); res.reload(); });
   return (
     <Panel title="Divisions" actions={can('divisions.manage') && <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><PlusIcon /> Add division</button>}>
@@ -111,11 +116,15 @@ function Divisions() {
         )}
       </DataState>
       <Dialog open={creating} title="Add division" onClose={() => setCreating(false)}>
-        <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/divisions', { code: f.code.toUpperCase(), name: f.name }), 'Division created.'); }} className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/divisions', { code: f.code.toUpperCase(), name: f.name, client_id: f.client_id }), 'Division created.'); }} className="space-y-3">
           <ErrorNote error={save.error} />
           <Field label="Code" hint="Uppercase letters, digits, underscore"><input className="input" required pattern="[A-Za-z0-9_]{2,16}" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} /></Field>
           <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-          <SubmitBar busy={save.busy} label="Create" onCancel={() => setCreating(false)} />
+          <Field label="Client (office)" hint="Whose modules and credits this division uses">
+            <Select value={f.client_id} onChange={(v) => setF({ ...f, client_id: v })} placeholder="Select an office"
+              options={(clients.data ?? []).map((c) => ({ value: c.id, label: `${c.office_id} — ${c.name}` }))} />
+          </Field>
+          <SubmitBar busy={save.busy} disabled={!f.client_id} label="Create" onCancel={() => setCreating(false)} />
         </form>
       </Dialog>
     </Panel>
@@ -144,6 +153,8 @@ export default function Masters({ parts = [] }) {
       {section === 'trains' && <Trains divisionId={division.divisionId} />}
       {section === 'users' && (userId ? <UserProfile key={userId} userId={userId} division={division} /> : <Users division={division} />)}
       {section === 'divisions' && <Divisions />}
+      {section === 'clients' && <Clients />}
+      {section === 'roles' && <RolePermissions divisionId={division.divisionId} divisionName={division.current?.name} />}
       {section === 'questions' && <QuestionBanks divisionId={division.divisionId} />}
       {section === 'categories' && <Categories divisionId={division.divisionId} />}
       {section === 'departments' && <Departments divisionId={division.divisionId} />}

@@ -35,6 +35,7 @@ from app.security.principal import Principal
 from app.schemas.faces import FaceProfileOut
 from app.schemas.fingerprints import FingerprintProfileOut
 from app.services import attendance, complaints, faces, feedback, fingerprints, inspections, inventory
+from app.services import clients as clients_svc
 from app.services import jobs as job_svc
 from app.services import journeys as journey_svc
 from app.services.policy import get_policy
@@ -202,5 +203,9 @@ def changes(db: Session, p: Principal, since: datetime | None) -> dict:
         face_profiles=face_profiles,
         fingerprint_profiles=fingerprint_profiles,
         jobs=dump(JobOut, job_rows),
+        # The user's own client: which modules the office is subscribed to, and how its wallet stands.
+        # Sent on every pull, not only a full one, so removing a module reaches the phone at the next sync
+        # and a module the office no longer pays for stops appearing even while the device is offline.
+        client=(lambda c: c.model_dump(mode="json") if c else None)(clients_svc.client_summary(db, p)),
     )
 

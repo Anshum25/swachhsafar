@@ -50,6 +50,15 @@ class Division(UUIDPk, Timestamps, Base):
     code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # The client (office) this division belongs to: whose wallet its journeys spend and whose module
+    # subscription its users see. Every division has one; migration 0011 created a client for the
+    # divisions that existed before clients did.
+    client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
+
+    # lazy="select": a Division is loaded on every authenticated request (through User.division), and the
+    # client is not needed there. The two places that do need it ask for it by name: Principal.modules_in
+    # selects enabled_modules directly, and services/clients.py joins explicitly.
+    client: Mapped["Client"] = relationship(back_populates="divisions", lazy="select")  # noqa: F821
 
 
 class Role(Base):

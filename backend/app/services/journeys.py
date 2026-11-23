@@ -21,6 +21,7 @@ from app.schemas.common import PageParams
 from app.schemas.journeys import JourneyCancel, JourneyCreate, JourneyUpdate, StaffAdd, SupervisorAssign
 from app.schemas.trains import CoachIn
 from app.security.principal import Principal
+from app.services.clients import charge_journey, refund_journey
 from app.services.common import audit, commit_or_conflict, diff, paginate
 from app.timeutil import to_ist_date, today_ist, utcnow
 
@@ -211,8 +212,13 @@ def create_journey(db: Session, p: Principal, body: JourneyCreate) -> Journey:
     db.flush()
     for user in [supervisor, *staff]:
         _allocate(db, j, user, p.id)
+    # The client's wallet pays for the journey here, in this transaction. An empty wallet raises 402 and
+    # the whole create rolls back, so a journey never exists without its charge and a charge never exists
+    # without its journey. Cancelling before departure returns the credits (cancel_journey below).
+    charged = charge_journey(db, j.division_id, j.id)
     audit(db, actor_id=p.id, action="journey.create", entity=j, division_id=j.division_id,
-          changes={**body.model_dump(mode="json"), "linked_journey_date": str(linked), "end_date": str(end)})
+          changes={**body.model_dump(mode="json"), "linked_journey_date": str(linked), "end_date": str(end),
+                   "credits_charged": charged})
     commit_or_conflict(db, "Duplicate journey data")
     return j
 
@@ -275,7 +281,13 @@ def cancel_journey(db: Session, p: Principal, journey_id: uuid.UUID, body: Journ
     j.cancelled_at = utcnow()
     j.cancelled_by_id = p.id
     j.cancel_reason = body.reason
-    audit(db, actor_id=p.id, action="journey.cancel", entity=j, division_id=j.division_id, changes={"reason": body.reason})
+    # Credits come back only while the journey has not departed. Once the train has gone the client has
+    # had the service, and cancelling a journey already under way is a record correction, not a refund.
+    refunded = 0
+    if j.journey_date > today_ist():
+        refunded = refund_journey(db, j.division_id, j.id, note=f"Journey cancelled: {body.reason}")
+    audit(db, actor_id=p.id, action="journey.cancel", entity=j, division_id=j.division_id,
+          changes={"reason": body.reason, "credits_refunded": refunded})
     db.commit()
     return j
 

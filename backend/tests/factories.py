@@ -3,7 +3,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from app.models import Division, RoleId, User, UserStatus
+from app.models import GATEABLE_MODULES, Client, Division, RoleId, User, UserStatus
 from app.providers.external import PnrResult, ProviderUnavailable
 from app.timeutil import today_ist
 
@@ -80,8 +80,24 @@ def auth(user: User) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def make_division(db, code: str) -> Division:
-    d = Division(code=code, name=f"{code} Division")
+def make_client(db, office_id: str, **kw) -> Client:
+    """A client (office) with every module subscribed and journeys free, which is what the operational
+    tests assume. The credit tests set a rate and a balance themselves."""
+    c = Client(
+        office_id=office_id,
+        name=kw.pop("name", f"{office_id} Office"),
+        enabled_modules=kw.pop("enabled_modules", list(GATEABLE_MODULES)),
+        credit_per_journey=kw.pop("credit_per_journey", 0),
+        credit_balance=kw.pop("credit_balance", 0),
+        **kw,
+    )
+    db.add(c)
+    db.commit()
+    return c
+
+
+def make_division(db, code: str, client: Client | None = None) -> Division:
+    d = Division(code=code, name=f"{code} Division", client_id=(client or make_client(db, f"OFF-{code}")).id)
     db.add(d)
     db.commit()
     return d
