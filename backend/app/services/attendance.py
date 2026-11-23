@@ -62,6 +62,12 @@ def _check_group_photo(db: Session, p: Principal, j: Journey, policy, body: Atte
     # Where a face was recognised the distance is kept as evidence and still has to be within the
     # division's threshold; where the supervisor named the person themselves there is no distance to judge.
     if body.face_distance is not None:
+        # A face recognised in the crew photo counts only if the app watched that face move in 3-D during
+        # the preview (GroupPhotoCapture). A printed photo or a screen held up to the camera is flat and
+        # never gets "passed", so the app does not send it -- this refuses a client that does anyway.
+        if not (body.security and body.security.liveness == "passed"):
+            raise BusinessRuleViolation("The face in the group photo was not verified as a live person",
+                                        code="liveness_required")
         enrollment = db.get(FaceEnrollment, body.employee_id)
         if enrollment is None or body.face_model != enrollment.model:
             raise BusinessRuleViolation("The group photo match does not refer to this employee's registered face",
