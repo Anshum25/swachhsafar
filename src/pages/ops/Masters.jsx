@@ -8,11 +8,12 @@ import InventoryItems from './masters/InventoryItems.jsx';
 import DivisionPolicy from './masters/DivisionPolicy.jsx';
 import Users from './masters/Users.jsx';
 import Clients from './masters/Clients.jsx';
+import Divisions from './masters/Divisions.jsx';
 import RolePermissions from './masters/RolePermissions.jsx';
 import UserProfile from './masters/UserProfile.jsx';
 import { MastersMobileNav } from './masters/MastersNav.jsx';
 import { visibleSections } from './masters/sections.js';
-import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, Select, SubmitBar, Table } from '../../components/ui.jsx';
+import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, SubmitBar, Table } from '../../components/ui.jsx';
 import { PlusIcon } from '../../components/Icons.jsx';
 
 // "B1 AC, S1, S2" -> [{code:'B1', classification:'AC'}, ...]; coaches default to Non-AC.
@@ -90,59 +91,6 @@ function Trains({ divisionId }) {
       </DataState>
       <Dialog open={!!edit} title={edit === 'new' ? 'Add train' : 'Edit train'} onClose={() => setEdit(null)} wide>
         {edit && <TrainForm train={edit === 'new' ? null : edit} divisionId={divisionId} onClose={() => setEdit(null)} onSaved={done} />}
-      </Dialog>
-    </Panel>
-  );
-}
-
-const DIVISION_KINDS = [{ value: 'station', label: 'Station' }, { value: 'headquarters', label: 'Headquarters' }];
-
-function Divisions() {
-  const { api, can } = useSession();
-  const res = useResource('/divisions');
-  // Every division belongs to a client (office): whose wallet its journeys spend and whose module
-  // subscription its users see. Only a Super Admin creates divisions, and they can read every client.
-  const clients = useResource(can('divisions.manage') ? '/clients' : null);
-  const [creating, setCreating] = useState(false);
-  const [f, setF] = useState({ code: '', name: '', client_id: '', kind: 'station' });
-  const save = useSave(() => { setCreating(false); res.reload(); });
-  // Headquarters or station: role rights can be set for every one of a kind in an office (Role rights).
-  const setKind = useSave(() => res.reload());
-  const officeName = (id) => {
-    const c = (clients.data ?? []).find((x) => x.id === id);
-    return c ? `${c.office_id} — ${c.name}` : '';
-  };
-  return (
-    <Panel title="Divisions" actions={can('divisions.manage') && <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><PlusIcon /> Add division</button>}>
-      <DataState res={res} empty="No divisions.">
-        {(rows) => (
-          <Table rows={rows} columns={[
-            { key: 'code', label: 'Code', render: (d) => <span className="font-semibold">{d.code}</span> },
-            { key: 'name', label: 'Name' },
-            ...(clients.data?.length ? [{ key: 'client_id', label: 'Office', render: (d) => officeName(d.client_id) }] : []),
-            { key: 'kind', label: 'Type', render: (d) => (can('divisions.manage') ? (
-              <Select value={d.kind ?? 'station'} options={DIVISION_KINDS} aria-label={`Type of ${d.name}`}
-                onChange={(v) => setKind.run(() => api.patch(`/divisions/${d.id}`, { kind: v }), `${d.name} is now ${v === 'headquarters' ? 'a headquarters' : 'a station'}.`)} />
-            ) : <Badge tone={d.kind === 'headquarters' ? 'brand' : 'slate'}>{d.kind === 'headquarters' ? 'Headquarters' : 'Station'}</Badge>) },
-            { key: 'is_active', label: 'Status', render: (d) => <Badge tone={d.is_active ? 'green' : 'slate'}>{d.is_active ? 'Active' : 'Inactive'}</Badge> },
-          ]} />
-        )}
-      </DataState>
-      <ErrorNote error={setKind.error} />
-      <Dialog open={creating} title="Add division" onClose={() => setCreating(false)}>
-        <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/divisions', { code: f.code.toUpperCase(), name: f.name, client_id: f.client_id, kind: f.kind }), 'Division created.'); }} className="space-y-3">
-          <ErrorNote error={save.error} />
-          <Field label="Code" hint="Uppercase letters, digits, underscore"><input className="input" required pattern="[A-Za-z0-9_]{2,16}" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} /></Field>
-          <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-          <Field label="Client (office)" hint="Whose modules and credits this division uses">
-            <Select value={f.client_id} onChange={(v) => setF({ ...f, client_id: v })} placeholder="Select an office"
-              options={(clients.data ?? []).map((c) => ({ value: c.id, label: `${c.office_id} — ${c.name}` }))} />
-          </Field>
-          <Field label="Type" hint="Role rights can be set for all stations or the headquarters of an office at once">
-            <Select value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={DIVISION_KINDS} />
-          </Field>
-          <SubmitBar busy={save.busy} disabled={!f.client_id} label="Create" onCancel={() => setCreating(false)} />
-        </form>
       </Dialog>
     </Panel>
   );

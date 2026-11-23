@@ -52,7 +52,7 @@ function Override({ row, inherited, scope, editable, onChange, code }) {
   );
 }
 
-function PermissionRow({ perm, roleId, grants, scope, showOffice, kind, subscribed, canEdit, onChange }) {
+function PermissionRow({ perm, roleId, grants, scope, showOffice, showDivision, kind, subscribed, canEdit, onChange }) {
   const state = resolve(perm.code, roleId, grants, kind);
   const gated = perm.module && !ALWAYS_ON.has(perm.module) && subscribed && !subscribed.includes(perm.module);
 
@@ -77,10 +77,12 @@ function PermissionRow({ perm, roleId, grants, scope, showOffice, kind, subscrib
             editable={canEdit && scope === kind} onChange={(v) => onChange(perm, v)} />
         </td>
       )}
-      <td className="py-2 pr-3">
-        <Override row={state.division} inherited={state.inKind} scope="division" code={perm.code}
-          editable={canEdit && scope === 'division'} onChange={(v) => onChange(perm, v)} />
-      </td>
+      {showDivision && (
+        <td className="py-2 pr-3">
+          <Override row={state.division} inherited={state.inKind} scope="division" code={perm.code}
+            editable={canEdit && scope === 'division'} onChange={(v) => onChange(perm, v)} />
+        </td>
+      )}
       <td className="py-2 text-center">
         {gated
           ? <Badge tone="amber">Module off</Badge>
@@ -92,7 +94,10 @@ function PermissionRow({ perm, roleId, grants, scope, showOffice, kind, subscrib
 
 // `clientId` / `clientName`: the office the division belongs to. Without it (division rows read from the
 // device's own database carry no office) the page offers the division scope only, as it always did.
-export default function RolePermissions({ divisionId, divisionName, clientId, clientName, divisionKind }) {
+// `modules`: the office's subscribed modules, when the page knows them (an office's own page does); else
+// the signed-in user's office's. `divisionId` may be absent for an office with no headquarters or stations
+// yet: then only office-wide rights can be set.
+export default function RolePermissions({ divisionId, divisionName, clientId, clientName, divisionKind, modules }) {
   const { api, can, me, client } = useSession();
   const online = useNetworkStatus();
   const roles = useResource('/roles');
@@ -100,9 +105,9 @@ export default function RolePermissions({ divisionId, divisionName, clientId, cl
   // Global grants, this office's overrides and this division's, in one list.
   const globals = useResource('/permissions/grants');
   const officeRows = useResource(clientId ? '/permissions/grants' : null, clientId ? { client_id: clientId } : null);
-  const overrides = useResource('/permissions/grants', divisionId ? { division_id: divisionId } : null);
+  const overrides = useResource(divisionId ? '/permissions/grants' : null, divisionId ? { division_id: divisionId } : null);
   const [roleId, setRoleId] = useState(3); // Manager: the role most often adjusted
-  const [scopeChoice, setScope] = useState('division');
+  const [scopeChoice, setScope] = useState(divisionId ? 'division' : 'office');
   const [pending, setPending] = useState(null);
   const canEdit = can('permissions.manage') && online;
   // Office-wide rows: Super Admin, or this office's own Admin (services/org.py _require_grant_scope).
@@ -112,8 +117,10 @@ export default function RolePermissions({ divisionId, divisionName, clientId, cl
   const showOffice = !!clientId;
   const kind = divisionKind ?? null;
   const kindPlural = kind === 'headquarters' ? 'headquarters' : 'stations';
-  const scope = canEditOffice ? scopeChoice : 'division';
-  const subscribed = client?.modules ?? null;
+  const showDivision = !!divisionId;
+  // Without a division there is nothing but the office to set rights for.
+  const scope = canEditOffice ? (showDivision || scopeChoice === 'office' ? scopeChoice : 'office') : 'division';
+  const subscribed = modules ?? client?.modules ?? null;
   const officeLabel = clientName || client?.name || 'this office';
 
   const grants = useMemo(() => {
@@ -169,9 +176,12 @@ export default function RolePermissions({ divisionId, divisionName, clientId, cl
     <div className="space-y-3">
       <p className="text-sm text-muted">
         What each role may do. The default applies in every office. An office override applies in every division
-        of <strong>{officeLabel}</strong>; a division override applies only in
-        <strong> {divisionName || 'this division'}</strong> and wins over both. A right whose module the office
-        has not subscribed to is off whatever this says.
+        of <strong>{officeLabel}</strong>
+        {showDivision
+          ? <>; a station or headquarters rule applies to every one of that type in the office; a division
+            override applies only in <strong>{divisionName || 'this division'}</strong> and wins over all of them.</>
+          : '. Add a headquarters or station to this office to set rights for it alone.'}
+        {' '}A right whose module the office has not subscribed to is off whatever this says.
       </p>
 
       {canEditOffice && (
@@ -180,7 +190,7 @@ export default function RolePermissions({ divisionId, divisionName, clientId, cl
           <Tabs value={scope} onChange={setScope} tabs={[
             { value: 'office', label: `Whole office (${officeLabel})` },
             ...(kind ? [{ value: kind, label: `All ${kindPlural} of the office` }] : []),
-            { value: 'division', label: `This division (${divisionName || 'division'})` },
+            ...(showDivision ? [{ value: 'division', label: `This division (${divisionName || 'division'})` }] : []),
           ]} />
         </div>
       )}
@@ -218,14 +228,15 @@ export default function RolePermissions({ divisionId, divisionName, clientId, cl
                         <th className="py-2 pr-3 text-center">Default</th>
                         {showOffice && <th className="py-2 pr-3">In this office</th>}
                         {showOffice && kind && <th className="py-2 pr-3">At all {kindPlural}</th>}
-                        <th className="py-2 pr-3">In this division</th>
+                        {showDivision && <th className="py-2 pr-3">In this division</th>}
                         <th className="py-2 text-center">Effective</th>
                       </tr>
                     </thead>
                     <tbody>
                       {perms.map((perm) => (
                         <PermissionRow key={perm.code} perm={perm} roleId={roleId} grants={grants} scope={scope}
-                          showOffice={showOffice} kind={kind} subscribed={subscribed} canEdit={canEdit} onChange={apply} />
+                          showOffice={showOffice} showDivision={showDivision} kind={kind} subscribed={subscribed}
+                          canEdit={canEdit} onChange={apply} />
                       ))}
                     </tbody>
                   </table>

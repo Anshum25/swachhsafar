@@ -5,12 +5,17 @@
 //
 // The balance is never edited directly. Credits arrive as a recorded top-up and leave when a journey is
 // created, so the ledger always explains the number.
+//
+// An office's own page (Manage) has three tabs: its details and wallet; its headquarters and stations; and
+// role rights for its users -- office-wide, for all its stations or headquarters, or one station.
 import { useState } from 'react';
 import { useSession, useResource } from '../../../app/session.jsx';
 import {
-  Badge, DataState, Dialog, ErrorNote, Field, Panel, Select, Stat, SubmitBar, Table, fmtDateTime, label,
+  Badge, DataState, Dialog, ErrorNote, Field, Panel, Select, Stat, SubmitBar, Table, Tabs, fmtDateTime, label,
 } from '../../../components/ui.jsx';
 import { ConfirmDialog, useSave } from './common.jsx';
+import Divisions, { kindLabel } from './Divisions.jsx';
+import RolePermissions from './RolePermissions.jsx';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
 
 // The modules a client may subscribe to, in the order the super admin reads them. Must match
@@ -322,7 +327,43 @@ function LedgerPanel({ clientId }) {
   );
 }
 
+// ---- role rights for one office --------------------------------------------------------------------
+
+// Pick one of the office's headquarters/stations; the rights panel then offers the whole office, every
+// station (or headquarters) of it, and that one division. With none yet, only the whole office.
+function OfficeRights({ client }) {
+  const divisions = useResource('/divisions');
+  const [picked, setPicked] = useState(null);
+  return (
+    <DataState res={divisions}>
+      {(rows) => {
+        const own = rows.filter((d) => d.client_id === client.id);
+        const current = own.find((d) => d.id === picked) ?? own[0] ?? null;
+        return (
+          <div className="space-y-3">
+            {own.length > 0 && (
+              <Field label="Headquarters or station" hint="Rights below are shown for this one; the scope switch decides how far a change reaches">
+                <Select value={current?.id ?? ''} onChange={setPicked}
+                  options={own.map((d) => ({ value: d.id, label: `${d.name} (${kindLabel(d.kind)})` }))} />
+              </Field>
+            )}
+            <RolePermissions key={current?.id ?? 'office'} clientId={client.id} clientName={`${client.office_id} — ${client.name}`}
+              divisionId={current?.id ?? null} divisionName={current?.name} divisionKind={current?.kind}
+              modules={client.enabled_modules} />
+          </div>
+        );
+      }}
+    </DataState>
+  );
+}
+
 // ---- the screen ------------------------------------------------------------------------------------
+
+const DETAIL_TABS = [
+  { value: 'overview', label: 'Details & credits' },
+  { value: 'stations', label: 'Headquarters & stations' },
+  { value: 'rights', label: 'Role rights' },
+];
 
 function ClientDetail({ clientId, onBack, onChanged }) {
   const { api, me } = useSession();
@@ -330,6 +371,7 @@ function ClientDetail({ clientId, onBack, onChanged }) {
   const res = useResource(`/clients/${clientId}`);
   const canEdit = me?.user?.role_id === 1 && online;
   const [statusTarget, setStatusTarget] = useState(null);
+  const [tab, setTab] = useState('overview');
   const save = useSave((saved) => { setStatusTarget(null); res.reload(); onChanged(saved); });
 
   return (
@@ -346,6 +388,12 @@ function ClientDetail({ clientId, onBack, onChanged }) {
             )}
           </div>
 
+          <Tabs value={tab} onChange={setTab} tabs={DETAIL_TABS} />
+
+          {tab === 'stations' && <Divisions clientId={client.id} />}
+          {tab === 'rights' && <OfficeRights client={client} />}
+
+          {tab === 'overview' && <>
           <Panel title={`${client.office_id} — ${client.name}`} actions={<StatusBadge status={client.status} />}>
             <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
               {[['Contact', client.contact_name], ['Mobile', client.contact_mobile], ['Email', client.contact_email],
@@ -360,6 +408,7 @@ function ClientDetail({ clientId, onBack, onChanged }) {
           <WalletPanel client={client} canEdit={canEdit} onSaved={() => { res.reload(); onChanged(); }} />
           <ModulesPanel client={client} canEdit={canEdit} onSaved={() => { res.reload(); onChanged(); }} />
           <LedgerPanel clientId={client.id} />
+          </>}
 
           <ConfirmDialog open={!!statusTarget} busy={save.busy} error={save.error}
             onClose={() => { setStatusTarget(null); save.setError(null); }}
@@ -437,6 +486,13 @@ export default function Clients() {
               },
               { key: 'credit_per_journey', label: 'Per journey', render: (r) => (r.credit_per_journey === 0 ? 'Free' : r.credit_per_journey) },
               { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+              // Rows open on a click too, but nothing said so: this is the visible way in.
+              { key: 'manage', label: '', render: (r) => (
+                <button type="button" className="btn-secondary h-9 text-xs" aria-label={`Manage ${r.office_id}`}
+                  onClick={(e) => { e.stopPropagation(); setSelected(r.id); }}>
+                  {isSuperAdmin ? 'Manage' : 'Open'}
+                </button>
+              ) },
             ]}
             rows={shown(rows)}
             onRowClick={(r) => setSelected(r.id)}
