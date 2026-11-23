@@ -212,8 +212,11 @@ def list_permissions(db: Session = Depends(get_db), _: Principal = Depends(get_p
 
 
 @permissions_router.get("/grants", response_model=list[GrantOut])
-def list_grants(division_id: uuid.UUID | None = None, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
-    return org.list_grants(db, p, division_id)
+def list_grants(division_id: uuid.UUID | None = None, client_id: uuid.UUID | None = None,
+                db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Global grants with neither parameter; one office's overrides with client_id; one division's with
+    division_id."""
+    return org.list_grants(db, p, division_id, client_id)
 
 
 @permissions_router.put("/grants", response_model=GrantOut)

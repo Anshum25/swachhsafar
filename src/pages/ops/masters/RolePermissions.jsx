@@ -1,11 +1,12 @@
-// Role rights: which permissions each role holds, and the per-division overrides on top of them.
-// Backend: GET /roles, GET /permissions, GET/POST/DELETE /permissions/grants (app/api/v1/org.py).
+// Role rights: which permissions each role holds, and the per-office and per-division overrides on top.
+// Backend: GET /roles, GET /permissions, GET/PUT/DELETE /permissions/grants (app/api/v1/org.py).
 //
 // How a right is decided, which is the thing to understand before changing anything here:
 //
-//   1. the global grant for the role          — the default, the same in every division
-//   2. an override row for this division      — allow or deny, and it wins over the global grant
-//   3. the client's module subscription        — an unsubscribed module removes the right entirely
+//   1. the global grant for the role          — the default, the same in every office
+//   2. an override row for the office          — allow or deny for every division of that office
+//   3. an override row for this division      — allow or deny, and it wins over both of the above
+//   4. the client's module subscription        — an unsubscribed module removes the right entirely
 //
 // So a permission shown as "Allowed" here can still be absent from a user's session, because the office
 // has not bought that module. The column says so rather than leaving it a mystery.
@@ -15,9 +16,11 @@ import { useMemo, useState } from 'react';
 import { useResource, useSession } from '../../../app/session.jsx';
 import { Badge, DataState, ErrorNote, Panel, Select, Tabs } from '../../../components/ui.jsx';
 import { ConfirmDialog, useSave } from './common.jsx';
+import { resolve } from './roleRights.js';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
 
 const SUPER_ADMIN_ROLE = 1;
+const ADMIN_ROLE = 2;
 
 // How each module's permissions are grouped for reading, and which client module gates them. `null`
 // gates nothing (the platform). Mirrors app/security/catalog.py.
@@ -30,19 +33,27 @@ const ALWAYS_ON = new Set(['admin', 'users', 'masters', 'media', 'journeys']);
 
 const EFFECT = { allow: { tone: 'green', text: 'Allowed' }, deny: { tone: 'red', text: 'Denied' } };
 
-// The effective state of one permission for one role in one division.
-function resolve(code, roleId, grants) {
-  const global = grants.find((g) => g.role_id === roleId && g.permission_code === code && !g.division_id);
-  const override = grants.find((g) => g.role_id === roleId && g.permission_code === code && g.division_id);
-  const base = global?.effect === 'allow';
-  if (override) return { allowed: override.effect === 'allow', source: 'division', override, base };
-  return { allowed: base, source: global ? 'global' : 'none', override: null, base };
+const SCOPE_TEXT = { office: 'this office', division: 'this division' };
+
+function Override({ row, inherited, scope, editable, onChange, code }) {
+  if (!editable) return <span className="text-sm text-muted">{row ? EFFECT[row.effect].text : 'Inherited'}</span>;
+  return (
+    <Select
+      value={row ? row.effect : 'inherit'}
+      aria-label={`${scope === 'office' ? 'Office' : 'Division'} override for ${code}`}
+      onChange={onChange}
+      options={[
+        { value: 'inherit', label: `Inherit (${inherited ? 'allowed' : 'not granted'})` },
+        { value: 'allow', label: `Allow in ${SCOPE_TEXT[scope]}` },
+        { value: 'deny', label: `Deny in ${SCOPE_TEXT[scope]}` },
+      ]}
+    />
+  );
 }
 
-function PermissionRow({ perm, roleId, grants, divisionId, subscribed, canEdit, onChange }) {
+function PermissionRow({ perm, roleId, grants, scope, showOffice, subscribed, canEdit, onChange }) {
   const state = resolve(perm.code, roleId, grants);
   const gated = perm.module && !ALWAYS_ON.has(perm.module) && subscribed && !subscribed.includes(perm.module);
-  const value = state.override ? state.override.effect : 'inherit';
 
   return (
     <tr className="border-b border-slate-100 last:border-0">
@@ -53,21 +64,15 @@ function PermissionRow({ perm, roleId, grants, divisionId, subscribed, canEdit, 
       <td className="py-2 pr-3 text-center">
         <Badge tone={state.base ? 'green' : 'slate'}>{state.base ? 'Allowed' : 'Not granted'}</Badge>
       </td>
+      {showOffice && (
+        <td className="py-2 pr-3">
+          <Override row={state.office} inherited={state.base} scope="office" code={perm.code}
+            editable={canEdit && scope === 'office'} onChange={(v) => onChange(perm, v)} />
+        </td>
+      )}
       <td className="py-2 pr-3">
-        {canEdit ? (
-          <Select
-            value={value}
-            aria-label={`Override for ${perm.code}`}
-            onChange={(v) => onChange(perm, v)}
-            options={[
-              { value: 'inherit', label: `Use default (${state.base ? 'allowed' : 'not granted'})` },
-              { value: 'allow', label: 'Allow in this division' },
-              { value: 'deny', label: 'Deny in this division' },
-            ]}
-          />
-        ) : (
-          <span className="text-sm text-muted">{state.override ? EFFECT[state.override.effect].text : 'Default'}</span>
-        )}
+        <Override row={state.division} inherited={state.inOffice} scope="division" code={perm.code}
+          editable={canEdit && scope === 'division'} onChange={(v) => onChange(perm, v)} />
       </td>
       <td className="py-2 text-center">
         {gated
@@ -78,46 +83,61 @@ function PermissionRow({ perm, roleId, grants, divisionId, subscribed, canEdit, 
   );
 }
 
-export default function RolePermissions({ divisionId, divisionName }) {
+// `clientId` / `clientName`: the office the division belongs to. Without it (division rows read from the
+// device's own database carry no office) the page offers the division scope only, as it always did.
+export default function RolePermissions({ divisionId, divisionName, clientId, clientName }) {
   const { api, can, me, client } = useSession();
   const online = useNetworkStatus();
   const roles = useResource('/roles');
   const permissions = useResource('/permissions');
-  // Global grants and this division's overrides, in one list.
+  // Global grants, this office's overrides and this division's, in one list.
   const globals = useResource('/permissions/grants');
+  const officeRows = useResource(clientId ? '/permissions/grants' : null, clientId ? { client_id: clientId } : null);
   const overrides = useResource('/permissions/grants', divisionId ? { division_id: divisionId } : null);
   const [roleId, setRoleId] = useState(3); // Manager: the role most often adjusted
+  const [scopeChoice, setScope] = useState('division');
   const [pending, setPending] = useState(null);
   const canEdit = can('permissions.manage') && online;
+  // Office-wide rows: Super Admin, or this office's own Admin (services/org.py _require_grant_scope).
+  const roleOfMe = me?.user?.role_id;
+  const canEditOffice = canEdit && !!clientId
+    && (roleOfMe === SUPER_ADMIN_ROLE || (roleOfMe === ADMIN_ROLE && client?.id === clientId));
+  const showOffice = !!clientId;
+  const scope = canEditOffice ? scopeChoice : 'division';
   const subscribed = client?.modules ?? null;
+  const officeLabel = clientName || client?.name || 'this office';
 
   const grants = useMemo(() => {
-    const g = globals.data ?? [];
-    const o = (overrides.data ?? []).filter((r) => r.division_id);
-    return [...g.filter((r) => !r.division_id), ...o];
-  }, [globals.data, overrides.data]);
+    const g = (globals.data ?? []).filter((r) => !r.client_id && !r.division_id);
+    const c = (officeRows.data ?? []).filter((r) => r.client_id === clientId);
+    const d = (overrides.data ?? []).filter((r) => r.division_id);
+    return [...g, ...c, ...d];
+  }, [globals.data, officeRows.data, overrides.data, clientId]);
 
   const save = useSave(() => {
     setPending(null);
     globals.reload();
+    officeRows.reload();
     overrides.reload();
   });
 
-  const apply = (perm, choice) => setPending({ perm, choice });
+  const apply = (perm, choice) => setPending({ perm, choice, scope });
 
   const commit = () => {
-    const { perm, choice } = pending;
+    const { perm, choice, scope: at } = pending;
     const state = resolve(perm.code, roleId, grants);
+    const existing = at === 'office' ? state.office : state.division;
     save.run(async () => {
       if (choice === 'inherit') {
-        if (state.override) await api.del(`/permissions/grants/${state.override.id}`);
+        if (existing) await api.del(`/permissions/grants/${existing.id}`);
         return;
       }
-      // PUT, not POST: the backend upserts the (role, permission, division) row (api/v1/org.py).
+      // PUT, not POST: the backend upserts the (role, permission, office or division) row (api/v1/org.py).
       await api.put('/permissions/grants', {
-        role_id: roleId, permission_code: perm.code, division_id: divisionId, effect: choice,
+        role_id: roleId, permission_code: perm.code, effect: choice,
+        ...(at === 'office' ? { client_id: clientId } : { division_id: divisionId }),
       });
-    }, `${perm.code} updated for this division.`);
+    }, `${perm.code} updated for ${SCOPE_TEXT[at]}.`);
   };
 
   const byModule = useMemo(() => {
@@ -137,10 +157,21 @@ export default function RolePermissions({ divisionId, divisionName }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        What each role may do. The default applies in every division; an override applies only in
-        <strong> {divisionName || 'this division'}</strong>. A right whose module the office has not
-        subscribed to is off whatever this says.
+        What each role may do. The default applies in every office. An office override applies in every division
+        of <strong>{officeLabel}</strong>; a division override applies only in
+        <strong> {divisionName || 'this division'}</strong> and wins over both. A right whose module the office
+        has not subscribed to is off whatever this says.
       </p>
+
+      {canEditOffice && (
+        <div className="space-y-1 text-sm">
+          <span className="font-semibold text-ink">Change rights for</span>
+          <Tabs value={scope} onChange={setScope} tabs={[
+            { value: 'office', label: `Whole office (${officeLabel})` },
+            { value: 'division', label: `This division (${divisionName || 'division'})` },
+          ]} />
+        </div>
+      )}
 
       <DataState res={roles}>
         {(roleRows) => (
@@ -173,14 +204,15 @@ export default function RolePermissions({ divisionId, divisionName }) {
                       <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
                         <th className="py-2 pr-3">Permission</th>
                         <th className="py-2 pr-3 text-center">Default</th>
+                        {showOffice && <th className="py-2 pr-3">In this office</th>}
                         <th className="py-2 pr-3">In this division</th>
                         <th className="py-2 text-center">Effective</th>
                       </tr>
                     </thead>
                     <tbody>
                       {perms.map((perm) => (
-                        <PermissionRow key={perm.code} perm={perm} roleId={roleId} grants={grants}
-                          divisionId={divisionId} subscribed={subscribed} canEdit={canEdit} onChange={apply} />
+                        <PermissionRow key={perm.code} perm={perm} roleId={roleId} grants={grants} scope={scope}
+                          showOffice={showOffice} subscribed={subscribed} canEdit={canEdit} onChange={apply} />
                       ))}
                     </tbody>
                   </table>
@@ -199,7 +231,7 @@ export default function RolePermissions({ divisionId, divisionName }) {
         confirmLabel="Change it"
         onClose={() => { setPending(null); save.setError(null); }}
         message={pending
-          ? `${pending.perm.code} will be ${pending.choice === 'inherit' ? 'left at its default' : `${pending.choice === 'allow' ? 'allowed' : 'denied'}`} for this role in ${divisionName || 'this division'}. It takes effect the next time those users' devices reach the server.`
+          ? `${pending.perm.code} will be ${pending.choice === 'inherit' ? 'inherited again' : `${pending.choice === 'allow' ? 'allowed' : 'denied'}`} for this role in ${pending.scope === 'office' ? `every division of ${officeLabel}` : (divisionName || 'this division')}. It takes effect the next time those users' devices reach the server.`
           : ''}
         onConfirm={commit}
       />

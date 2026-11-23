@@ -17,14 +17,12 @@ from app.models import (
     ComplaintStatus,
     Division,
     MediaKind,
-    PermissionEffect,
-    RolePermission,
     User,
     UserStatus,
 )
 from app.schemas.common import PageParams
 from app.schemas.complaints import CategoryIn, CategoryUpdate, ComplaintIn, DepartmentIn, DepartmentUpdate, TransitionIn
-from app.security.principal import Principal
+from app.security.principal import Principal, role_grants
 from app.services import media
 from app.services.common import (
     audit,
@@ -192,12 +190,7 @@ def create(db: Session, p: Principal, body: ComplaintIn, *, commit: bool = True)
 
 
 def _can_receive(db: Session, user: User, division_id: uuid.UUID) -> bool:
-    rows = db.execute(select(RolePermission.division_id, RolePermission.effect).where(
-        RolePermission.role_id == user.role_id, RolePermission.permission_code == "complaints.manage",
-        or_(RolePermission.division_id.is_(None), RolePermission.division_id == division_id))).all()
-    override = next((e for d, e in rows if d is not None), None)
-    effect = override or next((e for d, e in rows if d is None), None)
-    return effect == PermissionEffect.ALLOW
+    return "complaints.manage" in role_grants(db, user.role_id, division_id)
 
 
 def transition(db: Session, p: Principal, complaint_id: uuid.UUID, body: TransitionIn) -> Complaint:

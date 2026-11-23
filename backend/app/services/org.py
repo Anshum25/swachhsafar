@@ -2,7 +2,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound
@@ -47,12 +47,39 @@ def list_divisions(db: Session, p: Principal) -> list[Division]:
 # ---- permissions -------------------------------------------------------------------------------------------
 
 
+def _home_client(db: Session, p: Principal) -> uuid.UUID | None:
+    return db.scalar(select(Division.client_id).where(Division.id == p.user.division_id))
+
+
+def _require_grant_scope(db: Session, p: Principal, client_id: uuid.UUID | None, division_id: uuid.UUID | None) -> None:
+    """Who may change rights at each scope. Global: Super Admin. One division: permissions.manage there. A
+    whole office: Super Admin, or that office's own Admin -- not a Manager, whose permissions.manage covers
+    their division, not the office's other divisions an office-wide row would also change."""
+    if client_id is not None and division_id is not None:
+        raise BusinessRuleViolation("A grant is for one office or one division, not both")
+    if division_id is not None:
+        p.require("permissions.manage", division_id)
+    elif client_id is not None:
+        if db.get(Client, client_id) is None:
+            raise NotFound("Client not found")
+        own_admin = (p.role == RoleId.ADMIN and _home_client(db, p) == client_id
+                     and p.has("permissions.manage", p.user.division_id))
+        if not (p.is_super_admin or own_admin):
+            raise Forbidden("Only Super Admin or this office's Admin can change its role rights",
+                            code="permission_denied")
+    elif not p.is_super_admin:
+        raise Forbidden("Only Super Admin can change global grants", code="permission_denied")
+
+
+def _scope_filter(client_id: uuid.UUID | None, division_id: uuid.UUID | None):
+    return and_(
+        RolePermission.client_id.is_(None) if client_id is None else RolePermission.client_id == client_id,
+        RolePermission.division_id.is_(None) if division_id is None else RolePermission.division_id == division_id,
+    )
+
+
 def upsert_grant(db: Session, p: Principal, body: GrantIn) -> RolePermission:
-    if body.division_id is None:
-        if not p.is_super_admin:
-            raise Forbidden("Only Super Admin can change global grants", code="permission_denied")
-    else:
-        p.require("permissions.manage", body.division_id)
+    _require_grant_scope(db, p, body.client_id, body.division_id)
     if body.role_id == RoleId.SUPER_ADMIN:
         raise BusinessRuleViolation("Super Admin grants are fixed")
     if db.get(Permission, body.permission_code) is None:
@@ -60,7 +87,7 @@ def upsert_grant(db: Session, p: Principal, body: GrantIn) -> RolePermission:
     row = db.scalar(select(RolePermission).where(
         RolePermission.role_id == body.role_id,
         RolePermission.permission_code == body.permission_code,
-        RolePermission.division_id.is_(None) if body.division_id is None else RolePermission.division_id == body.division_id,
+        _scope_filter(body.client_id, body.division_id),
     ))
     if row is None:
         row = RolePermission(**body.model_dump())
@@ -75,26 +102,24 @@ def upsert_grant(db: Session, p: Principal, body: GrantIn) -> RolePermission:
 
 def delete_grant(db: Session, p: Principal, grant_id: uuid.UUID) -> None:
     row = get_or_404(db, RolePermission, grant_id, "Grant")
-    if row.division_id is None:
-        if not p.is_super_admin:
-            raise Forbidden("Only Super Admin can change global grants", code="permission_denied")
-    else:
-        p.require("permissions.manage", row.division_id)
+    _require_grant_scope(db, p, row.client_id, row.division_id)
     audit(db, actor_id=p.id, action="permission.revoke_override", entity=row, division_id=row.division_id,
           changes={"role_id": row.role_id, "permission_code": row.permission_code, "effect": row.effect})
     db.delete(row)
     db.commit()
 
 
-def list_grants(db: Session, p: Principal, division_id: uuid.UUID | None) -> list[RolePermission]:
-    stmt = select(RolePermission).order_by(RolePermission.role_id, RolePermission.permission_code)
-    if division_id is None:
-        stmt = stmt.where(RolePermission.division_id.is_(None))
-    else:
-        if not p.can_access_division(division_id):
-            raise Forbidden("Outside your authorized divisions", code="division_forbidden")
-        stmt = stmt.where(RolePermission.division_id == division_id)
-    return list(db.scalars(stmt))
+def list_grants(db: Session, p: Principal, division_id: uuid.UUID | None,
+                client_id: uuid.UUID | None = None) -> list[RolePermission]:
+    """The rows of one scope: global (neither given), one office (client_id) or one division (division_id)."""
+    if client_id is not None and division_id is not None:
+        raise BusinessRuleViolation("Ask for one office or one division, not both")
+    if division_id is not None and not p.can_access_division(division_id):
+        raise Forbidden("Outside your authorized divisions", code="division_forbidden")
+    if client_id is not None and not p.is_super_admin and _home_client(db, p) != client_id:
+        raise Forbidden("Outside your office", code="client_forbidden")
+    stmt = select(RolePermission).where(_scope_filter(client_id, division_id))
+    return list(db.scalars(stmt.order_by(RolePermission.role_id, RolePermission.permission_code)))
 
 
 # ---- users -------------------------------------------------------------------------------------------------

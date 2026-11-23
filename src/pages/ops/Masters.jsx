@@ -154,7 +154,8 @@ export default function Masters({ parts = [] }) {
       {section === 'users' && (userId ? <UserProfile key={userId} userId={userId} division={division} /> : <Users division={division} />)}
       {section === 'divisions' && <Divisions />}
       {section === 'clients' && <Clients />}
-      {section === 'roles' && <RolePermissions divisionId={division.divisionId} divisionName={division.current?.name} />}
+      {section === 'roles' && <RolePermissions divisionId={division.divisionId} divisionName={division.current?.name}
+        clientId={division.current?.client_id} clientName={division.client?.name} />}
       {section === 'questions' && <QuestionBanks divisionId={division.divisionId} />}
       {section === 'categories' && <Categories divisionId={division.divisionId} />}
       {section === 'departments' && <Departments divisionId={division.divisionId} />}

@@ -12,6 +12,29 @@ from app.security.catalog import ALL_MODULES, MANAGEABLE_ROLES, PERMISSION_MODUL
 from app.timeutil import today_ist
 
 
+def role_grants(db: Session, role_id: int, division_id: uuid.UUID) -> set[str]:
+    """The permissions a role holds in a division by its grants alone (no module gating): the global grant,
+    overridden by the division's office, overridden by the division itself. The one place this order lives."""
+    from app.models import Division
+
+    client_id = db.scalar(select(Division.client_id).where(Division.id == division_id))
+    rows = db.execute(
+        select(RolePermission.permission_code, RolePermission.client_id, RolePermission.division_id,
+               RolePermission.effect).where(
+            RolePermission.role_id == role_id,
+            (RolePermission.client_id.is_(None) & RolePermission.division_id.is_(None))
+            | (RolePermission.client_id == client_id)
+            | (RolePermission.division_id == division_id),
+        )
+    ).all()
+    granted = {code for code, cl, div, eff in rows if cl is None and div is None and eff == PermissionEffect.ALLOW}
+    for specific in (lambda cl, div: cl is not None, lambda cl, div: div is not None):  # office, then division
+        for code, cl, div, eff in rows:
+            if specific(cl, div):
+                (granted.add if eff == PermissionEffect.ALLOW else granted.discard)(code)
+    return granted
+
+
 @dataclass
 class Principal:
     """The authenticated caller. Role and divisions come from PostgreSQL, never from the request."""
@@ -69,16 +92,7 @@ class Principal:
 
     def permissions_in(self, division_id: uuid.UUID) -> frozenset[str]:
         if division_id not in self._perm_cache:
-            rows = self._db.execute(
-                select(RolePermission.permission_code, RolePermission.division_id, RolePermission.effect).where(
-                    RolePermission.role_id == self.user.role_id,
-                    (RolePermission.division_id.is_(None)) | (RolePermission.division_id == division_id),
-                )
-            ).all()
-            granted = {code for code, div, eff in rows if div is None and eff == PermissionEffect.ALLOW}
-            for code, div, eff in rows:
-                if div is not None:
-                    (granted.add if eff == PermissionEffect.ALLOW else granted.discard)(code)
+            granted = role_grants(self._db, self.user.role_id, division_id)
             # The client's subscription caps the role: what the office has not bought, nobody in it holds.
             # Doing it here means /auth/me, every list endpoint and every require() agree without each
             # having to remember the check.

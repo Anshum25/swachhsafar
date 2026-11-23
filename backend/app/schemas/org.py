@@ -46,6 +46,9 @@ class PermissionOut(ReadModel):
 class GrantIn(StrictModel):
     role_id: int = Field(ge=1, le=6)
     permission_code: str
+    # At most one of the two: neither = the global default, client_id = the whole office, division_id = one
+    # division (services/org.py refuses both).
+    client_id: uuid.UUID | None = None
     division_id: uuid.UUID | None = None
     effect: PermissionEffect = PermissionEffect.ALLOW
 
@@ -54,6 +57,7 @@ class GrantOut(ReadModel):
     id: uuid.UUID
     role_id: int
     permission_code: str
+    client_id: uuid.UUID | None
     division_id: uuid.UUID | None
     effect: PermissionEffect
 

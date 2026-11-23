@@ -79,7 +79,8 @@ class Permission(Base):
 
 
 class RolePermission(UUIDPk, Timestamps, Base):
-    """Global grants have division_id NULL; a division row overrides the global one for that division."""
+    """A grant's scope is one of: global (client_id and division_id NULL), one office (client_id set) or one
+    division (division_id set). The most specific wins: division, then office, then global (migration 0014)."""
 
     __tablename__ = "role_permissions"
     __table_args__ = (
@@ -87,14 +88,17 @@ class RolePermission(UUIDPk, Timestamps, Base):
             "uq_role_permissions_scope",
             "role_id",
             "permission_code",
+            "client_id",
             "division_id",
             unique=True,
             postgresql_nulls_not_distinct=True,
         ),
+        CheckConstraint("client_id IS NULL OR division_id IS NULL", name="one_scope"),
     )
 
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"), nullable=False)
     permission_code: Mapped[str] = mapped_column(ForeignKey("permissions.code"), nullable=False)
+    client_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
     division_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("divisions.id"), nullable=True)
     effect: Mapped[PermissionEffect] = mapped_column(
         Enum(PermissionEffect, native_enum=False, length=8, values_callable=lambda e: [m.value for m in e]),
