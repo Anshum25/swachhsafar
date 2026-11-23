@@ -55,8 +55,14 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 // Eye aspect ratio (Soukupová & Čech 2016) from the six 68-point landmarks of one eye: low when closed.
 const ear = (p) => (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3]));
 
-// Faces in one video frame with the measures the liveness challenge needs: { count, box, ear, yaw, size }.
-// yaw: nose tip offset from the eyes' midpoint, in inter-eye distances (0 = facing the camera).
+// The landmarks the 3-D depth check reads (see depthCheck.js): brow ends, eye corners and mouth corners as
+// the face's frame of reference, and the nose, which stands well out of that frame on a real face.
+export const DEPTH_LANDMARKS = [17, 26, 36, 39, 42, 45, 48, 54, 27, 29, 30, 33];
+
+// Faces in one video frame with the measures the liveness challenge needs: { count, box, ear, yaw, pitch,
+// size, points }. yaw: nose tip offset from the eyes' midpoint, in inter-eye distances (0 = facing the
+// camera; positive = the person turned to their own left). pitch: the same, vertically (smaller = looking
+// up). points: the DEPTH_LANDMARKS, as [x, y] pixel pairs.
 export async function analyseFrame(video) {
   const faceapi = await loadFaceEngine();
   // 320 rather than 224: the eye corners this reads are what a blink is measured from, and a closed eye
@@ -76,7 +82,9 @@ export async function analyseFrame(video) {
     ear: (ear(leftEye) + ear(rightEye)) / 2,
     eyes: [eyeBox(leftEye), eyeBox(rightEye)],
     yaw: (nose.x - mid.x) / span,
+    pitch: (nose.y - mid.y) / span,
     size: box.width / (video.videoWidth || 1),
+    points: DEPTH_LANDMARKS.map((i) => [pts[i].x, pts[i].y]),
   };
 }
 

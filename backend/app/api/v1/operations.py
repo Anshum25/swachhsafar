@@ -19,7 +19,8 @@ from app.schemas.operations import (
     StaffAttendanceStatus,
 )
 from app.security.principal import Principal, get_principal
-from app.services import attendance, inspections
+from app.schemas.liveness import LivenessChallengeOut, LivenessChallengeRequest
+from app.services import attendance, inspections, liveness
 
 attendance_router = APIRouter(prefix="/attendance", tags=["attendance"])
 inspections_router = APIRouter(prefix="/inspections", tags=["inspections"])
@@ -36,6 +37,14 @@ def create_attendance(body: AttendanceIn, response: Response, db: Session = Depe
     record, replayed = attendance.create(db, p, body)
     _created(response, replayed)
     return record
+
+
+@attendance_router.post("/liveness/challenges", response_model=list[LivenessChallengeOut])
+def liveness_challenges(body: LivenessChallengeRequest, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Single-use liveness challenges for face attendance, for this user on this device. The device keeps
+    them so that it can still capture offline; each is accepted once, and only before it expires."""
+    p.require_any_division("attendance.submit")
+    return liveness.issue(db, p, body.count)
 
 
 @attendance_router.post("/group", response_model=list[GroupResult])

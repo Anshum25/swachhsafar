@@ -1,363 +1,301 @@
-// Live face capture for attendance. Runs fully on the device (works offline); video frames are never
-// stored or sent, and only the still it ends on is kept.
+// Live face capture for attendance. Runs on the device (works offline); video frames are never stored or
+// sent, only the still it ends on and a small proof of what was verified.
 //
-// Two modes, and they prove different things:
+// A photo of a face is never accepted. The camera is the only input -- there is no gallery or file picker
+// here -- and before the still is taken the person must:
+//   1. be the only face in the frame, close enough to read;
+//   2. perform a server-issued random challenge (always a head turn and a blink, plus one more, in an order
+//      the app did not know in advance), seen happening in live frames (liveness.createActiveChallenge);
+//   3. show real 3-D depth across the head movement -- a printed photo or a phone/monitor screen is flat
+//      (depthCheck.js);
+//   4. remain the same person from the start of the challenge to the end.
+// The attempt also fails if the camera is lost, the app goes to the background mid-check, or the camera
+// identifies itself as a virtual one. The server then checks the challenge again (app/services/liveness.py).
 //
-// - `presence` (the default): the camera opens itself, and the still is taken once a face has been held
-//   in the oval AND has blinked. Nothing is asked of the person up front -- people blink every few
-//   seconds without being told to, so most of the time this just happens while they hold the phone up,
-//   and the prompt only appears if it does not. A photograph of a face, on paper or on another phone's
-//   screen, never blinks, so it cannot be used to mark someone present.
-// - `challenge`: a head turn as well as the blink, which also defeats a video of the person played to
-//   the camera from a distance where the turn is not in the clip. A division turns it on with
-//   `face_liveness_required`.
-//
-// See docs/SECURITY.md: neither is a certified presentation-attack detector.
+// See docs/SECURITY.md for what this does not defeat. It is not a certified presentation-attack detector.
 import { useEffect, useRef, useState } from 'react';
 import { analyseFrame, describeFrame, eyeOpenness, loadFaceEngine } from './faceEngine.js';
-import { createLiveness } from './liveness.js';
+import { ACTION_PROMPTS, createActiveChallenge } from './liveness.js';
+import { depthVerdict } from './depthCheck.js';
 import { distance } from './faceMatch.js';
-import { CameraIcon, CheckIcon, FlipCameraIcon, RefreshIcon, Spinner } from '../components/Icons.jsx';
+import { acquireTicket } from './livenessTickets.js';
+import { useSession } from '../app/session.jsx';
+import { AlertIcon, CameraIcon, CheckIcon, FlipCameraIcon, RefreshIcon, Spinner } from '../components/Icons.jsx';
 
 const SAME_PERSON = 0.5; // descriptor distance between the first and last frame
+const EYE_SAMPLE_MS = 45; // the eyes are read from pixels between detections: a blink is over in ~200 ms
+const MAX_NEUTRAL_FRAMES = 8;
+const MAX_MOVED_FRAMES = 12;
+// Names a virtual camera driver gives itself. Detectable only when the driver is honest about its name.
+export const VIRTUAL_CAMERA = /virtual|obs|manycam|snap camera|xsplit|droidcam|iriun|epoccam|\bndi\b|camtwist|splitcam|youcam|e2esoft|vcam|fake/i;
+
+// What the person is told, by failure kind (spec: camera / spoof / liveness / unavailable).
+const MESSAGES = {
+  camera: 'Camera access unavailable.',
+  spoof: 'Spoofing attempt detected.',
+  liveness: 'Liveness verification failed.',
+  unavailable: 'Live verification is not available on this device right now.',
+};
 const CAMERA_ERRORS = {
   NotAllowedError: 'Camera permission is off for this app. Allow the camera and try again.',
   NotFoundError: 'No camera found on this device.',
   NotReadableError: 'The camera is in use by another app. Close it and try again.',
+  OverconstrainedError: 'The camera could not be opened with the required settings.',
+};
+const REASONS = {
+  timeout: (pending) => (pending ? `The requested action was not seen in time (${ACTION_PROMPTS[pending]?.toLowerCase() ?? pending}).` : 'The live check timed out.'),
+  multiple_faces: () => 'More than one face was in the frame. Only the employee should be in view.',
+  wrong_action: () => 'The movement did not follow the instructions.',
+  face_changed: () => 'The face changed during the check. Keep the same person in view throughout.',
+  flat: () => 'No real 3-D face was seen. A photo or a screen cannot be used for attendance.',
+  virtual_camera: () => 'A virtual camera was detected. Use the phone’s own camera.',
+  disconnected: () => 'The camera stopped during verification.',
+  interrupted: () => 'The app left the screen during verification. Stay on this screen until it finishes.',
+  no_ticket: () => 'Connect to the internet once to download live-verification challenges, then try again.',
+  engine: () => 'Face verification could not start on this device.',
 };
 
-// How a face has to sit before `presence` mode takes the still: one face, filling enough of the frame,
-// roughly facing the camera, for several frames in a row so it is not caught mid-turn or blurred.
-// Kept fast and responsive (600ms) so users do not experience fatigue or jitter resets.
-const PRESENCE_HOLD_MS = 600;
-const PRESENCE_FRAMES = 2;   // verified on at least two consecutive detections
-const PRESENCE_YAW = 0.35;
-// How long to wait for spontaneous blink before prompting.
-const PRESENCE_ASK_AFTER_MS = 1000;
-// The eyes are read from the pixels on their own timer, much faster than the detector runs. A blink
-// lasts about two tenths of a second: the detector produces frames further apart than that on a phone,
-// so a blink watched for only when the detector comes back is a blink that is usually missed entirely.
-const EYE_SAMPLE_MS = 45;
-
-export default function LiveFaceCapture({ onDone, name, mode = 'presence' }) {
+export default function LiveFaceCapture({ onDone, name, autoStart = true }) {
+  const { api, user } = useSession() ?? {};
   const video = useRef(null);
-  // Which camera. The front one is right for a person marking their own attendance; a supervisor
-  // marking someone else's is holding the phone the other way round and needs the back one.
-  const [facing, setFacing] = useState('user');
-  // Whether the app currently reads the eyes as shut. Shown only once it has had to ask for a blink.
-  const [eyesShut, setEyesShut] = useState(false);
-  // Each start gets a number. A loop from an earlier camera is in the middle of awaiting a frame when
-  // the camera is switched, and would otherwise come back and carry on beside the new one.
-  const runId = useRef(0);
-  const [phase, setPhase] = useState('idle'); // idle | starting | running | passed | failed
-  const [prompt, setPrompt] = useState('');
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState(null);
   const stream = useRef(null);
-  const stopped = useRef(false);
+  const runId = useRef(0);
+  const [facing, setFacing] = useState('user');
+  const [phase, setPhase] = useState('idle'); // idle | starting | running | verifying | passed | failed
+  const [prompt, setPrompt] = useState('');
+  const [progress, setProgress] = useState({ step: 0, total: 3 });
+  const [failure, setFailure] = useState(null); // { kind, detail }
+  const [eyesShut, setEyesShut] = useState(false);
 
   const stop = () => {
-    stopped.current = true;
     runId.current += 1;
-    stream.current?.getTracks().forEach((t) => t.stop());
+    stream.current?.getTracks().forEach((t) => { t.onended = null; t.stop(); });
     stream.current = null;
   };
   useEffect(() => stop, []);
+  useEffect(() => {
+    if (autoStart) start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function fail(run, kind, reason, pending) {
+    if (run !== runId.current) return;
+    stop();
+    setPhase('failed');
+    setFailure({ kind, detail: (REASONS[reason] ?? (() => null))(pending) });
+    onDone?.({ liveness: kind === 'camera' || kind === 'unavailable' ? 'unavailable' : 'failed', photo: null, proof: null, reason });
+  }
+
   function flip() {
     const next = facing === 'user' ? 'environment' : 'user';
     setFacing(next);
     start(next);
   }
 
-  // Presence mode starts itself. The person opened this dialog to mark attendance; making them tap
-  // "start the camera" first is a step that exists only because the challenge needed explaining.
-  useEffect(() => {
-    if (mode === 'presence') start();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
-
-  // Waits for a face to be held in the oval, then takes the still. No challenge, no shutter: by the time
-  // someone has read a prompt it has usually already happened.
-  function presenceLoop(run) {
-    const owns = () => !stopped.current && video.current && run === runId.current;
-    // Dual blink verification: pixel-level variance sampler (high speed 45ms) AND
-    // facial landmark eye aspect ratio (robust against lighting / glasses).
-    const blinkCheck = createLiveness({
-      challenges: ['blink'],
-      options: {
-        timeoutMs: 30_000,
-        turnYaw: 0.35,
-        frontYaw: 0.30,
-        blinkDip: 0.13,
-        jitterDips: 1.8,
-        blinkRecover: 0.65,
-        baselineFrames: 2,
-      },
-    });
-    const landmarkBlinkCheck = createLiveness({
-      challenges: ['blink'],
-      options: {
-        timeoutMs: 30_000,
-        turnYaw: 0.35,
-        frontYaw: 0.30,
-        blinkDip: 0.16,
-        jitterDips: 1.8,
-        blinkRecover: 0.65,
-        baselineFrames: 2,
-      },
-    });
-    let blinked = false;
-    let eyes = null;        // where the eyes are, from the most recent detection
-    let placed = null;      // the most recent detection's position measurements
-    let placedOk = false;   // ...and whether it was in the right place
-    let steady = 0;
-    let heldSince = null;
-    let openMax = 0;
-    const startedAt = Date.now();
-    const deadline = startedAt + 25_000;
-
-    // Fast: read the eyes and watch for the blink. No model runs here, so it keeps its own pace.
-    const sample = () => {
-      if (!owns() || blinked) return;
-      if (eyes && placedOk) {
-        const openness = eyeOpenness(video.current, eyes);
-        if (openness != null) {
-          const r = blinkCheck.feed({ count: 1, size: placed.size, yaw: placed.yaw, ear: openness });
-          if (r.status === 'passed') blinked = true;
-          // Display only: feedback to show app sees the eye closure
-          openMax = Math.max(openness, openMax * 0.992);
-          setEyesShut(openness < openMax * 0.84);
-        }
-      }
-      setTimeout(sample, EYE_SAMPLE_MS);
-    };
-
-    // Slow: find the face, check it is where it needs to be, and take the still once it has been held
-    // there and a blink has been seen.
-    const look = async () => {
-      if (!owns()) return;
-      const m = await analyseFrame(video.current).catch(() => ({ count: 0 }));
-      if (!owns()) return;
-      const t = Date.now();
-      placed = m;
-      if (m.count === 1 && m.eyes) eyes = m.eyes;
-
-      if (t > deadline) {
-        stop();
-        setPhase('failed');
-        setError(blinked
-          ? 'The face moved too much to take a photo. Hold the phone still with the face inside the oval.'
-          : 'No blink was seen, so this could not be confirmed as a live person. Look at the camera and blink. A photo of a face cannot be used here.');
-        onDone({ liveness: 'failed', photo: null, reason: blinked ? 'no_face' : 'no_blink' });
-        return;
-      }
-
-      // Anything wrong starts the hold again: the point of waiting is that the face was still for the
-      // whole of it, not that it passed through the right position once.
-      let wrong = null;
-      if (m.count > 1) wrong = 'Only one person should be in view';
-      else if (m.count === 0) wrong = 'Fit the face inside the oval';
-      else if (m.size < 0.22) wrong = 'Move a little closer';
-      else if (Math.abs(m.yaw) > PRESENCE_YAW) wrong = 'Look at the camera';
-
-      placedOk = !wrong;
-      if (wrong) {
-        steady = 0;
-        heldSince = null;
-        setPrompt(wrong);
-        setProgress(0);
-      } else {
-        steady += 1;
-        heldSince ??= t;
-        const heldDuration = t - heldSince;
-        setProgress(Math.min(1, heldDuration / PRESENCE_HOLD_MS));
-
-        // Landmark-based blink backup check
-        if (m.count === 1 && m.ear != null && !blinked) {
-          const lr = landmarkBlinkCheck.feed(m);
-          if (lr.status === 'passed') blinked = true;
-        }
-
-        const held = heldDuration >= PRESENCE_HOLD_MS && steady >= PRESENCE_FRAMES;
-        if (held && !blinked) {
-          setPrompt('Blink');
-        } else if (blinked) {
-          setPrompt('Hold still');
-        } else if (t - startedAt >= PRESENCE_ASK_AFTER_MS) {
-          setPrompt('Blink');
-        } else {
-          setPrompt('Hold still');
-        }
-      }
-
-      const held = heldSince != null && t - heldSince >= PRESENCE_HOLD_MS && steady >= PRESENCE_FRAMES;
-      if (!held || !blinked) { setTimeout(look, 0); return; }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = video.current.videoWidth || 640;
-      canvas.height = video.current.videoHeight || 480;
-      canvas.getContext('2d').drawImage(video.current, 0, 0);
-      stop();
-      setPhase('passed');
-      // A blink was seen, so this says so: the record carries what was actually proved, no more and
-      // no less.
-      onDone({ liveness: 'passed', photo: canvas.toDataURL('image/jpeg', 0.85), reason: null });
-    };
-
-    look();
-    sample();
-  }
-
   async function start(useCamera = facing) {
-    setError(null);
+    stop();
+    const run = (runId.current += 1);
+    const owns = () => run === runId.current && video.current;
+    setFailure(null);
     setPhase('starting');
-    setProgress(0);
-    setPrompt('');
-    stop();                       // whatever was running stops owning the run
-    stopped.current = false;
-    const myRun = (runId.current += 1);
+    setPrompt('Initializing camera…');
+    setProgress({ step: 0, total: 3 });
+
+    // 1. Live camera only. A camera that cannot open stops here: there is no other way in.
     try {
-      stream.current = await navigator.mediaDevices.getUserMedia({
+      if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no camera API'), { name: 'NotFoundError' });
+      const s = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: useCamera, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-      if (myRun !== runId.current) { stream.current?.getTracks().forEach((t) => t.stop()); return; }
-      video.current.srcObject = stream.current;
+      if (run !== runId.current) { s.getTracks().forEach((t) => t.stop()); return; }
+      stream.current = s;
+      video.current.srcObject = s;
       await video.current.play();
-      await loadFaceEngine();
     } catch (e) {
+      if (run !== runId.current) return;
       stop();
       setPhase('failed');
-      setError(CAMERA_ERRORS[e.name] ?? e.message ?? 'The camera could not start.');
-      onDone({ liveness: 'unavailable', photo: null, reason: 'camera' });
+      setFailure({ kind: 'camera', detail: CAMERA_ERRORS[e.name] ?? null });
+      onDone?.({ liveness: 'unavailable', photo: null, proof: null, reason: 'camera' });
       return;
     }
-    setPhase('running');
-    if (mode === 'presence') return presenceLoop(myRun);
-    const run = createLiveness();
-    let first = null;
-    let placed = null;   // the last detection, for the fast eye sampler to borrow position from
+    const track = stream.current.getVideoTracks()[0];
+    const cameraLabel = (track?.label ?? '').slice(0, 120) || null;
+    if (cameraLabel && VIRTUAL_CAMERA.test(cameraLabel)) { fail(run, 'spoof', 'virtual_camera'); return; }
+    if (track) track.onended = () => fail(run, 'camera', 'disconnected');
 
-    // The eyes on their own timer here too. feed() is a state machine over measurements, so calling it
-    // more often is simply a finer-grained view of the same thing -- and the blink is the part that
-    // needs the finer view, because it is over in a couple of tenths of a second.
+    try {
+      await loadFaceEngine();
+    } catch {
+      fail(run, 'unavailable', 'engine');
+      return;
+    }
+    if (!owns()) return;
+
+    // 2. A server-issued challenge, used once.
+    const ticket = await acquireTicket({ post: api?.post, userId: user?.id, online: typeof navigator === 'undefined' || navigator.onLine });
+    if (!owns()) return;
+    if (!ticket) { fail(run, 'unavailable', 'no_ticket'); return; }
+
+    const challenge = createActiveChallenge({ actions: ticket.actions });
+    setProgress({ step: 0, total: ticket.actions.length });
+    setPhase('running');
+    setPrompt('Position your face inside the frame');
+
+    // Leaving the screen mid-check (to open the gallery, another app, a recording) ends the attempt.
+    const onHidden = () => { if (document.visibilityState === 'hidden') fail(run, 'liveness', 'interrupted'); };
+    document.addEventListener('visibilitychange', onHidden);
+    const cleanup = () => document.removeEventListener('visibilitychange', onHidden);
+
+    const neutralPts = [];
+    const movedPts = [];
+    let first = null;
+    let placed = null;
+    let openMax = 0;
+    let settled = false;
+
+    const handle = (r) => {
+      if (r.status === 'failed') {
+        cleanup();
+        fail(run, 'liveness', r.reason, r.pending);
+        return true;
+      }
+      return r.status === 'passed';
+    };
+
+    // Fast: the eyes, from pixels, for the blink.
     const sampleEyes = () => {
-      if (stopped.current || !video.current || myRun !== runId.current) return;
+      if (!owns() || settled) return;
       if (placed?.count === 1 && placed.eyes) {
         const openness = eyeOpenness(video.current, placed.eyes);
-        if (openness != null) run.feed({ count: 1, size: placed.size, yaw: placed.yaw, ear: openness });
+        if (openness != null) {
+          openMax = Math.max(openness, openMax * 0.992);
+          setEyesShut(openness < openMax * 0.84);
+          const r = challenge.feed({ ...placed, ear: openness });
+          if (r.status === 'failed') { settled = true; handle(r); return; }
+        }
       }
       setTimeout(sampleEyes, EYE_SAMPLE_MS);
     };
-    sampleEyes();
+
+    // Slow: find the face, follow the challenge, collect landmarks for the depth check.
     const loop = async () => {
-      if (stopped.current || !video.current || myRun !== runId.current) return;
+      if (!owns() || settled) return;
       const m = await analyseFrame(video.current).catch(() => ({ count: 0 }));
-      if (stopped.current || !video.current || myRun !== runId.current) return;
-      if (!first && m.count === 1 && Math.abs(m.yaw) < 0.09) first = await describeFrame(video.current).catch(() => null);
+      if (!owns() || settled) return;
       placed = m;
-      // The same eye measure the sampler uses, so one metric runs through the whole challenge.
       const openness = m.count === 1 && m.eyes ? eyeOpenness(video.current, m.eyes) : null;
-      const r = run.feed(openness == null ? m : { ...m, ear: openness });
-      setPrompt(r.prompt ?? '');
-      if (r.done != null) setProgress(r.done);
-      // As fast as the detector will go. Detection itself paces this loop; the extra 90ms wait that
-      // used to be here could drop a whole blink between two measurements.
-      if (r.status === 'running') { setTimeout(loop, 0); return; }
-      if (r.status === 'failed') {
-        stop();
-        setPhase('failed');
-        setError(r.reason === 'multiple_faces' ? 'More than one face was in view.'
-          : r.pending === 'blink' ? 'No blink was seen. Look straight at the camera, hold still, then close both eyes for a moment and open them.'
-            : r.pending === 'turn' ? 'No head turn was seen. Turn your head to one side, then back to the camera.'
-              : 'The live check timed out.');
-        onDone({ liveness: 'failed', photo: null, reason: r.reason });
-        return;
+      const r = challenge.feed(openness == null ? m : { ...m, ear: openness });
+      if (m.count === 1 && m.points) {
+        // The neutral reference comes only from the calibration frames: steady, facing the camera.
+        if (r.calibrating) {
+          neutralPts.push(m.points);
+          if (neutralPts.length > MAX_NEUTRAL_FRAMES) neutralPts.shift();
+        }
+        if (r.extreme && movedPts.length < MAX_MOVED_FRAMES) movedPts.push(m.points);
+        if (!first && r.calibrating) {
+          first = await describeFrame(video.current).catch(() => null);
+          if (!owns() || settled) return;
+        }
       }
-      // Passed: still photo of the final frame; the same face as at the start.
-      if (!video.current) return;
+      setPrompt(r.prompt ?? '');
+      setProgress({ step: r.step, total: r.total });
+      if (r.status === 'failed') { settled = true; handle(r); return; }
+      if (r.status !== 'passed') { setTimeout(loop, 0); return; }
+
+      // 3. Passed the actions: take the still, then the checks that need it.
+      settled = true;
+      setPhase('verifying');
+      setPrompt('Verifying live person…');
       const canvas = document.createElement('canvas');
       canvas.width = video.current.videoWidth || 640;
       canvas.height = video.current.videoHeight || 480;
       canvas.getContext('2d').drawImage(video.current, 0, 0);
       const last = await describeFrame(canvas).catch(() => null);
+      cleanup();
+      if (run !== runId.current) return;
+      const depth = depthVerdict(neutralPts, movedPts);
+      const drift = first && last ? distance(first, last) : Infinity;
+      if (!depth.live) { fail(run, 'spoof', 'flat'); return; }
+      if (!(drift <= SAME_PERSON)) { fail(run, 'liveness', 'face_changed'); return; }
       stop();
-      if (!first || !last || distance(first, last) > SAME_PERSON) {
-        setPhase('failed');
-        setError('The face changed during the check. Keep the same person in view throughout.');
-        onDone({ liveness: 'failed', photo: null, reason: 'face_changed' });
-        return;
-      }
       setPhase('passed');
-      onDone({ liveness: 'passed', photo: canvas.toDataURL('image/jpeg', 0.85), reason: null });
+      const iso = (ms) => new Date(ms).toISOString();
+      onDone?.({
+        liveness: 'passed',
+        photo: canvas.toDataURL('image/jpeg', 0.85),
+        reason: null,
+        proof: {
+          challenge_id: ticket.id, signature: ticket.signature,
+          steps: r.steps.map((s) => ({ action: s.action, at: iso(s.at) })),
+          started_at: iso(r.startedAt), completed_at: iso(r.completedAt),
+          depth_score: depth.score, identity_drift: Math.round(drift * 1000) / 1000,
+          frames: r.frames, camera_label: cameraLabel,
+        },
+      });
     };
+    sampleEyes();
     loop();
   }
 
+  const { step, total } = progress;
+  const actionPrompt = phase === 'running' && Object.values(ACTION_PROMPTS).includes(prompt);
   return (
     <div className="space-y-2" data-testid="live-face">
       <div className={`relative mx-auto aspect-[3/4] w-full max-w-[15rem] overflow-hidden rounded-2xl bg-brand-950 ${phase === 'idle' ? 'hidden' : ''}`}>
-        {/* Mirrored for the front camera only: that is how people expect to see themselves, and a
-            mirrored view of what the back camera sees just reads as broken. */}
+        {/* Mirrored for the front camera only, the way people expect to see themselves. */}
         <video ref={video} playsInline muted className={`h-full w-full object-cover ${facing === 'user' ? '-scale-x-100' : ''}`} />
-        {phase !== 'idle' && (
+        {(phase === 'running' || phase === 'starting') && (
           <button type="button" onClick={flip} data-testid="flip-camera"
             aria-label={facing === 'user' ? 'Use the back camera' : 'Use the front camera'}
             className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur transition active:scale-95">
             <FlipCameraIcon className="h-5 w-5" />
           </button>
         )}
-        <span className="pointer-events-none absolute inset-[12%] rounded-[50%] border-2 border-dashed border-white/80" />
-        {phase === 'running' && mode === 'presence' && (
-          <span aria-hidden="true"
-            className={`pointer-events-none absolute inset-[12%] rounded-[50%] border-4 transition-colors duration-200 ${progress > 0 ? 'border-success' : 'border-transparent'}`}
-            style={{ clipPath: `inset(${100 - Math.round(progress * 100)}% 0 0 0)` }} />
-        )}
-        {phase === 'running' && (
-          <p className="absolute inset-x-2 bottom-2 flex items-center justify-center gap-2 rounded-lg bg-black/60 px-2 py-1.5 text-center text-sm font-semibold text-white" aria-live="assertive">
-            {prompt === 'Blink' && (
+        <span className={`pointer-events-none absolute inset-[12%] rounded-[50%] border-2 border-dashed ${actionPrompt ? 'border-success' : 'border-white/80'}`} />
+        {(phase === 'running' || phase === 'verifying' || phase === 'starting') && (
+          <p className="absolute inset-x-2 bottom-2 flex items-center justify-center gap-2 rounded-lg bg-black/65 px-2 py-1.5 text-center text-sm font-semibold text-white"
+            aria-live="assertive" data-testid="live-prompt">
+            {prompt === ACTION_PROMPTS.blink && (
               <span aria-hidden="true" data-testid="eye-state"
                 className={`h-2.5 w-2.5 shrink-0 rounded-full transition-colors duration-100 ${eyesShut ? 'bg-amber-300' : 'bg-success'}`} />
             )}
+            {phase !== 'running' && <Spinner className="h-4 w-4" />}
             {prompt}
           </p>
         )}
-        {phase === 'starting' && <span className="absolute inset-0 grid place-items-center text-white"><Spinner className="h-6 w-6" /></span>}
       </div>
-      {phase === 'running' && mode !== 'presence' && (
-        <div className="flex justify-center gap-1.5" aria-label={`Step ${progress + 1} of 2`}>
-          {[0, 1].map((i) => <span key={i} className={`h-1.5 w-8 rounded-full ${i < progress ? 'bg-success' : 'bg-line'}`} />)}
+      {(phase === 'running' || phase === 'verifying') && (
+        <div className="flex justify-center gap-1.5" role="progressbar" aria-label={`Step ${Math.min(step + 1, total)} of ${total}`}
+          aria-valuenow={step} aria-valuemax={total}>
+          {Array.from({ length: total }, (_, i) => <span key={i} className={`h-1.5 w-8 rounded-full ${i < step ? 'bg-success' : 'bg-line'}`} />)}
         </div>
       )}
-      {phase === 'running' && mode === 'presence' && (
-        <div className="mx-auto h-1.5 w-full max-w-[15rem] overflow-hidden rounded-full bg-line"
-          role="progressbar" aria-label="Hold the face still" aria-valuenow={Math.round(progress * 100)}>
-          <span className="block h-full rounded-full bg-success transition-[width] duration-150"
-            style={{ width: `${Math.round(progress * 100)}%` }} />
-        </div>
-      )}
-      {phase === 'starting' && mode === 'presence' && (
-        <p className="text-center text-sm text-muted">Opening the camera…</p>
-      )}
-      {phase === 'idle' && mode !== 'presence' && (
+      {phase === 'idle' && (
         <button type="button" onClick={() => start()}
           className="mx-auto flex aspect-[1.2] w-full max-w-[11.5rem] flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-400 bg-brand-100/70 text-brand-700 transition hover:bg-brand-100 active:scale-[0.98]">
           <CameraIcon className="mb-1 h-9 w-9" />
           <span className="text-[15px] font-bold">Start live check</span>
-          <span className="px-2 text-center text-xs font-medium text-muted">{name}: blink and turn your head</span>
+          <span className="px-2 text-center text-xs font-medium text-muted">{name}: follow the instructions on screen</span>
         </button>
       )}
       {phase === 'passed' && (
         <p className="flex items-center justify-center gap-2 text-sm font-semibold text-success">
-          <CheckIcon className="h-4 w-4" /> {mode === 'presence' ? 'Face captured' : 'Live check passed'}
+          <CheckIcon className="h-4 w-4" /> Live person verified
         </p>
       )}
-      {phase === 'failed' && (
-        <div className="text-center">
-          <p className="text-sm text-red-700" role="alert">{error}</p>
-          <div className="mt-2 flex justify-center gap-2">
+      {phase === 'failed' && failure && (
+        <div className="space-y-2 text-center" role="alert" data-testid="live-failure" data-kind={failure.kind}>
+          <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-red-700">
+            <AlertIcon className="h-4 w-4" /> {MESSAGES[failure.kind]}
+          </p>
+          {failure.detail && <p className="text-xs text-red-700">{failure.detail}</p>}
+          <div className="flex justify-center gap-2">
             <button type="button" className="btn-secondary h-9" onClick={() => start()}><RefreshIcon /> Try again</button>
-            <button type="button" className="btn-secondary h-9" onClick={flip}>
-              <FlipCameraIcon className="h-4 w-4" /> {facing === 'user' ? 'Back camera' : 'Front camera'}
-            </button>
+            {failure.kind !== 'unavailable' && (
+              <button type="button" className="btn-secondary h-9" onClick={flip}>
+                <FlipCameraIcon className="h-4 w-4" /> {facing === 'user' ? 'Back camera' : 'Front camera'}
+              </button>
+            )}
           </div>
         </div>
       )}

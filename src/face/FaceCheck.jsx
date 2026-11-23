@@ -35,7 +35,7 @@ export function FaceCheckNote({ check, name }) {
   const base = 'flex items-start gap-2 rounded-xl px-3 py-2 text-sm';
   const body = {
     waiting: [`${base} bg-brand-50 text-brand-900`, null, `Face verification is on: take a photo of ${name}'s face.`],
-    checking: [`${base} bg-brand-50 text-brand-900`, <Spinner key="s" className="mt-0.5 h-4 w-4" />, 'Checking the face…'],
+    checking: [`${base} bg-brand-50 text-brand-900`, <Spinner key="s" className="mt-0.5 h-4 w-4" />, 'Verifying employee identity…'],
     matched: [`${base} bg-emerald-50 text-emerald-800`, <CheckIcon key="c" className="mt-0.5 h-4 w-4" />, `Face matched: ${name} (${similarityPercent(check.distance)}% similar).`],
     mismatch: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />, `The face does not match ${name} (${similarityPercent(check.distance)}% similar). Retake the photo of ${name}.`],
     not_enrolled: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />, `${name} has no registered face on this device. An administrator must register it (Masters → Users → Face), then sync.`],

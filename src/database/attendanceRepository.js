@@ -117,6 +117,12 @@ export function createAttendanceRepository(db, { journeys, masters }) {
         if (p.face_distance > policy.face_match_threshold) {
           throw new LocalRuleError('face_mismatch', "The photo does not match the employee's registered face.");
         }
+        // Backend liveness.verify_and_consume: a face match never stands alone. The capture must carry the
+        // proof of a server-issued liveness challenge; the server checks it again (and consumes it) at sync.
+        const lp = p.liveness_proof;
+        if (!lp || typeof lp.challenge_id !== 'string' || typeof lp.signature !== 'string' || !Array.isArray(lp.steps) || !lp.steps.length) {
+          throw new LocalRuleError('liveness_proof_required', 'Face attendance needs a live verification performed in front of the camera.');
+        }
       }
       const done = new Set((await liveStages(journey.id, p.employee_id)).map((r) => r.stage));
       if (done.has(stage)) throw new LocalRuleError('duplicate_attendance', 'Attendance is already recorded for this stage.');
