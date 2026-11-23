@@ -31,10 +31,10 @@ describe('what each role sees, with every module subscribed', () => {
   it('a janitor gets the dashboard, journeys and attendance, and nothing else', () => {
     // `profile` and `security` are everyone's own account, reached from the menu rather than the nav.
     expect(keys('janitor', ALL_MODULES)).toEqual(
-      ['dashboard', 'journeys', 'attendance', 'jobs', 'profile', 'security'],
+      ['dashboard', 'journeys', 'attendance', 'profile', 'security'],
     );
     expect(visibleNav(can('janitor'), ALL_MODULES).map((m) => m.key))
-      .toEqual(['dashboard', 'journeys', 'attendance', 'jobs']);
+      .toEqual(['dashboard', 'journeys', 'attendance']);
   });
 
   it('a supervisor gets the field modules but no master data and no reports', () => {
@@ -156,9 +156,7 @@ describe('offline capture respects the subscription', () => {
   });
 
   it('leaves the always-on operations alone', () => {
-    for (const type of ['security.event', 'job.save']) {
-      expect(() => authorizeCapture(type, { actor: actor(PLATFORM_ONLY), divisionId: 'd1' })).not.toThrow();
-    }
+    expect(() => authorizeCapture('security.event', { actor: actor(PLATFORM_ONLY), divisionId: 'd1' })).not.toThrow();
   });
 
   it('gates nothing when there is no subscription to apply', () => {

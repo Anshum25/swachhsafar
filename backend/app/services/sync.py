@@ -15,7 +15,6 @@ from app.models import (
     ComplaintDepartment,
     Division,
     InventoryItem,
-    Job,
     Journey,
     QuestionBank,
     StaffAllocation,
@@ -25,7 +24,6 @@ from app.models import (
 from app.schemas.complaints import CategoryOut, ComplaintIn, DepartmentOut
 from app.schemas.feedback import PassengerFeedbackStart, QuestionBankOut, RailwayFeedbackIn
 from app.schemas.inventory import ItemOut, TxnIn
-from app.schemas.jobs import JobOut, JobSaveIn
 from app.schemas.journeys import JourneyOut
 from app.schemas.operations import AttendanceIn, InspectionIn
 from app.schemas.org import DivisionOut
@@ -36,7 +34,6 @@ from app.schemas.faces import FaceProfileOut
 from app.schemas.fingerprints import FingerprintProfileOut
 from app.services import attendance, complaints, faces, feedback, fingerprints, inspections, inventory
 from app.services import clients as clients_svc
-from app.services import jobs as job_svc
 from app.services import journeys as journey_svc
 from app.services.policy import get_policy
 from app.services import security as security_svc
@@ -57,7 +54,6 @@ HANDLERS: dict[str, tuple[type[BaseModel], Handler]] = {
     "complaint.create": (ComplaintIn, lambda db, p, b, op: complaints.create(db, p, b, commit=False)),
     "inventory.record": (TxnIn, lambda db, p, b, op: inventory.record(db, p, b, commit=False)),
     "security.event": (SecurityEventIn, lambda db, p, b, op: _security_event(db, p, b)),
-    "job.save": (JobSaveIn, lambda db, p, b, op: job_svc.save_from_device(db, p, b)),
 }
 
 
@@ -167,9 +163,6 @@ def changes(db: Session, p: Principal, since: datetime | None) -> dict:
         or_(QuestionBank.division_id.in_(divisions), QuestionBank.division_id.is_(None)), *newer(QuestionBank.updated_at))).all()
     deps = db.scalars(select(ComplaintDepartment).where(ComplaintDepartment.division_id.in_(divisions), *newer(ComplaintDepartment.updated_at))).all()
     cats = db.scalars(select(ComplaintCategory).where(ComplaintCategory.division_id.in_(divisions), *newer(ComplaintCategory.updated_at))).all()
-    # Jobs (temporary test module): shared by everyone. A full pull skips deleted jobs; a delta includes them
-    # (is_deleted=true) so phones remove them.
-    job_rows = db.scalars(select(Job).where(*newer(Job.updated_at), *([] if after else [Job.is_deleted.is_(False)]))).all()
     div_rows = db.scalars(select(Division).where(Division.id.in_(divisions), *newer(Division.updated_at))).all()
 
     jstmt = select(Journey).options(selectinload(Journey.coaches)).where(
@@ -202,7 +195,6 @@ def changes(db: Session, p: Principal, since: datetime | None) -> dict:
         complaint_departments=dump(DepartmentOut, deps), complaint_categories=dump(CategoryOut, cats), journeys=journeys,
         face_profiles=face_profiles,
         fingerprint_profiles=fingerprint_profiles,
-        jobs=dump(JobOut, job_rows),
         # The user's own client: which modules the office is subscribed to, and how its wallet stands.
         # Sent on every pull, not only a full one, so removing a module reaches the phone at the next sync
         # and a module the office no longer pays for stops appearing even while the device is offline.

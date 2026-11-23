@@ -699,8 +699,9 @@ const V12 = {
   ],
 };
 
-// v13: jobs (TEMPORARY test module, src/database/jobRepository.js), pulled from /sync/changes `jobs` and
-// pushed with the 'job.save' operation. `data` holds the server's full JSON for the job. Additive only.
+// v13: jobs, a temporary module that existed to prove the over-the-air update path on real phones.
+// Removed again in v14, which drops this table; the statements stay because migrations are history and a
+// phone still on v12 has to walk through this one to reach v14.
 const V13 = {
   version: 13,
   name: 'jobs',
@@ -729,4 +730,19 @@ const V13 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13];
+// v14: the Jobs test module is gone. v13 created this table to prove the over-the-air update path on
+// real phones; that is done, so the table and anything still queued for it are removed. A phone that
+// never ran v13 skips the DROP harmlessly (IF EXISTS), and one that did loses only test data.
+//
+// The queued operations are deleted first and deliberately: a 'job.save' entry left in the outbox would
+// be retried for ever against an endpoint that no longer exists, and a phone cannot be told to stop.
+const V14 = {
+  version: 14,
+  name: 'drop_jobs',
+  statements: [
+    "DELETE FROM sync_outbox WHERE operation = 'job.save'",
+    'DROP TABLE IF EXISTS jobs',
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14];

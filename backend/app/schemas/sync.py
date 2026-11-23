@@ -14,7 +14,6 @@ OpType = Literal[
     "complaint.create",
     "inventory.record",
     "security.event",
-    "job.save",
 ]
 
 
@@ -65,7 +64,6 @@ class ChangesOut(StrictModel):
     journeys: list[dict]
     face_profiles: list[dict] = []
     fingerprint_profiles: list[dict] = []
-    jobs: list[dict] = []
     # The signed-in user's client (office): modules and wallet. None for a Super Admin, who has no single
     # client. The device stores it and hides every module the office is not subscribed to.
     client: dict | None = None
