@@ -289,7 +289,9 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
         return;
       }
       if (/^\/journeys(\/[^/]+)?(\/(cancel|supervisor))?$/.test(path)) {
-        for (const j of items.filter((x) => x?.train_no && x?.journey_date)) await tryIngest(`journey ${j.id}`, journeys.serverStatements(j, t.now));
+        // A planned journey with no supervisor yet is not kept on the device: the device database requires
+        // one, and the server does not sync it to phones until it has one (backend services/sync.py).
+        for (const j of items.filter((x) => x?.train_no && x?.journey_date && x?.supervisor_id)) await tryIngest(`journey ${j.id}`, journeys.serverStatements(j, t.now));
       } else if ((m = path.match(/^\/attendance\/journeys\/([^/]+)\/status$/)) && Array.isArray(data)) {
         const j = await journeyExists(m[1]);
         if (j) {

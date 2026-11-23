@@ -320,7 +320,7 @@ function JourneyDetail({ id }) {
           <ActionMenu label="Manage journey" items={[
             { label: 'Edit journey', onClick: () => setDialog('edit'), disabled: !online, hint: offlineHint },
             { label: 'Coaches', onClick: () => setDialog('coaches'), disabled: !online, hint: offlineHint },
-            { label: 'Change supervisor', onClick: () => setDialog('supervisor'), disabled: !online, hint: offlineHint },
+            { label: j.supervisor_id ? 'Change supervisor' : 'Assign supervisor', onClick: () => setDialog('supervisor'), disabled: !online, hint: offlineHint },
             { label: 'Cancel journey', onClick: () => setDialog('cancel'), disabled: !online, hint: offlineHint, danger: true },
           ]} />
         )} />
@@ -336,7 +336,15 @@ function JourneyDetail({ id }) {
           </div>
           <InfoRow icon={CalendarIcon} label="Journey Date">{fmtDate(j.journey_date)}{j.end_date && j.end_date !== j.journey_date ? ` → ${fmtDate(j.end_date)}` : ''}</InfoRow>
           <InfoRow icon={LinkIcon} label="Linked Date">{fmtDate(j.linked_journey_date)}</InfoRow>
-          <InfoRow icon={UserIcon} label="Supervisor/EHK">{j.supervisor_name}</InfoRow>
+          <InfoRow icon={UserIcon} label="Supervisor/EHK">
+            {j.supervisor_name ?? (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-amber-700">Not assigned yet</span>
+                {manage && online && <button type="button" className="btn-secondary h-8 text-xs" onClick={() => setDialog('supervisor')}>Assign</button>}
+              </span>
+            )}
+          </InfoRow>
+          {j.auto_created && <InfoRow icon={CalendarIcon} label="Planned">Automatically, from the office's trains{j.charged ? '' : ' · paid on its start day'}</InfoRow>}
           <InfoRow icon={UsersIcon} label="No. of Alloted Staff">{s ? s.staff_allocated : allotted.length}</InfoRow>
           <div className="border-b border-line/70 py-2.5 last:border-0">
             <p className="mb-2 flex items-center gap-3 text-[13px] font-semibold text-ink"><UsersIcon className="h-[18px] w-[18px] text-brand-700" /> Alloted Staff</p>
@@ -401,7 +409,7 @@ function JourneyDetail({ id }) {
           <SubmitBar label="Cancel journey" onCancel={() => setDialog(null)} />
         </form>
       </Dialog>
-      <Dialog open={dialog === 'supervisor'} title="Change supervisor" onClose={() => setDialog(null)}>
+      <Dialog open={dialog === 'supervisor'} title={j.supervisor_id ? 'Change supervisor' : 'Assign supervisor'} onClose={() => setDialog(null)}>
         <form onSubmit={(e) => { e.preventDefault(); act(() => ops.journeys.assignSupervisor(j, supervisor), 'Supervisor assigned.'); }}>
           <Field label="Supervisor" error={supervisors.error?.message}>
             <Select value={supervisor} onChange={setSupervisor} required placeholder="Select supervisor"
@@ -427,7 +435,7 @@ function JourneyList() {
   const state = tab === 'history' ? past : tab;
   const res = useResource('/journeys', { state, division_id: division.divisionId, page: pageNo, page_size: 50 });
   const term = search.trim().toLowerCase();
-  const matches = (j) => !term || `${j.train_no} ${j.train_name} ${j.supervisor_name}`.toLowerCase().includes(term);
+  const matches = (j) => !term || `${j.train_no} ${j.train_name} ${j.supervisor_name ?? ''}`.toLowerCase().includes(term);
   const canCreate = canIn('journeys.manage', division.divisionId);
   return (
     <>

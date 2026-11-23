@@ -175,7 +175,7 @@ function InspectionGrid({ journey: j, grid }) {
 
 function InspectionDetail({ record, journey, onClose, onChanged }) {
   const { me, ops } = useSession();
-  const inspector = [{ user_id: journey.supervisor_id, name: journey.supervisor_name }, ...journey.staff].find((s) => s.user_id === record.created_by_id)?.name;
+  const inspector = [...(journey.supervisor_id ? [{ user_id: journey.supervisor_id, name: journey.supervisor_name }] : []), ...journey.staff].find((s) => s.user_id === record.created_by_id)?.name;
   return (
     <Dialog open title={`Coach ${record.coach_code} · Day ${record.day} · R${record.round} · ${PHASES[record.phase]}`} onClose={onClose} wide>
       <div className="space-y-4">

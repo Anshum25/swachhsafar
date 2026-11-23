@@ -125,6 +125,11 @@ class ClientSummary(ReadModel):
     credit_balance: int
     credit_per_journey: int
     low_credit: bool
+    # Where the office works and whether its Admin has picked its stations and trains yet: the app asks
+    # them to, once the Super Admin has set the state and city.
+    state: str | None = None
+    city: str | None = None
+    setup_completed_at: datetime | None = None
 
 
 class CreditLedgerOut(ReadModel):

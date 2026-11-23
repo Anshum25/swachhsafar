@@ -310,3 +310,12 @@ def test_robots_rules_are_obeyed():
     assert not is_path_allowed(rules, "/api/v1/x")
     assert is_path_allowed(rules, "/api/public/x")
     assert not is_path_allowed(parse_robots("User-agent: swachhsafar\nDisallow: /station"), "/station/adi")
+
+
+def test_me_tells_the_office_admin_when_setup_is_due(world, rr):
+    me = lambda: world.client.get(f"{API}/auth/me", headers=world.h("admin")).json()["client"]  # noqa: E731
+    assert me()["state"] is None and me()["setup_completed_at"] is None
+    _set_area(world, world.a.client_id)
+    assert (me()["state"], me()["city"]) == ("Gujarat", "Ahmedabad")
+    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    assert me()["setup_completed_at"]

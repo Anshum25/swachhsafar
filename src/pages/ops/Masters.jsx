@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useResource, useSession } from '../../app/session.jsx';
 import { DivisionPicker, divisionLabel, useDivision } from '../../app/division.jsx';
 import { useSave } from './masters/common.jsx';
+import { coachText, parseCoaches } from '../../utils/coaches.js';
 import QuestionBanks from './masters/QuestionBanks.jsx';
 import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
@@ -9,6 +10,7 @@ import DivisionPolicy from './masters/DivisionPolicy.jsx';
 import Users from './masters/Users.jsx';
 import Clients from './masters/Clients.jsx';
 import Divisions from './masters/Divisions.jsx';
+import OfficeSetupSection from './masters/OfficeSetup.jsx';
 import RolePermissions from './masters/RolePermissions.jsx';
 import UserProfile from './masters/UserProfile.jsx';
 import { MastersMobileNav } from './masters/MastersNav.jsx';
@@ -16,14 +18,6 @@ import { visibleSections } from './masters/sections.js';
 import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, SubmitBar, Table } from '../../components/ui.jsx';
 import { PlusIcon } from '../../components/Icons.jsx';
 
-// "B1 AC, S1, S2" -> [{code:'B1', classification:'AC'}, ...]; coaches default to Non-AC.
-export function parseCoaches(text) {
-  return text.split(/[,\n]/).map((s) => s.trim().toUpperCase()).filter(Boolean).map((s) => {
-    const [code, cls] = s.split(/\s+/);
-    return { code, classification: cls === 'AC' ? 'AC' : 'NON_AC' };
-  });
-}
-const coachText = (coaches) => coaches.map((c) => `${c.code}${c.classification === 'AC' ? ' AC' : ''}`).join(', ');
 
 function TrainForm({ train, divisionId, onClose, onSaved }) {
   const { api } = useSession();
@@ -119,6 +113,7 @@ export default function Masters({ parts = [] }) {
       {section === 'users' && (userId ? <UserProfile key={userId} userId={userId} division={division} /> : <Users division={division} />)}
       {section === 'divisions' && <Divisions />}
       {section === 'clients' && <Clients />}
+      {section === 'setup' && <OfficeSetupSection />}
       {section === 'roles' && <RolePermissions divisionId={division.divisionId} divisionName={division.current?.name}
         clientId={division.current?.client_id} clientName={division.client?.name} divisionKind={division.current?.kind} />}
       {section === 'questions' && <QuestionBanks divisionId={division.divisionId} />}

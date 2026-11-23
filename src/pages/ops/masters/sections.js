@@ -13,6 +13,9 @@ export const MASTER_SECTIONS = [
   // Clients (offices): modules and the prepaid wallet. A client's own administrator sees it read-only;
   // creating offices, changing modules and moving credits are the Super Admin's (the server enforces it).
   { key: 'clients', group: 'Organisation', label: 'Clients & Credits', hint: 'Offices, modules, prepaid credits', Icon: BriefcaseIcon, show: (can) => can('clients.read') },
+  // The office's stations and the trains planned from them (OfficeSetup.jsx). The server lets only the
+  // Super Admin and the office's own Admin save it.
+  { key: 'setup', group: 'Organisation', label: 'Stations & trains', hint: 'From the railway network', Icon: TrainIcon, show: (can) => can('clients.read') },
   // Role rights: the default grants and this division's overrides. Needs permissions.manage to change,
   // and the screen itself explains that an unsubscribed module overrides whatever it says.
   { key: 'roles', group: 'Organisation', label: 'Role rights', hint: 'What each role may do', Icon: ShieldIcon, show: (can) => can('permissions.manage') },

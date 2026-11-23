@@ -7,6 +7,7 @@ import { navigate } from '../../app/router.js';
 import SuperAdminDashboard from './SuperAdminDashboard.jsx';
 
 const SUPER_ADMIN = 1;
+const ADMIN = 2;
 import { SHORT_LABEL, visibleNav } from '../../app/Layout.jsx';
 import { TrainArt } from '../../components/Logo.jsx';
 import {
@@ -208,6 +209,22 @@ function RecentActivity({ divisionId }) {
 // The office's prepaid wallet is running out. Shown to whoever can see it (clients.read -- an
 // administrator or the Super Admin), not to field staff, who can do nothing about it. It appears before
 // anything stops working, because the first symptom otherwise is a refused journey.
+// An office's Admin is asked to pick its stations and trains once the Super Admin has set its state and
+// city, until they have (OfficeSetup.jsx). Before the state and city are set there is nothing they can do.
+function SetupNote() {
+  const { client, user } = useSession();
+  if (!client || user.role_id !== ADMIN || client.setup_completed_at || !client.state || !client.city) return null;
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand-50 px-4 py-3 ring-1 ring-brand-200" data-testid="setup-note">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-brand-900">Set up your stations and trains</p>
+        <p className="mt-0.5 text-xs text-brand-900/80">Pick {client.city}'s stations your office works at and their trains. Journeys are then planned for you every day.</p>
+      </div>
+      <button type="button" className="btn-primary h-10 text-sm" onClick={() => navigate('/masters/setup')}>Start setup</button>
+    </div>
+  );
+}
+
 function LowCreditNote() {
   const { client, can } = useSession();
   if (!client?.low_credit || !can('clients.read')) return null;
@@ -234,6 +251,7 @@ export default function Dashboard() {
     <>
       {/* Whose session this is (devices are shared between staff). */}
       <h1 className="mb-3 truncate text-[17px] font-bold text-ink">Welcome, {user.name.split(' ')[0]}</h1>
+      <SetupNote />
       <LowCreditNote />
       {/* The Super Admin's home is the dashboard itself: the banner and module tiles repeat the sidebar. */}
       {user.role_id !== SUPER_ADMIN && <><HomeBanner /><ModuleTiles /></>}

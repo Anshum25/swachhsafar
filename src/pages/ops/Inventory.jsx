@@ -97,7 +97,7 @@ function JourneyInventory({ id }) {
   if (journey.loading && !j) return <Loading />;
   if (!j) return <ErrorNote error={journey.error} onRetry={journey.reload} />;
   const canRecord = canAct(me, 'inventory.record', j);
-  const people = [{ user_id: j.supervisor_id, name: j.supervisor_name }, ...j.staff];
+  const people = [...(j.supervisor_id ? [{ user_id: j.supervisor_id, name: j.supervisor_name }] : []), ...j.staff];
   const by = (uid) => people.find((p) => p.user_id === uid)?.name ?? (uid ? 'Other user' : '—');
   const unsynced = (ledger.data?.items ?? []).filter((t) => t.sync_status === 'pending').length;
   const refresh = () => {

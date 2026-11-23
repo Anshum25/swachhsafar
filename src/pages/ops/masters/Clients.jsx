@@ -15,6 +15,7 @@ import {
 } from '../../../components/ui.jsx';
 import { ConfirmDialog, useSave } from './common.jsx';
 import Divisions, { kindLabel } from './Divisions.jsx';
+import { AreaEditor, SetupWizard } from './OfficeSetup.jsx';
 import RolePermissions from './RolePermissions.jsx';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
 
@@ -362,6 +363,7 @@ function OfficeRights({ client }) {
 const DETAIL_TABS = [
   { value: 'overview', label: 'Details & credits' },
   { value: 'stations', label: 'Headquarters & stations' },
+  { value: 'setup', label: 'Stations & trains' },
   { value: 'rights', label: 'Role rights' },
 ];
 
@@ -391,6 +393,7 @@ function ClientDetail({ clientId, onBack, onChanged }) {
           <Tabs value={tab} onChange={setTab} tabs={DETAIL_TABS} />
 
           {tab === 'stations' && <Divisions clientId={client.id} />}
+          {tab === 'setup' && <SetupWizard clientId={client.id} clientName={client.name} />}
           {tab === 'rights' && <OfficeRights client={client} />}
 
           {tab === 'overview' && <>
@@ -405,6 +408,7 @@ function ClientDetail({ clientId, onBack, onChanged }) {
             </dl>
           </Panel>
 
+          <AreaEditor client={client} onSaved={() => { res.reload(); onChanged(); }} />
           <WalletPanel client={client} canEdit={canEdit} onSaved={() => { res.reload(); onChanged(); }} />
           <ModulesPanel client={client} canEdit={canEdit} onSaved={() => { res.reload(); onChanged(); }} />
           <LedgerPanel clientId={client.id} />

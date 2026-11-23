@@ -13,6 +13,10 @@ export default function JourneyCard({ j, href, onClick, extra }) {
         <span className="line-clamp-2 text-[15px] font-extrabold uppercase leading-tight tracking-tight text-brand-900">{j.train_name}</span>
         <span className="mt-1 block truncate text-[12.5px] text-muted">Train No.: <b className="font-semibold text-ink">{j.train_no}</b></span>
         <span className="block truncate text-[12.5px] text-muted">Journey Date: <b className="font-semibold text-ink">{fmtDate(j.journey_date)}</b></span>
+        {/* A planned journey (services/railway.py) has no supervisor until somebody assigns one. */}
+        {!j.supervisor_id && j.state !== 'cancelled' && (
+          <span className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11.5px] font-semibold text-amber-800 ring-1 ring-amber-200">No supervisor yet</span>
+        )}
         {extra && <span className="mt-1 block text-xs text-muted">{extra}</span>}
       </span>
       <TrainArt className="pointer-events-none h-12 w-[5.5rem] shrink-0 -scale-x-100 sm:w-24" track={false} />

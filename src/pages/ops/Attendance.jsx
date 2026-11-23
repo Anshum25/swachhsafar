@@ -458,7 +458,7 @@ function AttendanceRecords({ journey: j }) {
   const res = useResource('/attendance', {
     journey_id: j.id, employee_id: employee, stage, verification_status: verification, page: pageNo, page_size: 50,
   });
-  const people = [{ user_id: j.supervisor_id, name: j.supervisor_name }, ...j.staff];
+  const people = [...(j.supervisor_id ? [{ user_id: j.supervisor_id, name: j.supervisor_name }] : []), ...j.staff];
   const staffName = (id) => people.find((s) => s.user_id === id)?.name ?? 'Unknown user';
   const filter = (fn) => (v) => { fn(v); setPageNo(1); };
 

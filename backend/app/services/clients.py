@@ -79,6 +79,9 @@ def client_summary(db: Session, p: Principal) -> ClientSummary | None:
             and client.credit_per_journey > 0
             and client.credit_balance <= client.low_credit_threshold
         ),
+        state=client.state,
+        city=client.city,
+        setup_completed_at=client.setup_completed_at,
     )
 
 

@@ -45,16 +45,17 @@ describe('clearAppCache', () => {
 });
 
 describe('master data sections', () => {
-  it('lists all ten subsections for a full administrator, gated ones hidden otherwise', () => {
+  it('lists all eleven subsections for a full administrator, gated ones hidden otherwise', () => {
     expect(MASTER_SECTIONS.map((s) => s.key)).toEqual(
-      ['trains', 'users', 'divisions', 'clients', 'roles', 'questions', 'categories', 'departments', 'items', 'policy'],
+      ['trains', 'users', 'divisions', 'clients', 'setup', 'roles', 'questions', 'categories', 'departments', 'items', 'policy'],
     );
-    expect(visibleSections(() => true)).toHaveLength(10);
+    expect(visibleSections(() => true)).toHaveLength(11);
     const keys = visibleSections(() => false).map((s) => s.key);
     expect(keys).not.toContain('users');
     expect(keys).not.toContain('trains');
     // Clients and credits are the Super Admin's screens, and role rights need permissions.manage.
     expect(keys).not.toContain('clients');
+    expect(keys).not.toContain('setup'); // an office's stations and trains: its Admin and the Super Admin
     expect(keys).not.toContain('roles');
   });
 
