@@ -109,3 +109,74 @@ def test_the_same_right_can_be_set_for_the_office_and_globally(world):
     assert _grant(world, "sa", client_id=world.a.client_id, **body).status_code == 200  # upsert, not a duplicate
     office = world.client.get(f"{API}/permissions/grants?client_id={world.a.client_id}", headers=world.h("sa")).json()
     assert len(office) == 1
+
+
+# ---- headquarters and stations (migration 0015) ----------------------------------------------------------
+
+
+def _office_a_with_hq(world):
+    """Office A: division A (a station, the default) plus a headquarters."""
+    from app.models import Client
+
+    hq = make_division(world.db, "AHQ", client=world.db.get(Client, world.a.client_id))
+    r = world.client.patch(f"{API}/divisions/{hq.id}", headers=world.h("sa"), json={"kind": "headquarters"})
+    assert r.status_code == 200, r.text
+    assert r.json()["kind"] == "headquarters"
+    return hq
+
+
+def _role_grants(world, division):
+    from app.security.principal import role_grants
+
+    world.db.rollback()  # see what the requests committed
+    return role_grants(world.db, JANITOR, division.id)
+
+
+def test_a_new_division_is_a_station(world):
+    rows = world.client.get(f"{API}/divisions", headers=world.h("sa")).json()
+    assert {d["kind"] for d in rows} == {"station"}
+
+
+def test_a_station_rule_covers_the_office_stations_only(world):
+    hq = _office_a_with_hq(world)
+    r = _grant(world, "sa", role_id=JANITOR, permission_code="attendance.submit", client_id=world.a.client_id,
+               division_kind="station", effect="deny")
+    assert r.status_code == 200, r.text
+    assert r.json()["division_kind"] == "station"
+
+    assert "attendance.submit" not in _role_grants(world, world.a)  # a station of office A
+    assert "attendance.submit" in _role_grants(world, hq)            # its headquarters
+    assert "attendance.submit" in _role_grants(world, world.b)       # a station of another office
+
+
+def test_the_order_is_division_then_kind_then_office(world):
+    hq = _office_a_with_hq(world)
+    body = dict(role_id=JANITOR, permission_code="reports.read")
+    _grant(world, "sa", client_id=world.a.client_id, effect="allow", **body)                            # office
+    _grant(world, "sa", client_id=world.a.client_id, division_kind="station", effect="deny", **body)    # stations
+    assert "reports.read" in _role_grants(world, hq)            # office rule, no headquarters rule
+    assert "reports.read" not in _role_grants(world, world.a)   # the station rule beats the office's
+    _grant(world, "sa", division_id=world.a.id, effect="allow", **body)                                # one division
+    assert "reports.read" in _role_grants(world, world.a)       # the division beats its kind
+
+
+def test_a_kind_needs_an_office(world):
+    r = _grant(world, "sa", role_id=JANITOR, permission_code="attendance.submit", division_kind="station",
+               effect="deny")
+    assert r.status_code == 422
+
+
+def test_an_office_admin_sets_station_rules_for_their_office_only(world):
+    body = dict(role_id=JANITOR, permission_code="attendance.submit", division_kind="station", effect="deny")
+    assert _grant(world, "admin", client_id=world.a.client_id, **body).status_code == 200
+    assert _grant(world, "admin", client_id=world.b.client_id, **body).status_code == 403
+    assert _grant(world, "manager", client_id=world.a.client_id, **body).status_code == 403
+
+
+def test_the_office_list_includes_its_station_and_headquarters_rows(world):
+    body = dict(role_id=JANITOR, permission_code="attendance.submit", client_id=world.a.client_id, effect="deny")
+    _grant(world, "sa", **body)
+    _grant(world, "sa", division_kind="station", **body)
+    _grant(world, "sa", division_kind="headquarters", **body)
+    rows = world.client.get(f"{API}/permissions/grants?client_id={world.a.client_id}", headers=world.h("sa")).json()
+    assert sorted(str(r["division_kind"]) for r in rows) == ["None", "headquarters", "station"]

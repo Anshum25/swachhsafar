@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, Timestamps, UUIDPk, TZDateTime
+from app.models.base import Base, Timestamps, UUIDPk, TZDateTime, str_enum
 
 JSONType = JSON().with_variant(JSONB(), "postgresql")
 
@@ -44,6 +44,13 @@ class PermissionEffect(StrEnum):
     DENY = "deny"
 
 
+class DivisionKind(StrEnum):
+    """An office has one headquarters and its stations; role rights can target every division of one kind."""
+
+    HEADQUARTERS = "headquarters"
+    STATION = "station"
+
+
 class Division(UUIDPk, Timestamps, Base):
     __tablename__ = "divisions"
 
@@ -54,6 +61,9 @@ class Division(UUIDPk, Timestamps, Base):
     # subscription its users see. Every division has one; migration 0011 created a client for the
     # divisions that existed before clients did.
     client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
+    kind: Mapped[DivisionKind] = mapped_column(
+        str_enum(DivisionKind, 12), nullable=False, default=DivisionKind.STATION, server_default="station"
+    )
 
     # lazy="select": a Division is loaded on every authenticated request (through User.division), and the
     # client is not needed there. The two places that do need it ask for it by name: Principal.modules_in
@@ -79,8 +89,9 @@ class Permission(Base):
 
 
 class RolePermission(UUIDPk, Timestamps, Base):
-    """A grant's scope is one of: global (client_id and division_id NULL), one office (client_id set) or one
-    division (division_id set). The most specific wins: division, then office, then global (migration 0014)."""
+    """A grant's scope is one of: global (all NULL), one office (client_id), every division of one kind in one
+    office (client_id + division_kind) or one division (division_id). The most specific wins: division, then
+    kind, then office, then global (migrations 0014, 0015)."""
 
     __tablename__ = "role_permissions"
     __table_args__ = (
@@ -89,16 +100,19 @@ class RolePermission(UUIDPk, Timestamps, Base):
             "role_id",
             "permission_code",
             "client_id",
+            "division_kind",
             "division_id",
             unique=True,
             postgresql_nulls_not_distinct=True,
         ),
         CheckConstraint("client_id IS NULL OR division_id IS NULL", name="one_scope"),
+        CheckConstraint("division_kind IS NULL OR (client_id IS NOT NULL AND division_id IS NULL)", name="kind_scope"),
     )
 
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"), nullable=False)
     permission_code: Mapped[str] = mapped_column(ForeignKey("permissions.code"), nullable=False)
     client_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
+    division_kind: Mapped[DivisionKind | None] = mapped_column(str_enum(DivisionKind, 12), nullable=True)
     division_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("divisions.id"), nullable=True)
     effect: Mapped[PermissionEffect] = mapped_column(
         Enum(PermissionEffect, native_enum=False, length=8, values_callable=lambda e: [m.value for m in e]),
@@ -221,6 +235,7 @@ __all__ = [
     "AuditLog",
     "ChargeMap",
     "Division",
+    "DivisionKind",
     "DivisionPolicy",
     "EmployeeKyc",
     "Permission",

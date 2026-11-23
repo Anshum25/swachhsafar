@@ -13,25 +13,30 @@ from app.timeutil import today_ist
 
 
 def role_grants(db: Session, role_id: int, division_id: uuid.UUID) -> set[str]:
-    """The permissions a role holds in a division by its grants alone (no module gating): the global grant,
-    overridden by the division's office, overridden by the division itself. The one place this order lives."""
+    """The permissions a role holds in a division by its grants alone (no module gating), most specific last:
+    the global grant, then the division's office, then every division of its kind (headquarters or station)
+    in that office, then the division itself. The one place this order lives."""
     from app.models import Division
 
-    client_id = db.scalar(select(Division.client_id).where(Division.id == division_id))
+    where = db.execute(select(Division.client_id, Division.kind).where(Division.id == division_id)).first()
+    client_id, kind = where if where else (None, None)
     rows = db.execute(
-        select(RolePermission.permission_code, RolePermission.client_id, RolePermission.division_id,
-               RolePermission.effect).where(
+        select(RolePermission.permission_code, RolePermission.client_id, RolePermission.division_kind,
+               RolePermission.division_id, RolePermission.effect).where(
             RolePermission.role_id == role_id,
             (RolePermission.client_id.is_(None) & RolePermission.division_id.is_(None))
-            | (RolePermission.client_id == client_id)
+            | ((RolePermission.client_id == client_id)
+               & (RolePermission.division_kind.is_(None) | (RolePermission.division_kind == kind)))
             | (RolePermission.division_id == division_id),
         )
     ).all()
-    granted = {code for code, cl, div, eff in rows if cl is None and div is None and eff == PermissionEffect.ALLOW}
-    for specific in (lambda cl, div: cl is not None, lambda cl, div: div is not None):  # office, then division
-        for code, cl, div, eff in rows:
-            if specific(cl, div):
-                (granted.add if eff == PermissionEffect.ALLOW else granted.discard)(code)
+
+    def level(cl, k, div) -> int:
+        return 3 if div is not None else 2 if k is not None else 1 if cl is not None else 0
+
+    granted: set[str] = set()
+    for code, cl, k, div, eff in sorted(rows, key=lambda r: level(*r[1:4])):
+        (granted.add if eff == PermissionEffect.ALLOW else granted.discard)(code)
     return granted
 
 

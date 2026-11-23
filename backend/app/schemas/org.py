@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import EmailStr, Field, model_validator
 
-from app.models import PermissionEffect, UserStatus
+from app.models import DivisionKind, PermissionEffect, UserStatus
 from app.schemas.clients import ClientSummary
 from app.schemas.common import Mobile, ReadModel, StrictModel
 
@@ -14,11 +14,13 @@ class DivisionCreate(StrictModel):
     name: str = Field(min_length=2, max_length=100)
     # The client (office) whose wallet this division's journeys spend and whose modules its users see.
     client_id: uuid.UUID
+    kind: DivisionKind = DivisionKind.STATION
 
 
 class DivisionUpdate(StrictModel):
     name: str | None = Field(default=None, min_length=2, max_length=100)
     is_active: bool | None = None
+    kind: DivisionKind | None = None
 
 
 class DivisionOut(ReadModel):
@@ -27,6 +29,7 @@ class DivisionOut(ReadModel):
     name: str
     is_active: bool
     client_id: uuid.UUID
+    kind: DivisionKind
     updated_at: datetime
 
 
@@ -49,6 +52,8 @@ class GrantIn(StrictModel):
     # At most one of the two: neither = the global default, client_id = the whole office, division_id = one
     # division (services/org.py refuses both).
     client_id: uuid.UUID | None = None
+    # With client_id: every headquarters or every station of that office.
+    division_kind: DivisionKind | None = None
     division_id: uuid.UUID | None = None
     effect: PermissionEffect = PermissionEffect.ALLOW
 
@@ -58,6 +63,7 @@ class GrantOut(ReadModel):
     role_id: int
     permission_code: str
     client_id: uuid.UUID | None
+    division_kind: DivisionKind | None
     division_id: uuid.UUID | None
     effect: PermissionEffect
 

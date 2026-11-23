@@ -95,6 +95,8 @@ function Trains({ divisionId }) {
   );
 }
 
+const DIVISION_KINDS = [{ value: 'station', label: 'Station' }, { value: 'headquarters', label: 'Headquarters' }];
+
 function Divisions() {
   const { api, can } = useSession();
   const res = useResource('/divisions');
@@ -102,8 +104,14 @@ function Divisions() {
   // subscription its users see. Only a Super Admin creates divisions, and they can read every client.
   const clients = useResource(can('divisions.manage') ? '/clients' : null);
   const [creating, setCreating] = useState(false);
-  const [f, setF] = useState({ code: '', name: '', client_id: '' });
+  const [f, setF] = useState({ code: '', name: '', client_id: '', kind: 'station' });
   const save = useSave(() => { setCreating(false); res.reload(); });
+  // Headquarters or station: role rights can be set for every one of a kind in an office (Role rights).
+  const setKind = useSave(() => res.reload());
+  const officeName = (id) => {
+    const c = (clients.data ?? []).find((x) => x.id === id);
+    return c ? `${c.office_id} — ${c.name}` : '';
+  };
   return (
     <Panel title="Divisions" actions={can('divisions.manage') && <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><PlusIcon /> Add division</button>}>
       <DataState res={res} empty="No divisions.">
@@ -111,18 +119,27 @@ function Divisions() {
           <Table rows={rows} columns={[
             { key: 'code', label: 'Code', render: (d) => <span className="font-semibold">{d.code}</span> },
             { key: 'name', label: 'Name' },
+            ...(clients.data?.length ? [{ key: 'client_id', label: 'Office', render: (d) => officeName(d.client_id) }] : []),
+            { key: 'kind', label: 'Type', render: (d) => (can('divisions.manage') ? (
+              <Select value={d.kind ?? 'station'} options={DIVISION_KINDS} aria-label={`Type of ${d.name}`}
+                onChange={(v) => setKind.run(() => api.patch(`/divisions/${d.id}`, { kind: v }), `${d.name} is now ${v === 'headquarters' ? 'a headquarters' : 'a station'}.`)} />
+            ) : <Badge tone={d.kind === 'headquarters' ? 'brand' : 'slate'}>{d.kind === 'headquarters' ? 'Headquarters' : 'Station'}</Badge>) },
             { key: 'is_active', label: 'Status', render: (d) => <Badge tone={d.is_active ? 'green' : 'slate'}>{d.is_active ? 'Active' : 'Inactive'}</Badge> },
           ]} />
         )}
       </DataState>
+      <ErrorNote error={setKind.error} />
       <Dialog open={creating} title="Add division" onClose={() => setCreating(false)}>
-        <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/divisions', { code: f.code.toUpperCase(), name: f.name, client_id: f.client_id }), 'Division created.'); }} className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/divisions', { code: f.code.toUpperCase(), name: f.name, client_id: f.client_id, kind: f.kind }), 'Division created.'); }} className="space-y-3">
           <ErrorNote error={save.error} />
           <Field label="Code" hint="Uppercase letters, digits, underscore"><input className="input" required pattern="[A-Za-z0-9_]{2,16}" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} /></Field>
           <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
           <Field label="Client (office)" hint="Whose modules and credits this division uses">
             <Select value={f.client_id} onChange={(v) => setF({ ...f, client_id: v })} placeholder="Select an office"
               options={(clients.data ?? []).map((c) => ({ value: c.id, label: `${c.office_id} — ${c.name}` }))} />
+          </Field>
+          <Field label="Type" hint="Role rights can be set for all stations or the headquarters of an office at once">
+            <Select value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={DIVISION_KINDS} />
           </Field>
           <SubmitBar busy={save.busy} disabled={!f.client_id} label="Create" onCancel={() => setCreating(false)} />
         </form>
@@ -155,7 +172,7 @@ export default function Masters({ parts = [] }) {
       {section === 'divisions' && <Divisions />}
       {section === 'clients' && <Clients />}
       {section === 'roles' && <RolePermissions divisionId={division.divisionId} divisionName={division.current?.name}
-        clientId={division.current?.client_id} clientName={division.client?.name} />}
+        clientId={division.current?.client_id} clientName={division.client?.name} divisionKind={division.current?.kind} />}
       {section === 'questions' && <QuestionBanks divisionId={division.divisionId} />}
       {section === 'categories' && <Categories divisionId={division.divisionId} />}
       {section === 'departments' && <Departments divisionId={division.divisionId} />}

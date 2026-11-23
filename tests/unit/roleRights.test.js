@@ -35,3 +35,42 @@ describe('resolve (role rights)', () => {
     expect(s.allowed).toBe(false);
   });
 });
+
+describe('resolve with headquarters and stations', () => {
+  const grants = [
+    row('allow'),
+    row('deny', { client_id: 'A', division_kind: 'station' }),
+    row('allow', { client_id: 'A', division_kind: 'headquarters' }),
+  ];
+
+  it('applies the station rule to a station', () => {
+    const s = resolve('attendance.submit', JANITOR, grants, 'station');
+    expect(s.inOffice).toBe(true);
+    expect(s.inKind).toBe(false);
+    expect(s.allowed).toBe(false);
+    expect(s.kindRow.division_kind).toBe('station');
+  });
+
+  it('applies the headquarters rule, not the station one, to a headquarters', () => {
+    const s = resolve('attendance.submit', JANITOR, grants, 'headquarters');
+    expect(s.allowed).toBe(true);
+    expect(s.kindRow.division_kind).toBe('headquarters');
+  });
+
+  it('does not count a kind rule as the office-wide rule', () => {
+    const s = resolve('attendance.submit', JANITOR, grants, 'station');
+    expect(s.office).toBeNull();
+  });
+
+  it('lets the division beat its kind', () => {
+    const s = resolve('attendance.submit', JANITOR, [...grants, row('allow', { division_id: 'd1' })], 'station');
+    expect(s.inKind).toBe(false);
+    expect(s.allowed).toBe(true);
+  });
+
+  it('ignores kind rules when the division kind is unknown', () => {
+    const s = resolve('attendance.submit', JANITOR, grants, null);
+    expect(s.kindRow).toBeNull();
+    expect(s.allowed).toBe(true);
+  });
+});
