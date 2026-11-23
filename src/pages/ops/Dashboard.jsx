@@ -235,8 +235,8 @@ export default function Dashboard() {
       {/* Whose session this is (devices are shared between staff). */}
       <h1 className="mb-3 truncate text-[17px] font-bold text-ink">Welcome, {user.name.split(' ')[0]}</h1>
       <LowCreditNote />
-      <HomeBanner />
-      <ModuleTiles />
+      {/* The Super Admin's home is the dashboard itself: the banner and module tiles repeat the sidebar. */}
+      {user.role_id !== SUPER_ADMIN && <><HomeBanner /><ModuleTiles /></>}
       {/* A Super Admin sees every office at once, with filters on top (SuperAdminDashboard.jsx); everyone
           else sees the division they work in. */}
       {user.role_id === SUPER_ADMIN ? <SuperAdminDashboard /> : <>

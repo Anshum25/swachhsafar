@@ -2,86 +2,59 @@
 // GET /dashboard/overview (app/services/reports.py overview) with ?client_id= (one office), division_id (one
 // headquarters or station) and the period. With no filter it is everything.
 //
-// Charts are plain SVG (the app ships no chart library): one daily line chart of four activity series and
-// two horizontal bar charts. Series colours are the validated categorical slots 1-4 (blue, orange, aqua,
-// yellow); two of them sit below 3:1 against the surface, so every chart has a legend and a table view.
+// Layout, top to bottom: the scope and its filters; four headline cards with a trend line each; a strip of
+// network and credit figures; the daily activity chart beside complaints by status; three donuts (users by
+// role, journeys by office, feedback by source); the offices table.
+//
+// Charts are plain SVG (the app ships no chart library). Colours are the validated categorical slots in
+// fixed order (blue, orange, aqua, yellow, magenta, green; checked with the dataviz palette validator).
+// Three of them sit below 3:1 against the card, so every chart names its parts in text beside it -- a
+// legend with figures, or the table view -- and identity is never colour alone.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useResource } from '../../app/session.jsx';
 import { navigate } from '../../app/router.js';
-import { Badge, DataState, Field, Panel, Segmented, Select, Table } from '../../components/ui.jsx';
-import { PERIODS, istToday, niceScale, periodRange, shortDate, tickDates } from './overviewMath.js';
+import { Badge, DataState, Segmented, Select, Table } from '../../components/ui.jsx';
+import {
+  CalendarCheckIcon, ClipboardListIcon, FlagIcon, TrainIcon,
+} from '../../components/Icons.jsx';
+import {
+  PERIODS, compact, donutAngles, foldParts, istToday, niceScale, pct, periodRange, ringPath, shortDate, tickDates,
+} from './overviewMath.js';
 
+const PALETTE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+const SURFACE = '#ffffff';
+const INK_MUTED = '#6b6a65';
+const GRID = '#ebe9e4';
 const SERIES = [
-  { key: 'journeys', label: 'Journeys', color: '#2a78d6' },
-  { key: 'attendance', label: 'Attendance', color: '#eb6834' },
-  { key: 'inspections', label: 'Inspections', color: '#1baf7a' },
-  { key: 'complaints', label: 'Complaints', color: '#eda100' },
+  { key: 'journeys', label: 'Journeys', color: PALETTE[0] },
+  { key: 'attendance', label: 'Attendance', color: PALETTE[1] },
+  { key: 'inspections', label: 'Inspections', color: PALETTE[2] },
+  { key: 'complaints', label: 'Complaints', color: PALETTE[3] },
 ];
-const STATUS_LABEL = { created: 'New', in_process: 'In process', forwarded: 'Forwarded', completed: 'Completed' };
+const STATUSES = [
+  { key: 'created', label: 'New' }, { key: 'in_process', label: 'In process' },
+  { key: 'forwarded', label: 'Forwarded' }, { key: 'completed', label: 'Completed' },
+];
 const fmt = (n) => (n ?? 0).toLocaleString('en-IN');
 
-// ---- filters -------------------------------------------------------------------------------------------
-
-function Filters({ value, onChange }) {
-  const clients = useResource('/clients');
-  const divisions = useResource('/divisions');
-  const set = (patch) => onChange({ ...value, ...patch });
-  const officeDivisions = (divisions.data ?? []).filter((d) => !value.clientId || d.client_id === value.clientId);
+function Card({ title, subtitle, actions, children, className = '' }) {
   return (
-    <div className="card flex flex-wrap items-end gap-3">
-      <div className="min-w-[12rem] flex-1">
-        <Field label="Office">
-          <Select value={value.clientId} onChange={(v) => set({ clientId: v, divisionId: '' })} aria-label="Office"
-            options={[{ value: '', label: 'All offices' }, ...(clients.data ?? []).map((c) => ({ value: c.id, label: `${c.office_id} — ${c.name}` }))]} />
-        </Field>
-      </div>
-      <div className="min-w-[12rem] flex-1">
-        <Field label="Headquarters / station">
-          <Select value={value.divisionId} onChange={(v) => set({ divisionId: v })} aria-label="Headquarters or station"
-            options={[{ value: '', label: value.clientId ? 'All of this office' : 'All divisions' },
-              ...officeDivisions.map((d) => ({ value: d.id, label: `${d.name}${d.kind === 'headquarters' ? ' (HQ)' : ''}` }))]} />
-        </Field>
-      </div>
-      <div>
-        <p className="mb-1 text-sm font-medium text-ink">Period</p>
-        <Segmented label="Period" value={value.period} onChange={(v) => set({ period: v })}
-          options={PERIODS.map((p) => ({ value: p.value, label: p.label }))} />
-      </div>
-      {value.period === 'custom' && (
-        <div className="flex gap-2">
-          <Field label="From"><input type="date" className="input h-10" max={istToday()} value={value.from} onChange={(e) => set({ from: e.target.value })} /></Field>
-          <Field label="To"><input type="date" className="input h-10" max={istToday()} value={value.to} onChange={(e) => set({ to: e.target.value })} /></Field>
-        </div>
+    <section className={`min-w-0 rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/70 sm:p-5 ${className}`}>
+      {(title || actions) && (
+        <header className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-xs text-muted">{subtitle}</p>}
+          </div>
+          {actions}
+        </header>
       )}
-    </div>
-  );
-}
-
-// ---- number tiles --------------------------------------------------------------------------------------
-
-function Tile({ label, value, hint, tone }) {
-  const tones = { brand: 'text-brand-700', amber: 'text-amber-700', red: 'text-red-700', slate: 'text-ink' };
-  return (
-    <div className="card">
-      <p className="text-xs font-medium text-muted">{label}</p>
-      <p className={`mt-1 text-2xl font-bold tabular-nums ${tones[tone ?? 'slate']}`}>{fmt(value)}</p>
-      {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
-    </div>
-  );
-}
-
-function TileGroup({ title, children, three }) {
-  return (
-    <section aria-label={title}>
-      <h2 className="mb-2 text-sm font-semibold text-slate-700">{title}</h2>
-      <div className={`grid grid-cols-2 gap-3 ${three ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>{children}</div>
+      {children}
     </section>
   );
 }
 
-// ---- daily line chart ----------------------------------------------------------------------------------
-
-// The width the chart has, measured from a box the chart cannot widen: 0 until measured, and the SVG is only
+// The width a chart has, measured from a box the chart cannot widen: 0 until measured, and the SVG is only
 // drawn once it is known (a guessed width would push a phone screen sideways before the first measurement).
 function useWidth() {
   const ref = useRef(null);
@@ -98,72 +71,148 @@ function useWidth() {
   return [ref, w];
 }
 
+// ---- header and filters --------------------------------------------------------------------------------
+
+function Toolbar({ value, onChange, scopeLabel, rangeLabel }) {
+  const clients = useResource('/clients');
+  const divisions = useResource('/divisions');
+  const set = (patch) => onChange({ ...value, ...patch });
+  const officeDivisions = (divisions.data ?? []).filter((d) => !value.clientId || d.client_id === value.clientId);
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold tracking-tight text-ink sm:text-2xl">Operations overview</h2>
+          <p className="mt-0.5 text-sm text-muted">{scopeLabel} · {rangeLabel}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-2 shadow-card ring-1 ring-slate-200/70">
+        <div className="min-w-[11rem] flex-1">
+          <Select value={value.clientId} onChange={(v) => set({ clientId: v, divisionId: '' })} aria-label="Office"
+            options={[{ value: '', label: 'All offices' }, ...(clients.data ?? []).map((c) => ({ value: c.id, label: `${c.office_id} — ${c.name}` }))]} />
+        </div>
+        <div className="min-w-[11rem] flex-1">
+          <Select value={value.divisionId} onChange={(v) => set({ divisionId: v })} aria-label="Headquarters or station"
+            options={[{ value: '', label: 'All HQs and stations' },
+              ...officeDivisions.map((d) => ({ value: d.id, label: `${d.name}${d.kind === 'headquarters' ? ' (HQ)' : ''}` }))]} />
+        </div>
+        <Segmented label="Period" value={value.period} onChange={(v) => set({ period: v })}
+          options={PERIODS.map((p) => ({ value: p.value, label: p.label }))} />
+        {value.period === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input type="date" aria-label="From" className="input h-10" max={istToday()} value={value.from} onChange={(e) => set({ from: e.target.value })} />
+            <span className="text-sm text-muted">to</span>
+            <input type="date" aria-label="To" className="input h-10" max={istToday()} value={value.to} onChange={(e) => set({ to: e.target.value })} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- headline cards with a trend line ------------------------------------------------------------------
+
+function Sparkline({ values, color }) {
+  const max = Math.max(1, ...values);
+  const n = values.length;
+  if (n < 2) return null;
+  const pts = values.map((v, i) => `${(i / (n - 1)) * 100},${30 - (v / max) * 26}`).join(' ');
+  return (
+    <svg viewBox="0 0 100 32" preserveAspectRatio="none" className="h-10 w-full" aria-hidden="true">
+      <polygon points={`0,32 ${pts} 100,32`} fill={color} opacity="0.12" />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function Headline({ icon: Icon, label, value, color, values, children }) {
+  return (
+    <div className="flex min-w-0 flex-col rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-200/70">
+      <div className="flex items-center gap-2">
+        <span className="grid h-8 w-8 place-items-center rounded-xl" style={{ background: `${color}1a`, color }}><Icon className="h-[18px] w-[18px]" /></span>
+        <p className="truncate text-sm font-medium text-slate-600">{label}</p>
+      </div>
+      <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight text-ink">{compact(value)}</p>
+      <div className="mt-1 min-h-[1.25rem] text-xs text-muted">{children}</div>
+      <div className="mt-2"><Sparkline values={values} color={color} /></div>
+    </div>
+  );
+}
+
+function Figure({ label, value, hint, tone }) {
+  const tones = { amber: 'text-amber-700', red: 'text-red-700' };
+  return (
+    <div className="min-w-0 px-4 py-3">
+      <p className="truncate text-xs font-medium text-muted">{label}</p>
+      <p className={`mt-0.5 text-xl font-semibold tabular-nums ${tones[tone] ?? 'text-ink'}`}>{compact(value)}</p>
+      {hint && <p className="truncate text-[11px] text-muted">{hint}</p>}
+    </div>
+  );
+}
+
+// ---- daily activity: multi-line with crosshair, legend toggle and table view ---------------------------
+
 function DailyChart({ daily }) {
   const [ref, width] = useWidth();
   const [hidden, setHidden] = useState(() => new Set());
   const [hover, setHover] = useState(null);
   const [asTable, setAsTable] = useState(false);
   const shown = SERIES.filter((s) => !hidden.has(s.key));
-  const H = 240, pad = { l: 36, r: 12, t: 12, b: 28 };
-  const iw = width - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const H = 260, pad = { l: 36, r: 12, t: 12, b: 28 };
+  const iw = Math.max(1, width - pad.l - pad.r), ih = H - pad.t - pad.b;
   const scale = niceScale(Math.max(0, ...daily.flatMap((d) => shown.map((s) => d[s.key]))));
   const x = (i) => pad.l + (daily.length === 1 ? iw / 2 : (i * iw) / (daily.length - 1));
   const y = (v) => pad.t + ih - (v / scale.max) * ih;
   const labelled = new Set(tickDates(daily.map((d) => d.date), width < 480 ? 4 : 7));
   const toggle = (key) => setHidden((h) => { const n = new Set(h); n.has(key) ? n.delete(key) : n.add(key); return n; });
-
   const onMove = (e) => {
     const box = e.currentTarget.getBoundingClientRect();
-    const px = e.clientX - box.left - pad.l;
-    const i = daily.length === 1 ? 0 : Math.round((px / iw) * (daily.length - 1));
+    const i = daily.length === 1 ? 0 : Math.round(((e.clientX - box.left - pad.l) / iw) * (daily.length - 1));
     setHover(Math.min(daily.length - 1, Math.max(0, i)));
   };
   const h = hover != null ? daily[hover] : null;
 
   return (
-    <Panel title="Daily activity" actions={
-      <button type="button" className="btn-secondary h-9 text-xs" onClick={() => setAsTable((v) => !v)}>{asTable ? 'Show chart' : 'Show as table'}</button>
-    }>
-      {/* Legend doubles as the series toggle; identity is never colour alone (name + swatch). */}
-      <div className="mb-2 flex flex-wrap gap-2" role="group" aria-label="Series">
+    <Card title="Daily activity" subtitle="Records per day, India time" className="lg:col-span-2"
+      actions={<button type="button" className="btn-secondary h-8 text-xs" onClick={() => setAsTable((v) => !v)}>{asTable ? 'Chart' : 'Table'}</button>}>
+      <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Series">
         {SERIES.map((s) => (
           <button key={s.key} type="button" aria-pressed={!hidden.has(s.key)} onClick={() => toggle(s.key)}
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-slate-200 ${hidden.has(s.key) ? 'text-slate-400' : 'text-ink'}`}>
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: hidden.has(s.key) ? '#cbd5e1' : s.color }} />{s.label}
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-slate-200 transition hover:bg-slate-50 ${hidden.has(s.key) ? 'text-slate-400' : 'text-ink'}`}>
+            <span className="h-2 w-2 rounded-full" style={{ background: hidden.has(s.key) ? '#cbd5e1' : s.color }} />{s.label}
           </button>
         ))}
       </div>
       {asTable ? (
-        <div className="max-h-80 overflow-auto">
+        <div className="max-h-[17rem] overflow-auto">
           <Table rowKey={(d) => d.date} rows={[...daily].reverse()} columns={[
             { key: 'date', label: 'Date', render: (d) => shortDate(d.date) },
             ...SERIES.map((s) => ({ key: s.key, label: s.label, render: (d) => fmt(d[s.key]) })),
-            { key: 'passenger_feedback', label: 'Passenger feedback', render: (d) => fmt(d.passenger_feedback) },
           ]} />
         </div>
       ) : (
         <div ref={ref} className="relative w-full min-w-0 overflow-hidden" style={{ minHeight: H }}>
-          {width > 0 && <svg width={width} height={H} role="img" aria-label={`Daily activity, ${daily.length} days`}
-            onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="block touch-none">
-            {scale.ticks.map((t) => (
-              <g key={t}>
-                <line x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} stroke="#e7e5e0" strokeWidth="1" />
-                <text x={pad.l - 6} y={y(t)} dy="0.32em" textAnchor="end" fontSize="11" fill="#6b6a65">{fmt(t)}</text>
-              </g>
-            ))}
-            {daily.map((d, i) => (labelled.has(d.date) ? (
-              <text key={d.date} x={x(i)} y={H - 8} textAnchor={i === 0 ? 'start' : i === daily.length - 1 ? 'end' : 'middle'}
-                fontSize="11" fill="#6b6a65">{shortDate(d.date)}</text>
-            ) : null))}
-            {shown.map((s) => (
-              <polyline key={s.key} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
-                points={daily.map((d, i) => `${x(i)},${y(d[s.key])}`).join(' ')} />
-            ))}
-            {daily.length <= 31 && shown.map((s) => daily.map((d, i) => (
-              <circle key={`${s.key}-${d.date}`} cx={x(i)} cy={y(d[s.key])} r={hover === i ? 4.5 : 0} fill={s.color} stroke="#fff" strokeWidth="2" />
-            )))}
-            {h && <line x1={x(hover)} x2={x(hover)} y1={pad.t} y2={pad.t + ih} stroke="#a3a29d" strokeWidth="1" strokeDasharray="3 3" />}
-          </svg>}
+          {width > 0 && (
+            <svg width={width} height={H} role="img" aria-label={`Daily activity over ${daily.length} days`}
+              onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="block touch-none">
+              {scale.ticks.map((t) => (
+                <g key={t}>
+                  <line x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} stroke={GRID} strokeWidth="1" />
+                  <text x={pad.l - 8} y={y(t)} dy="0.32em" textAnchor="end" fontSize="11" fill={INK_MUTED}>{fmt(t)}</text>
+                </g>
+              ))}
+              {daily.map((d, i) => (labelled.has(d.date) ? (
+                <text key={d.date} x={x(i)} y={H - 8} textAnchor={i === 0 ? 'start' : i === daily.length - 1 ? 'end' : 'middle'}
+                  fontSize="11" fill={INK_MUTED}>{shortDate(d.date)}</text>
+              ) : null))}
+              {shown.map((s) => (
+                <polyline key={s.key} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
+                  points={daily.map((d, i) => `${x(i)},${y(d[s.key])}`).join(' ')} />
+              ))}
+              {h && <line x1={x(hover)} x2={x(hover)} y1={pad.t} y2={pad.t + ih} stroke="#a3a29d" strokeWidth="1" strokeDasharray="3 3" />}
+              {h && shown.map((s) => <circle key={s.key} cx={x(hover)} cy={y(h[s.key])} r="4.5" fill={s.color} stroke={SURFACE} strokeWidth="2" />)}
+            </svg>
+          )}
           {h && (
             <div className="pointer-events-none absolute top-2 z-10 min-w-[10rem] rounded-xl bg-white px-3 py-2 text-xs shadow-raised ring-1 ring-line"
               style={x(hover) > width / 2 ? { right: width - x(hover) + 12 } : { left: x(hover) + 12 }}>
@@ -178,53 +227,79 @@ function DailyChart({ daily }) {
           )}
         </div>
       )}
-    </Panel>
+    </Card>
   );
 }
 
-// ---- horizontal bars (one hue: these are counts of named things, not series) ---------------------------
+// ---- donut: slices with 2px gaps, the total in the middle, a legend with figures and shares -------------
 
-function Bars({ title, rows, empty }) {
-  const max = Math.max(1, ...rows.map((r) => r.value));
+function Donut({ title, subtitle, parts, centerLabel, empty, className = '' }) {
+  const [active, setActive] = useState(null);
+  const shown = foldParts(parts, 6).map((p) => ({ ...p, color: p.color ?? PALETTE[parts.findIndex((q) => q.key === p.key)] ?? '#94a3b8' }));
+  const total = shown.reduce((n, p) => n + p.value, 0);
+  const angles = donutAngles(shown.map((p) => p.value));
+  const S = 168, c = S / 2, r1 = 80, r0 = 56;
+  const focus = active != null ? shown[active] : null;
   return (
-    <Panel title={title}>
-      {rows.length === 0 ? <p className="text-sm text-muted">{empty}</p> : (
-        <ul className="space-y-2">
-          {rows.map((r) => (
-            <li key={r.label} className="grid grid-cols-[7.5rem_minmax(0,1fr)_3rem] items-center gap-2 text-sm" title={`${r.label}: ${fmt(r.value)}`}>
-              <span className="truncate text-slate-700">{r.label}</span>
-              <span className="h-3 rounded-r bg-slate-100">
-                <span className="block h-3 rounded-r" style={{ width: `${(r.value / max) * 100}%`, minWidth: r.value ? 4 : 0, background: '#2a78d6' }} />
-              </span>
-              <span className="text-right font-semibold tabular-nums text-ink">{fmt(r.value)}</span>
-            </li>
-          ))}
-        </ul>
+    <Card title={title} subtitle={subtitle} className={className}>
+      {total === 0 ? <p className="py-10 text-center text-sm text-muted">{empty}</p> : (
+        <div className="flex flex-col items-center gap-4">
+          <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} role="img" className="shrink-0"
+            aria-label={`${title}: ${shown.map((p) => `${p.label} ${p.value}`).join(', ')}`}>
+            {shown.map((p, i) => (
+              <path key={p.key} d={ringPath(c, c, active === i ? r0 - 2 : r0, active === i ? r1 + 3 : r1, angles[i].start, angles[i].end)}
+                fill={p.color} stroke={SURFACE} strokeWidth={shown.length > 1 ? 2 : 0} strokeLinejoin="round"
+                opacity={active == null || active === i ? 1 : 0.35} onMouseEnter={() => setActive(i)} onMouseLeave={() => setActive(null)}>
+                <title>{`${p.label}: ${fmt(p.value)} (${pct(angles[i].share)})`}</title>
+              </path>
+            ))}
+            <text x={c} y={c - 4} textAnchor="middle" fontSize="24" fontWeight="600" fill="#0b0b0b">{compact(focus ? focus.value : total)}</text>
+            <text x={c} y={c + 16} textAnchor="middle" fontSize="11" fill={INK_MUTED}>{focus ? focus.label : centerLabel}</text>
+          </svg>
+          <ul className="w-full min-w-0 space-y-1.5">
+            {shown.map((p, i) => (
+              <li key={p.key} onMouseEnter={() => setActive(i)} onMouseLeave={() => setActive(null)}
+                className={`grid grid-cols-[0.75rem_minmax(0,1fr)_auto_2.75rem] items-center gap-2 rounded-lg px-1.5 py-1 text-sm ${active === i ? 'bg-slate-50' : ''}`}>
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: p.color }} />
+                <span className="truncate text-slate-700">{p.label}</span>
+                <span className="font-semibold tabular-nums text-ink">{fmt(p.value)}</span>
+                <span className="text-right text-xs tabular-nums text-muted">{pct(angles[i].share)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-    </Panel>
+    </Card>
   );
 }
 
 // ---- offices -------------------------------------------------------------------------------------------
 
 function Offices({ offices, onPick }) {
+  const maxCredits = Math.max(1, ...offices.map((o) => o.credit_balance));
   return (
-    <Panel title="Offices">
+    <Card title="Offices" subtitle="Pick one to filter the dashboard to it"
+      actions={<button type="button" className="btn-secondary h-8 text-xs" onClick={() => navigate('/masters/clients')}>Manage offices</button>}>
       <Table rowKey={(o) => o.client_id} rows={offices} onRowClick={(o) => onPick(o.client_id)} columns={[
         { key: 'name', label: 'Office', render: (o) => <><span className="font-semibold">{o.office_id}</span><span className="block text-xs text-slate-500">{o.name}</span></> },
         { key: 'divisions', label: 'HQ & stations', render: (o) => fmt(o.divisions) },
-        { key: 'users', label: 'Active users', render: (o) => fmt(o.users) },
+        { key: 'users', label: 'Users', render: (o) => fmt(o.users) },
         { key: 'journeys', label: 'Journeys', render: (o) => fmt(o.journeys) },
         { key: 'attendance', label: 'Attendance', render: (o) => fmt(o.attendance) },
         { key: 'inspections', label: 'Inspections', render: (o) => fmt(o.inspections) },
         { key: 'complaints_open', label: 'Open complaints', render: (o) => fmt(o.complaints_open) },
-        { key: 'credit_balance', label: 'Credits', render: (o) => <span className="tabular-nums">{fmt(o.credit_balance)}</span> },
+        { key: 'credit_balance', label: 'Credits', render: (o) => (
+          <span className="flex min-w-[6rem] items-center gap-2">
+            <span className="w-8 text-right tabular-nums">{fmt(o.credit_balance)}</span>
+            <span className="h-1.5 flex-1 rounded-full bg-slate-100">
+              <span className="block h-1.5 rounded-full" style={{ width: `${(o.credit_balance / maxCredits) * 100}%`, background: PALETTE[0] }} />
+            </span>
+          </span>
+        ) },
         { key: 'credits_spent', label: 'Spent', render: (o) => fmt(o.credits_spent) },
         { key: 'status', label: 'Status', render: (o) => <Badge tone={o.status === 'active' ? 'green' : 'red'}>{o.status === 'active' ? 'Active' : 'Suspended'}</Badge> },
       ]} />
-      <p className="mt-2 text-xs text-muted">Pick an office to filter the whole dashboard to it.
-        {' '}<button type="button" className="font-semibold text-brand-700 underline" onClick={() => navigate('/masters/clients')}>Manage offices</button></p>
-    </Panel>
+    </Card>
   );
 }
 
@@ -239,55 +314,61 @@ export default function SuperAdminDashboard() {
     ...(filters.divisionId ? { division_id: filters.divisionId } : {}),
   }), [range.date_from, range.date_to, filters.clientId, filters.divisionId]); // eslint-disable-line react-hooks/exhaustive-deps
   const res = useResource('/dashboard/overview', query);
-  const days = `${shortDate(range.date_from)} – ${shortDate(range.date_to)}`;
+  const rangeLabel = range.date_from === range.date_to ? shortDate(range.date_to) : `${shortDate(range.date_from)} – ${shortDate(range.date_to)}`;
+  const offices = res.data?.offices ?? [];
+  const scopeLabel = filters.clientId
+    ? (offices.find((o) => o.client_id === filters.clientId)?.name ?? 'One office') + (filters.divisionId ? ' · one HQ or station' : '')
+    : 'All offices';
 
   return (
     <div className="space-y-4">
-      <Filters value={filters} onChange={setFilters} />
+      <Toolbar value={filters} onChange={setFilters} scopeLabel={scopeLabel} rangeLabel={rangeLabel} />
       {/* One object, not a list: DataState would otherwise call it empty for having no `items`. */}
       <DataState res={res} isEmpty={() => false}>
         {(o) => {
           const t = o.totals;
+          const series = (key) => o.daily.map((d) => d[key]);
           return (
-            <div className="space-y-5">
-              <TileGroup title="Network">
-                <Tile label="Offices" value={t.offices} tone="brand" />
-                <Tile label="Headquarters" value={t.headquarters} />
-                <Tile label="Stations" value={t.stations} />
-                <Tile label="Active users" value={t.users_active} hint={`${fmt(t.users_inactive)} inactive`} />
-              </TileGroup>
-              <TileGroup title={`Journeys · ${days}`}>
-                <Tile label="Running now" value={t.journeys_active} tone="brand" />
-                <Tile label="Scheduled" value={t.journeys_scheduled} />
-                <Tile label="In the period" value={t.journeys} />
-                <Tile label="Cancelled" value={t.journeys_cancelled} tone={t.journeys_cancelled ? 'amber' : 'slate'} />
-              </TileGroup>
-              <TileGroup title={`Field work · ${days}`}>
-                <Tile label="Attendance records" value={t.attendance} />
-                <Tile label="Coach inspections" value={t.inspections} />
-                <Tile label="Passenger feedback" value={t.passenger_feedback} />
-                <Tile label="Railway feedback" value={t.railway_feedback} />
-              </TileGroup>
-              <div className="grid gap-5 lg:grid-cols-2">
-                <TileGroup title={`Complaints · ${days}`} three>
-                  <Tile label="Raised in period" value={t.complaints} />
-                  <Tile label="Open now" value={t.complaints_open} tone={t.complaints_open ? 'amber' : 'slate'} />
-                  <Tile label="Overdue now" value={t.complaints_overdue} tone={t.complaints_overdue ? 'red' : 'slate'} />
-                </TileGroup>
-                <TileGroup title={`Credits · ${days}`} three>
-                  <Tile label="Balance now" value={t.credit_balance} tone="brand" />
-                  <Tile label="Added in period" value={t.credits_added} />
-                  <Tile label="Spent in period" value={t.credits_spent} />
-                </TileGroup>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Headline icon={TrainIcon} label="Journeys" value={t.journeys} color={PALETTE[0]} values={series('journeys')}>
+                  <span className="font-semibold text-ink">{fmt(t.journeys_active)}</span> running now · {fmt(t.journeys_scheduled)} scheduled
+                </Headline>
+                <Headline icon={CalendarCheckIcon} label="Attendance records" value={t.attendance} color={PALETTE[1]} values={series('attendance')}>
+                  in the period
+                </Headline>
+                <Headline icon={ClipboardListIcon} label="Coach inspections" value={t.inspections} color={PALETTE[2]} values={series('inspections')}>
+                  in the period
+                </Headline>
+                <Headline icon={FlagIcon} label="Complaints raised" value={t.complaints} color={PALETTE[3]} values={series('complaints')}>
+                  <span className={t.complaints_open ? 'font-semibold text-amber-700' : ''}>{fmt(t.complaints_open)} open</span>
+                  {' · '}<span className={t.complaints_overdue ? 'font-semibold text-red-700' : ''}>{fmt(t.complaints_overdue)} overdue</span>
+                </Headline>
               </div>
 
-              <DailyChart daily={o.daily} />
+              <div className="grid grid-cols-2 divide-slate-100 rounded-2xl bg-white shadow-card ring-1 ring-slate-200/70 sm:grid-cols-3 lg:grid-cols-6 lg:divide-x">
+                <Figure label="Offices" value={t.offices} />
+                <Figure label="Headquarters" value={t.headquarters} />
+                <Figure label="Stations" value={t.stations} />
+                <Figure label="Active users" value={t.users_active} hint={`${fmt(t.users_inactive)} inactive`} />
+                <Figure label="Credit balance" value={t.credit_balance} hint={`+${fmt(t.credits_added)} added in period`} />
+                <Figure label="Credits spent" value={t.credits_spent} hint={`${fmt(t.journeys_cancelled)} journeys cancelled`} />
+              </div>
 
-              <div className="grid gap-4 lg:grid-cols-2">
-                <Bars title="Users by role" empty="No users yet."
-                  rows={o.users_by_role.map((r) => ({ label: r.role, value: r.count }))} />
-                <Bars title="Complaints by status (all time)" empty="No complaints yet."
-                  rows={Object.entries(STATUS_LABEL).map(([k, l]) => ({ label: l, value: o.complaints_by_status[k] ?? 0 }))} />
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <DailyChart daily={o.daily} />
+                <Donut title="Complaints by status" subtitle="All complaints, any date" centerLabel="complaints" empty="No complaints yet."
+                  parts={STATUSES.map((s) => ({ key: s.key, label: s.label, value: o.complaints_by_status[s.key] ?? 0 }))} />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <Donut title="Users by role" subtitle="Active and inactive" centerLabel="users" empty="No users yet."
+                  parts={o.users_by_role.map((r) => ({ key: String(r.role_id), label: r.role, value: r.count }))} />
+                <Donut title="Journeys by office" subtitle="In the period" centerLabel="journeys" empty="No journeys in this period."
+                  parts={o.offices.map((x) => ({ key: x.client_id, label: x.name, value: x.journeys }))} />
+                <Donut title="Feedback by source" subtitle="In the period" centerLabel="feedback" empty="No feedback in this period."
+                  parts={[{ key: 'passenger', label: 'Passengers', value: t.passenger_feedback },
+                    { key: 'railway', label: 'Railway officials', value: t.railway_feedback }]} />
               </div>
 
               <Offices offices={o.offices} onPick={(id) => setFilters((f) => ({ ...f, clientId: id, divisionId: '' }))} />
