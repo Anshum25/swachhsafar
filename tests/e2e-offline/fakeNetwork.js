@@ -277,6 +277,12 @@ export function createFakeNetwork({ users, today }) {
     }
     if (method === 'GET' && path === '/complaints/departments') return list(masters.departments);
     if (method === 'GET' && path === '/complaints/categories') return list(masters.categories);
+    // ---- offices and the Super Admin overview (api/v1/clients.py, reports.py overview), read-only -------
+    if (method === 'GET' && path === '/clients') return { status: 200, body: FAKE_CLIENTS };
+    if (method === 'GET' && path === '/dashboard/overview') {
+      if (me.user.role_id !== 1 && !Object.values(me.divisions).some((p) => p.includes('dashboard.read'))) return forbidden;
+      return { status: 200, body: fakeOverview(query, today) };
+    }
     if (method === 'GET' && path === '/inventory/items') return list(masters.items);
     if (method === 'GET' && path === '/feedback/question-banks') {
       const d = query.get('division_id');
@@ -329,6 +335,39 @@ export function createFakeNetwork({ users, today }) {
   }
 
   return { server, masters, install };
+}
+
+// Two offices and a 30-day overview with a weekly rhythm, so the Super Admin dashboard has something to draw.
+const FAKE_CLIENTS = [
+  { id: '00000000-0000-4000-8000-0000000000c1', office_id: 'OFF-001', name: 'Default Office', status: 'active', enabled_modules: ['attendance', 'inspections', 'feedback', 'complaints', 'inventory', 'reports'], credit_balance: 120, credit_per_journey: 1, low_credit_threshold: 10 },
+  { id: '00000000-0000-4000-8000-0000000000c2', office_id: '002', name: 'skydot', status: 'active', enabled_modules: ['attendance', 'inspections', 'feedback', 'complaints', 'reports'], credit_balance: 4, credit_per_journey: 1, low_credit_threshold: 10 },
+];
+
+function fakeOverview(query, today) {
+  const to = query.get('date_to') || today;
+  const from = query.get('date_from') || new Date(Date.parse(`${to}T00:00:00Z`) - 29 * 864e5).toISOString().slice(0, 10);
+  const days = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 864e5) + 1;
+  const daily = Array.from({ length: days }, (_, i) => {
+    const date = new Date(Date.parse(`${from}T00:00:00Z`) + i * 864e5).toISOString().slice(0, 10);
+    const w = (i % 7) / 6;
+    return { date, journeys: 3 + Math.round(4 * w), attendance: 20 + Math.round(18 * Math.sin(i / 3) ** 2), inspections: 12 + (i % 5) * 2,
+      passenger_feedback: 8 + (i % 4), railway_feedback: i % 3, complaints: (i * 7) % 5 };
+  });
+  const sum = (k) => daily.reduce((n, d) => n + d[k], 0);
+  return {
+    date_from: from, date_to: to, daily,
+    totals: { offices: 2, headquarters: 2, stations: 5, users_active: 48, users_inactive: 3, journeys_active: 4, journeys_scheduled: 9,
+      journeys: sum('journeys'), journeys_cancelled: 2, attendance: sum('attendance'), inspections: sum('inspections'),
+      passenger_feedback: sum('passenger_feedback'), railway_feedback: sum('railway_feedback'), complaints: sum('complaints'),
+      complaints_open: 6, complaints_overdue: 1, credit_balance: 124, credits_added: 200, credits_spent: sum('journeys') },
+    complaints_by_status: { created: 3, in_process: 2, forwarded: 1, completed: 17 },
+    users_by_role: [{ role_id: 1, role: 'Super Admin', count: 1 }, { role_id: 2, role: 'Admin', count: 2 }, { role_id: 3, role: 'Manager', count: 4 },
+      { role_id: 4, role: 'Supervisor/EHK', count: 9 }, { role_id: 5, role: 'Janitor', count: 32 }, { role_id: 6, role: 'Contractor', count: 3 }],
+    offices: [
+      { client_id: FAKE_CLIENTS[0].id, office_id: 'OFF-001', name: 'Default Office', status: 'active', divisions: 4, users: 36, journeys: 90, attendance: 610, inspections: 380, complaints_open: 4, credit_balance: 120, credits_spent: 90 },
+      { client_id: FAKE_CLIENTS[1].id, office_id: '002', name: 'skydot', status: 'active', divisions: 3, users: 12, journeys: 41, attendance: 240, inspections: 150, complaints_open: 2, credit_balance: 4, credits_spent: 41 },
+    ],
+  };
 }
 
 export const FIELD_PERMS = [

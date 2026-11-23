@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -14,6 +14,7 @@ from app.schemas.reports import (
     FeedbackReport,
     InspectionRow,
     InventoryRow,
+    Overview,
     PsiRow,
 )
 from app.security.principal import Principal, get_principal
@@ -72,6 +73,17 @@ class MapPoint(BaseModel):
     employee_id: uuid.UUID | None = None
     stage: int | None = None
     coach_code: str | None = None
+
+
+@dashboard_router.get("/overview", response_model=Overview)
+def overview(date_from: date | None = None, date_to: date | None = None, division_id: uuid.UUID | None = None,
+             db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Counts, a day-by-day series and a per-office table for everything the caller may see. A Super Admin
+    sees every office; ?client_id= narrows to one office and division_id to one headquarters or station.
+    The period defaults to the last 30 days, today included."""
+    date_to = date_to or today_ist()
+    date_from = date_from or date_to - timedelta(days=29)
+    return svc.overview(db, p, division_id=division_id, date_from=date_from, date_to=date_to)
 
 
 @dashboard_router.get("/divisions/{division_id}", response_model=DivisionDashboard)

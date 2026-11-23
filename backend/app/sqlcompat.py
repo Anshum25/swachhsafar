@@ -20,6 +20,14 @@ def date_text(db: Session, col):
     return func.strftime("%Y-%m-%d", col) if is_sqlite(db) else func.to_char(col, "YYYY-MM-DD")
 
 
+def ist_date_text(db: Session, col):
+    """A UTC timestamp as its India date, 'YYYY-MM-DD' -- the day a record belongs to on a daily chart. Stored
+    timestamps are UTC, and a record made at 02:00 IST is still 'yesterday' in UTC."""
+    if is_sqlite(db):
+        return func.strftime("%Y-%m-%d", col, "+5 hours", "+30 minutes")
+    return func.to_char(func.timezone("Asia/Kolkata", col), "YYYY-MM-DD")
+
+
 def hours_between(db: Session, later, earlier):
     """(later - earlier) in hours, for timestamps."""
     if is_sqlite(db):

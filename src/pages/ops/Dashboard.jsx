@@ -4,6 +4,9 @@ import { DivisionPicker, useDivision } from '../../app/division.jsx';
 import { Badge, DataState, ErrorNote, Loading, Panel, STATE_TONE, Stat, Table, fmtDate, fmtDateTime, label } from '../../components/ui.jsx';
 import { daysAgo, today } from '../../utils/capture.js';
 import { navigate } from '../../app/router.js';
+import SuperAdminDashboard from './SuperAdminDashboard.jsx';
+
+const SUPER_ADMIN = 1;
 import { SHORT_LABEL, visibleNav } from '../../app/Layout.jsx';
 import { TrainArt } from '../../components/Logo.jsx';
 import {
@@ -234,6 +237,9 @@ export default function Dashboard() {
       <LowCreditNote />
       <HomeBanner />
       <ModuleTiles />
+      {/* A Super Admin sees every office at once, with filters on top (SuperAdminDashboard.jsx); everyone
+          else sees the division they work in. */}
+      {user.role_id === SUPER_ADMIN ? <SuperAdminDashboard /> : <>
       {division.divisions.length > 1 && (
         <div className="mb-4 flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-ink">{division.current?.name ?? 'Operations overview'}</p>
@@ -250,6 +256,7 @@ export default function Dashboard() {
           <RecentActivity divisionId={id} />
         </div>
       </div>
+      </>}
     </>
   );
 }

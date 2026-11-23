@@ -33,7 +33,7 @@ from app.models import (
     VerificationStatus,
 )
 from app.security.principal import Principal
-from app.sqlcompat import date_text, hours_between
+from app.sqlcompat import date_text, hours_between, ist_date_text
 from app.services.journeys import get_journey, journey_state, state_clause
 from app.timeutil import IST, today_ist, utcnow
 
@@ -325,3 +325,135 @@ def map_points(db: Session, p: Principal, division_id: uuid.UUID, kind: str, on:
                           .limit(5000)).all()
         return [dict(id=r[0], journey_id=r[1], coach_code=r[2], latitude=r[3], longitude=r[4], at=r[5]) for r in rows]
     raise BusinessRuleViolation("kind must be attendance or feedback")
+
+
+# ---- overview (Super Admin dashboard) ----------------------------------------------------------------------
+
+
+def overview(db: Session, p: Principal, *, division_id: uuid.UUID | None, date_from: date, date_to: date) -> dict:
+    """Everything the caller may see, counted: across every office for a Super Admin, narrowed by the request's
+    ?client_id= (Principal.scope_divisions) and division_id. Counts in the period are by India date; the
+    "now" figures (active journeys, open complaints, balances) are as of now whatever the period."""
+    from app.models import Client, CreditLedger, Division, DivisionKind, LedgerReason, Role, UserStatus
+
+    divisions = _divisions(p, division_id, "dashboard.read") if (division_id or not p.is_super_admin) \
+        else p.scope_divisions()
+    start, end = _range(date_from, date_to)
+    today = today_ist()
+    now = utcnow()
+
+    def in_divs(col):
+        return col.in_(divisions)
+
+    # Offices in view: a Super Admin sees every office (including one with no division yet) unless filtered.
+    if p.is_super_admin and division_id is None:
+        clients_stmt = select(Client.id)
+        if p.client_id is not None:
+            clients_stmt = clients_stmt.where(Client.id == p.client_id)
+    else:
+        clients_stmt = select(Division.client_id).where(Division.id.in_(divisions)).distinct()
+    client_ids = list(db.scalars(clients_stmt))
+
+    def count(model, *where):
+        return db.scalar(select(func.count()).select_from(model).where(*where)) or 0
+
+    def in_period(model, ts_col, *extra):
+        return count(model, in_divs(model.division_id), ts_col >= start, ts_col < end, *extra)
+
+    kinds = dict(db.execute(select(Division.kind, func.count()).where(Division.id.in_(divisions))
+                            .group_by(Division.kind)).all())
+    users_live = (in_divs(User.division_id), User.status != UserStatus.DELETED)
+    ledger_in_view = (CreditLedger.client_id.in_(client_ids), CreditLedger.created_at >= start,
+                      CreditLedger.created_at < end)
+    journey_money = CreditLedger.reason.in_((LedgerReason.JOURNEY_CHARGE, LedgerReason.JOURNEY_REFUND))
+    added = db.scalar(select(func.coalesce(func.sum(CreditLedger.delta), 0))
+                      .where(*ledger_in_view, CreditLedger.reason == LedgerReason.TOP_UP)) or 0
+    net_journeys = db.scalar(select(func.coalesce(func.sum(CreditLedger.delta), 0))
+                             .where(*ledger_in_view, journey_money)) or 0
+    journeys_in_period = (in_divs(Journey.division_id), Journey.journey_date >= date_from,
+                          Journey.journey_date <= date_to)
+    open_complaint = (in_divs(Complaint.division_id), Complaint.status != ComplaintStatus.COMPLETED)
+
+    totals = dict(
+        offices=len(client_ids),
+        headquarters=kinds.get(DivisionKind.HEADQUARTERS, 0),
+        stations=kinds.get(DivisionKind.STATION, 0),
+        users_active=count(User, *users_live, User.status == UserStatus.ACTIVE),
+        users_inactive=count(User, *users_live, User.status == UserStatus.INACTIVE),
+        journeys_active=count(Journey, in_divs(Journey.division_id), state_clause(JourneyState.ACTIVE, today)),
+        journeys_scheduled=count(Journey, in_divs(Journey.division_id), state_clause(JourneyState.SCHEDULED, today)),
+        journeys=count(Journey, *journeys_in_period),
+        journeys_cancelled=count(Journey, *journeys_in_period, Journey.status == JourneyStatus.CANCELLED),
+        attendance=in_period(Attendance, Attendance.device_timestamp),
+        inspections=in_period(Inspection, Inspection.device_timestamp),
+        passenger_feedback=in_period(PassengerFeedback, PassengerFeedback.server_timestamp,
+                                     PassengerFeedback.status.in_(COUNTED)),
+        railway_feedback=in_period(RailwayFeedback, RailwayFeedback.server_timestamp),
+        complaints=in_period(Complaint, Complaint.server_timestamp),
+        complaints_open=count(Complaint, *open_complaint),
+        complaints_overdue=count(Complaint, *open_complaint, Complaint.due_at < now),
+        credit_balance=db.scalar(select(func.coalesce(func.sum(Client.credit_balance), 0))
+                                 .where(Client.id.in_(client_ids))) or 0,
+        credits_added=int(added),
+        credits_spent=int(-net_journeys),
+    )
+
+    # One row per India date in the period, zero-filled, for the charts.
+    days = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
+    daily = {d.isoformat(): dict(date=d, journeys=0, attendance=0, inspections=0, passenger_feedback=0,
+                                 railway_feedback=0, complaints=0) for d in days}
+
+    def by_day(key, model, ts_col, *extra):
+        day = ist_date_text(db, ts_col)
+        rows = db.execute(select(day, func.count()).where(in_divs(model.division_id), ts_col >= start,
+                                                          ts_col < end, *extra).group_by(day))
+        for d, n in rows:
+            if d in daily:
+                daily[d][key] = n
+
+    by_day("attendance", Attendance, Attendance.device_timestamp)
+    by_day("inspections", Inspection, Inspection.device_timestamp)
+    by_day("passenger_feedback", PassengerFeedback, PassengerFeedback.server_timestamp,
+           PassengerFeedback.status.in_(COUNTED))
+    by_day("railway_feedback", RailwayFeedback, RailwayFeedback.server_timestamp)
+    by_day("complaints", Complaint, Complaint.server_timestamp)
+    jday = date_text(db, Journey.journey_date)
+    for d, n in db.execute(select(jday, func.count()).where(*journeys_in_period).group_by(jday)):
+        if d in daily:
+            daily[d]["journeys"] = n
+
+    by_status = dict(db.execute(select(Complaint.status, func.count()).where(in_divs(Complaint.division_id))
+                                .group_by(Complaint.status)).all())
+    roles = db.execute(select(Role.id, Role.name, func.count(User.id)).join(User, User.role_id == Role.id)
+                       .where(*users_live).group_by(Role.id, Role.name).order_by(Role.id)).all()
+
+    # Per office, within the divisions in view.
+    div_client = select(Division.id, Division.client_id).where(Division.id.in_(divisions)).subquery()
+
+    def per_office(model, *where):
+        return dict(db.execute(select(div_client.c.client_id, func.count()).select_from(model)
+                               .join(div_client, div_client.c.id == model.division_id).where(*where)
+                               .group_by(div_client.c.client_id)).all())
+
+    office_divisions = dict(db.execute(select(div_client.c.client_id, func.count())
+                                       .group_by(div_client.c.client_id)).all())
+    office_users = per_office(User, User.status == UserStatus.ACTIVE)
+    office_journeys = per_office(Journey, Journey.journey_date >= date_from, Journey.journey_date <= date_to)
+    office_attendance = per_office(Attendance, Attendance.device_timestamp >= start, Attendance.device_timestamp < end)
+    office_inspections = per_office(Inspection, Inspection.device_timestamp >= start, Inspection.device_timestamp < end)
+    office_open = per_office(Complaint, Complaint.status != ComplaintStatus.COMPLETED)
+    office_spent = dict(db.execute(select(CreditLedger.client_id, func.coalesce(func.sum(CreditLedger.delta), 0))
+                                   .where(*ledger_in_view, journey_money).group_by(CreditLedger.client_id)).all())
+    offices = [dict(client_id=c.id, office_id=c.office_id, name=c.name, status=c.status.value,
+                    divisions=office_divisions.get(c.id, 0), users=office_users.get(c.id, 0),
+                    journeys=office_journeys.get(c.id, 0), attendance=office_attendance.get(c.id, 0),
+                    inspections=office_inspections.get(c.id, 0), complaints_open=office_open.get(c.id, 0),
+                    credit_balance=c.credit_balance, credits_spent=int(-office_spent.get(c.id, 0)))
+               for c in db.scalars(select(Client).where(Client.id.in_(client_ids)).order_by(Client.name))]
+
+    return dict(
+        date_from=date_from, date_to=date_to, totals=totals, daily=list(daily.values()),
+        complaints_by_status={k.value: v for k, v in by_status.items()},
+        users_by_role=[dict(role_id=r[0], role=r[1], count=r[2]) for r in roles],
+        offices=offices,
+    )

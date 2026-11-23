@@ -103,3 +103,66 @@ class DivisionDashboard(BaseModel):
     railway_feedback_today: int
     complaints_open: int
     complaints_overdue: int
+
+
+class OverviewTotals(BaseModel):
+    offices: int
+    headquarters: int
+    stations: int
+    users_active: int
+    users_inactive: int
+    journeys_active: int
+    journeys_scheduled: int
+    journeys: int
+    journeys_cancelled: int
+    attendance: int
+    inspections: int
+    passenger_feedback: int
+    railway_feedback: int
+    complaints: int
+    complaints_open: int
+    complaints_overdue: int
+    credit_balance: int
+    credits_added: int
+    credits_spent: int
+
+
+class OverviewDay(BaseModel):
+    date: date
+    journeys: int
+    attendance: int
+    inspections: int
+    passenger_feedback: int
+    railway_feedback: int
+    complaints: int
+
+
+class OverviewRole(BaseModel):
+    role_id: int
+    role: str
+    count: int
+
+
+class OverviewOffice(BaseModel):
+    client_id: uuid.UUID
+    office_id: str
+    name: str
+    status: str
+    divisions: int
+    users: int
+    journeys: int
+    attendance: int
+    inspections: int
+    complaints_open: int
+    credit_balance: int
+    credits_spent: int
+
+
+class Overview(BaseModel):
+    date_from: date
+    date_to: date
+    totals: OverviewTotals
+    daily: list[OverviewDay]
+    complaints_by_status: dict[str, int]
+    users_by_role: list[OverviewRole]
+    offices: list[OverviewOffice]
