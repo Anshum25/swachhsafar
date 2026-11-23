@@ -247,7 +247,7 @@ function SecurityBanner({ path }) {
 const NAV_COLS = { 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' };
 
 export default function Layout({ path, children }) {
-  const { can, me, modules } = useSession();
+  const { can, me, user, modules } = useSession();
   const online = useNetworkStatus();
   // The SQLite database lives in OPFS: ask the browser not to evict it once a user works on this device.
   useEffect(() => {
@@ -263,6 +263,9 @@ export default function Layout({ path, children }) {
   // Any navigation (a menu link, the browser/Android back button) closes the menu.
   useEffect(() => setOpen(false), [path]);
   const home = path === '/';
+  // The Super Admin's dashboard is a wide analytics grid (4 cards, 6 counters, 3 charts across),
+  // so it gets the whole screen. Every other page keeps the reading width.
+  const wide = home && user?.role_id === 1;
   const masters = isOn('/masters', path);
 
   return (
@@ -314,7 +317,7 @@ export default function Layout({ path, children }) {
             <InstallBanner />
             {me.offline && <p className="bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6">Signed in offline with your cached profile. Permissions will refresh when you reconnect.</p>}
             <SecurityBanner path={path} />
-            <main className="mx-auto max-w-6xl animate-rise-in px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:pb-10 lg:pt-6" key={path.split('/')[1] ?? ''}>{children}</main>
+            <main className={`mx-auto ${wide ? 'max-w-[112rem]' : 'max-w-6xl'} animate-rise-in px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:pb-10 lg:pt-6 xl:px-8`} key={path.split('/')[1] ?? ''}>{children}</main>
             <nav className={`fixed inset-x-0 bottom-0 z-20 grid ${NAV_COLS[bottom.length + 1]} border-t border-line bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(17,29,53,0.05)] lg:hidden`} aria-label="Main">
               {bottom.map(({ path: p, key, Icon }) => {
                 const on = isOn(p, path);
