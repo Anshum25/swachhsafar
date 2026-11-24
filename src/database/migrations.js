@@ -74,7 +74,7 @@ export async function runMigrations(db) {
     // `prepare(db)` builds statements that depend on the database as it is (v15 reads PRAGMA schema_version).
     const statements = migration.prepare ? await migration.prepare(db) : migration.statements;
     await db.transaction([
-      ...statements.map((sql) => ({ sql })),
+      ...statements.map((s) => (typeof s === 'string' ? { sql: s } : s)),
       { sql: `PRAGMA user_version = ${migration.version}` },
     ]);
     applied.push(migration.version);

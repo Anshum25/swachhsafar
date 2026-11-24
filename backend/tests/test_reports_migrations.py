@@ -142,8 +142,8 @@ def test_0011_grants_a_database_created_before_the_client_permissions(pg):
 
 
 def test_0018_moves_general_coaches_to_their_own_class(pg):
-    """General coaches saved as NON_AC become GEN, and every question keeps asking General coaches what it asked
-    them as Non-AC coaches."""
+    """General coaches saved as NON_AC become GEN, coaches typed with the wrong class get the one their code
+    says, and every question keeps asking General coaches what it asked them as Non-AC coaches."""
     server, url_for = pg
     server.psql("DROP DATABASE IF EXISTS swachh_pre0018 WITH (FORCE);")
     server.psql("CREATE DATABASE swachh_pre0018;")
@@ -161,7 +161,8 @@ def test_0018_moves_general_coaches_to_their_own_class(pg):
                 "INSERT INTO questions (id, bank_id, position, text_en, applies_ac, applies_non_ac, required) "
                 f"VALUES ('{uuid.uuid4()}', '{bank}', {pos}, 'Q{pos}', {ac}, {non_ac}, true)")
         for pos, (code, cls) in enumerate((("B1", "AC"), ("S1", "NON_AC"), ("GEN", "NON_AC"), ("GEN2", "NON_AC"),
-                                           ("UR1", "NON_AC")), 1):
+                                           ("UR1", "NON_AC"), ("B2", "NON_AC"), ("S2", "AC"), ("BHJ", "AC"),
+                                           ("PC", "NON_AC")), 1):
             conn.exec_driver_sql(
                 "INSERT INTO train_coaches (id, train_id, code, classification, position) "
                 f"VALUES ('{uuid.uuid4()}', '{train}', '{code}', '{cls}', {pos})")
@@ -172,7 +173,8 @@ def test_0018_moves_general_coaches_to_their_own_class(pg):
         assert conn.exec_driver_sql("SELECT position, applies_gen FROM questions ORDER BY position").all() == [
             (1, True), (2, False)]
         assert dict(conn.exec_driver_sql("SELECT code, classification FROM train_coaches").all()) == {
-            "B1": "AC", "S1": "NON_AC", "GEN": "GEN", "GEN2": "GEN", "UR1": "GEN"}
+            "B1": "AC", "S1": "NON_AC", "GEN": "GEN", "GEN2": "GEN", "UR1": "GEN", "B2": "AC", "S2": "NON_AC",
+            "BHJ": "AC", "PC": "NON_AC"}
     run_migrations(url, "0017", "downgrade")
     with engine.connect() as conn:
         assert {c for (c,) in conn.exec_driver_sql("SELECT DISTINCT classification FROM train_coaches")} == {"AC", "NON_AC"}

@@ -753,9 +753,24 @@ const V14 = {
 // cannot be rebuilt in place: inspections, feedback and inventory reference journey_coaches. Widening the list
 // is the change SQLite documents for writable_schema (it loosens a constraint, so every stored row still
 // passes it): the table's CREATE text gets 'GEN' added, and schema_version is bumped so SQLite reloads it.
-// Coaches already stored under a general code as NON_AC become GEN, as on the server.
+// Coaches on trains and journeys get the class their code says, as on the server (backend 0018): general codes
+// become GEN, and coaches typed with the wrong class (B2 saved as NON_AC, S1 as AC) are corrected. A code that
+// says nothing (BHJ, PC) keeps its class. The code patterns are frozen here (src/utils/coaches.js inferClass).
 const V15_CLASS_TABLES = ['train_coaches', 'journey_coaches', 'inspection_records', 'passenger_feedback', 'complaints'];
-const V15_GENERAL_CODE = ['GEN', 'GN', 'GS', 'UR'].map((p) => `code = '${p}' OR code GLOB '${p}[0-9]*'`).join(' OR ');
+const v15ClassOf = (code) => {
+  const c = String(code ?? '').trim().toUpperCase();
+  if (/^(GEN|GN|GS|UR)\d*$/.test(c)) return 'GEN';
+  if (/^(H|HA|A|B|M|C|E|EA|EV|K)\d*$/.test(c)) return 'AC';
+  if (/^(S|D|J|F)\d+$|^SS\d*$/.test(c)) return 'NON_AC';
+  return null;
+};
+async function v15Corrections(db, table, owner) {
+  const rows = await db.query(`SELECT ${owner} AS owner, code, classification FROM ${table}`);
+  return rows.filter((r) => v15ClassOf(r.code) && v15ClassOf(r.code) !== r.classification).map((r) => ({
+    sql: `UPDATE ${table} SET classification = ? WHERE ${owner} = ? AND code = ?`,
+    params: [v15ClassOf(r.code), r.owner, r.code],
+  }));
+}
 const V15 = {
   version: 15,
   name: 'general coach class',
@@ -773,8 +788,8 @@ const V15 = {
         'ALTER TABLE feedback_questions ADD COLUMN applies_gen INTEGER NOT NULL DEFAULT 1',
         'UPDATE feedback_questions SET applies_gen = applies_non_ac',
       ]),
-      `UPDATE train_coaches SET classification = 'GEN' WHERE classification = 'NON_AC' AND (${V15_GENERAL_CODE})`,
-      `UPDATE journey_coaches SET classification = 'GEN' WHERE classification = 'NON_AC' AND (${V15_GENERAL_CODE})`,
+      ...await v15Corrections(db, 'train_coaches', 'train_id'),
+      ...await v15Corrections(db, 'journey_coaches', 'journey_id'),
     ];
   },
 };

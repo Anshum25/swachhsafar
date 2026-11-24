@@ -8,11 +8,15 @@ Feedback questions differ for General coaches, so a question now says whether it
 them before: applies_gen starts as applies_non_ac.
 
 Coach class columns are VARCHAR(8) without a CHECK on their values (the enum is not native), so "GEN" needs
-no column change. Coaches already saved under a General code (GEN, GEN2, GN1, GS, UR1 ...) as NON_AC move to
-GEN on trains and journeys. Recorded feedback, inspections and complaints keep the class they were taken
-under: they show what was asked at the time.
+no column change.
 
-Downgrade folds GEN back into NON_AC and drops applies_gen.
+Coaches on trains and journeys get the class their code says, as the app now sets it when coaches are typed:
+General codes (GEN, GEN2, GN1, GS, UR1 ...) become GEN, and wrongly typed ones are corrected -- the Trains form
+saved "B1, B2" as NON_AC unless " AC" was typed after each, and the journey coach editor offered AC first, so
+an added S1 was saved as AC. A code that says nothing (BHJ, PC ...) keeps its class. Recorded feedback,
+inspections and complaints keep the class they were taken under: they show what was asked at the time.
+
+Downgrade folds GEN back into NON_AC and drops applies_gen; corrected AC / NON_AC classes stay corrected.
 """
 import re
 
@@ -24,8 +28,22 @@ down_revision = "0017"
 branch_labels = None
 depends_on = None
 
+# The app's own reading of a coach code (src/utils/coaches.js inferClass), frozen here.
 GENERAL_CODE = re.compile(r"^(GEN|GN|GS|UR)[0-9]*$")
+AC_CODE = re.compile(r"^(H|HA|A|B|M|C|E|EA|EV|K)[0-9]*$")
+NON_AC_CODE = re.compile(r"^(S|D|J|F)[0-9]+$|^SS[0-9]*$")
 COACH_TABLES = ("train_coaches", "journey_coaches")
+
+
+def class_of(code: str | None) -> str | None:
+    c = (code or "").strip().upper()
+    if GENERAL_CODE.match(c):
+        return "GEN"
+    if AC_CODE.match(c):
+        return "AC"
+    if NON_AC_CODE.match(c):
+        return "NON_AC"
+    return None
 
 
 def upgrade() -> None:
@@ -40,10 +58,14 @@ def upgrade() -> None:
     for table in COACH_TABLES:
         t = sa.table(table, sa.column("id", sa.Uuid()), sa.column("code", sa.String()),
                      sa.column("classification", sa.String()))
-        ids = [row.id for row in conn.execute(sa.select(t.c.id, t.c.code).where(t.c.classification == "NON_AC"))
-               if GENERAL_CODE.match((row.code or "").upper())]
-        for i in range(0, len(ids), 500):
-            conn.execute(sa.update(t).where(t.c.id.in_(ids[i:i + 500])).values(classification="GEN"))
+        moves: dict[str, list] = {"AC": [], "NON_AC": [], "GEN": []}
+        for row in conn.execute(sa.select(t.c.id, t.c.code, t.c.classification)):
+            want = class_of(row.code)
+            if want and want != row.classification:
+                moves[want].append(row.id)
+        for cls, ids in moves.items():
+            for i in range(0, len(ids), 500):
+                conn.execute(sa.update(t).where(t.c.id.in_(ids[i:i + 500])).values(classification=cls))
 
 
 def downgrade() -> None:

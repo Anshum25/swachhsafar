@@ -44,7 +44,7 @@ function ModuleRow({ href, icon: Icon, title, tint = 'blue', children }) {
 }
 import { canAct } from '../../services/authorization.js';
 import { ONLINE_ONLY, isVersionConflict } from '../../services/operations.js';
-import { COACH_CLASSES, classLabel } from '../../utils/coaches.js';
+import { COACH_CLASSES, classLabel, inferClass } from '../../utils/coaches.js';
 
 // Reference tabs: Active · Schedule · History; cancelled journeys are a filter inside History.
 const TABS = [
@@ -238,7 +238,8 @@ function CoachEditor({ journey, onClose, onSaved, onConflict }) {
         {!coaches.length && <li className="px-3 py-2 text-slate-500">No coaches.</li>}
       </ul>
       <div className="flex flex-wrap items-end gap-2">
-        <Field label="Coach code" error={invalid || undefined}><input className="input w-32 uppercase" value={code} maxLength={10} onChange={(e) => setCode(e.target.value)} /></Field>
+        <Field label="Coach code" error={invalid || undefined}><input className="input w-32 uppercase" value={code} maxLength={10}
+          onChange={(e) => { setCode(e.target.value); const c = inferClass(e.target.value); if (c) setCls(c); }} /></Field>
         <Field label="Class"><Select value={cls} onChange={setCls} options={COACH_CLASSES} /></Field>
         <button type="button" className="btn-secondary h-12" disabled={!clean || !!invalid}
           onClick={() => { setCoaches((l) => [...l, { code: clean, classification: cls }]); setCode(''); }}>Add coach</button>

@@ -116,13 +116,13 @@ function StationTrains({ code, name, picks, onPatch }) {
                   </label>
                   {pick.checked && (
                     <div className="ml-7 mt-2">
-                      <input className="input h-9 text-sm" placeholder={fetching[t.train_no] === 'loading' ? 'Fetching coaches…' : 'Coaches, e.g. B1 AC, B2 AC, S1, S2'} value={pick.coaches}
+                      <input className="input h-9 text-sm" placeholder={fetching[t.train_no] === 'loading' ? 'Fetching coaches…' : 'Coaches, e.g. B1, B2, S1, GEN'} value={pick.coaches}
                         aria-label={`Coaches of ${t.train_no}`} onChange={(e) => set(t.train_no, { coaches: e.target.value, auto: false })} />
                       <p className="mt-1 text-[11px] text-muted">
                         {fetching[t.train_no] === 'loading' ? 'Fetching this train\'s coaches…'
                           : pick.auto ? 'Filled in from the train\'s composition (RailRadar). Edit if this office works on fewer coaches.'
                             : fetching[t.train_no] === 'none' ? 'Could not fetch the coaches: type them, or add them later on the train.'
-                              : 'Add AC after air-conditioned coaches.'}
+                              : 'The class comes from the code (B1 is AC, S1 Non-AC, GEN General); write AC, NON-AC or GEN after a code to change it.'}
                       </p>
                       <CoachBreakdown coaches={parseCoaches(pick.coaches)} className="mt-2" />
                     </div>

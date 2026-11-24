@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getSchemaVersion, MIGRATIONS, runMigrations } from '../../src/database/migrations.js';
 import { applicableQuestions } from '../../src/database/feedbackRepository.js';
-import { coachBreakdown, coachText, parseCoaches } from '../../src/utils/coaches.js';
+import { coachBreakdown, coachText, inferClass, parseCoaches } from '../../src/utils/coaches.js';
 import { createMemoryDb } from '../helpers/memoryDb.js';
 
 // A phone database as v14 left it: the class columns accept only AC and NON_AC.
@@ -11,7 +11,8 @@ async function v14Db(filename) {
     await db.transaction([...m.statements.map((sql) => ({ sql })), { sql: `PRAGMA user_version = ${m.version}` }]);
   }
   await db.run('PRAGMA foreign_keys = OFF'); // coach and question rows without their journey, train and bank
-  for (const [code, cls, pos] of [['B1', 'AC', 1], ['S1', 'NON_AC', 2], ['GEN', 'NON_AC', 3], ['GEN2', 'NON_AC', 4], ['UR1', 'NON_AC', 5]]) {
+  for (const [code, cls, pos] of [['B1', 'AC', 1], ['S1', 'NON_AC', 2], ['GEN', 'NON_AC', 3], ['GEN2', 'NON_AC', 4], ['UR1', 'NON_AC', 5],
+    ['B2', 'NON_AC', 6], ['S2', 'AC', 7], ['BHJ', 'AC', 8], ["X'1", 'NON_AC', 9]]) {
     await db.run('INSERT INTO journey_coaches (journey_id, code, classification, position) VALUES (?, ?, ?, ?)', ['j1', code, cls, pos]);
     await db.run('INSERT INTO train_coaches (train_id, code, classification, position) VALUES (?, ?, ?, ?)', ['t1', code, cls, pos]);
   }
@@ -26,7 +27,8 @@ describe('v15: General coaches are a class of their own on the phone', () => {
   it('moves general coaches to GEN and asks them what Non-AC coaches were asked', async () => {
     const db = await v14Db();
     expect(await runMigrations(db)).toMatchObject({ from: 14, to: 15, applied: [15] });
-    const want = { B1: 'AC', S1: 'NON_AC', GEN: 'GEN', GEN2: 'GEN', UR1: 'GEN' };
+    // B2 typed as NON_AC and S2 as AC are corrected; BHJ and X'1 say nothing, so they keep what was chosen.
+    const want = { B1: 'AC', S1: 'NON_AC', GEN: 'GEN', GEN2: 'GEN', UR1: 'GEN', B2: 'AC', S2: 'NON_AC', BHJ: 'AC', "X'1": 'NON_AC' };
     expect(await classes(db, 'journey_coaches')).toEqual(want);
     expect(await classes(db, 'train_coaches')).toEqual(want);
     expect(await db.query('SELECT id, applies_gen FROM feedback_questions ORDER BY position')).toEqual([
@@ -56,12 +58,16 @@ describe('v15: General coaches are a class of their own on the phone', () => {
 });
 
 describe('coach classes on screen', () => {
-  it('reads and writes General coaches in the coach list', () => {
-    expect(parseCoaches('B1 AC, S1, GEN, UR2, D1 GEN, GEN5 NON-AC')).toEqual([
-      { code: 'B1', classification: 'AC' }, { code: 'S1', classification: 'NON_AC' }, { code: 'GEN', classification: 'GEN' },
-      { code: 'UR2', classification: 'GEN' }, { code: 'D1', classification: 'GEN' }, { code: 'GEN5', classification: 'NON_AC' }]);
-    const text = 'B1 AC, S1, GEN, UR2, D1 GEN, GEN5 NON-AC';
-    expect(coachText(parseCoaches(text))).toBe(text);
+  it('takes the class from the coach code unless one is written after it', () => {
+    expect(parseCoaches('B1, B2, S1, M1, HA1, GEN, UR2, BHJ, D1 GEN, GEN5 NON-AC, S9 AC, PC AC')).toEqual([
+      { code: 'B1', classification: 'AC' }, { code: 'B2', classification: 'AC' }, { code: 'S1', classification: 'NON_AC' },
+      { code: 'M1', classification: 'AC' }, { code: 'HA1', classification: 'AC' }, { code: 'GEN', classification: 'GEN' },
+      { code: 'UR2', classification: 'GEN' }, { code: 'BHJ', classification: 'NON_AC' }, { code: 'D1', classification: 'GEN' },
+      { code: 'GEN5', classification: 'NON_AC' }, { code: 'S9', classification: 'AC' }, { code: 'PC', classification: 'AC' }]);
+    // Written back, a class appears only where the code does not already say it; the old " AC" still reads.
+    expect(coachText(parseCoaches('B1 AC, S1, GEN, BHJ, D1 GEN, PC AC'))).toBe('B1, S1, GEN, BHJ, D1 GEN, PC AC');
+    expect(inferClass('b5')).toBe('AC');
+    expect(inferClass('BHJ')).toBeNull();
   });
 
   it('asks each class its own questions', () => {
