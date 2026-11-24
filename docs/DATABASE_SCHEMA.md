@@ -265,6 +265,13 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `before_inspection_enabled` | BOOLEAN | not null |
 | `after_inspection_enabled` | BOOLEAN | not null |
 | `is_active` | BOOLEAN | not null |
+| `origin_code` | VARCHAR(8) | station it starts at (RailRadar) |
+| `destination_code` | VARCHAR(8) | station it ends at |
+| `destination_name` | VARCHAR(120) |  |
+| `run_days` | VARCHAR(27) | "mon,tue,..."; NULL = every day |
+| `auto_journeys` | BOOLEAN | not null; journeys planned daily (services/railway.plan_journeys) |
+| `arrival_days` | INTEGER | days after departure it reaches its last station, 0–7; NULL = schedule not read |
+| `return_train_id` | UUID | → trains.id (SET NULL); the train that makes the return trip |
 | `id` | UUID | PK |
 | `created_at` | DATETIME | not null |
 | `updated_at` | DATETIME | not null |

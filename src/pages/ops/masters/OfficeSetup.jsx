@@ -3,7 +3,9 @@
 //   1. The Super Admin sets the office's state and city (AreaEditor, on the office's page).
 //   2. The office's Admin -- or the Super Admin -- ticks that city's stations (step 1), then, for each, the
 //      trains that start there, read from RailRadar (step 2), and saves. Each station becomes one of the
-//      office's stations and each train one of its trains.
+//      office's stations and each train one of its trains. The city is where the list starts, not a limit:
+//      "Add a station from another city" reaches any station in the country, for an office that works a
+//      train starting in another state.
 //   3. Journeys are then planned for those trains every day, three days ahead, with no supervisor until
 //      somebody assigns one. Each is paid for (one journey's credits) the moment it is created; one the
 //      wallet cannot pay for is not created, and is tried again the next day.
@@ -137,6 +139,60 @@ function StationTrains({ code, name, picks, onPatch }) {
   );
 }
 
+// ---- a station from outside the office's home city -----------------------------------------------------
+
+// The home city is where setup starts, not a boundary: an office in Ahmedabad may work a train that starts
+// in Jabalpur. This picks any station in the country; the backend checks the code is a real station, and an
+// office can hold a station only once (uq_divisions_client_station).
+function AddStation({ have, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState('');
+  const [city, setCity] = useState('');
+  const states = useResource(open ? '/railway/states' : null);
+  const cities = useResource(open && state ? '/railway/cities' : null, state ? { state } : null);
+  const found = useResource(open && state && city ? '/railway/stations' : null, state && city ? { state, city } : null);
+
+  if (!open) {
+    return (
+      <button type="button" className="btn-secondary mt-3 h-10 w-full" onClick={() => setOpen(true)}>
+        + Add a station from another city
+      </button>
+    );
+  }
+  return (
+    <div className="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-line">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-ink">Add a station from another city</p>
+        <button type="button" className="text-xs font-semibold text-slate-500" onClick={() => setOpen(false)}>Close</button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="State">
+          <Select value={state} onChange={(v) => { setState(v); setCity(''); }} placeholder="Choose a state"
+            options={(states.data ?? []).map((x) => ({ value: x, label: x }))} />
+        </Field>
+        <Field label="City">
+          <Select value={city} onChange={setCity} placeholder={state ? 'Choose a city' : 'Choose a state first'}
+            disabled={!state} options={(cities.data ?? []).map((x) => ({ value: x, label: x }))} />
+        </Field>
+      </div>
+      {state && city && (
+        <ul className="mt-3 max-h-56 divide-y divide-slate-200 overflow-auto rounded-lg bg-white ring-1 ring-line">
+          {(found.data ?? []).map((st) => (
+            <li key={st.code} className="flex items-center gap-3 px-3 py-2">
+              <span className="min-w-0 flex-1 text-sm text-ink">{st.name} <span className="text-slate-500">({st.code})</span></span>
+              {have.includes(st.code)
+                ? <span className="text-xs font-semibold text-slate-400">Added</span>
+                : <button type="button" className="btn-secondary h-8 text-xs"
+                    onClick={() => onAdd({ code: st.code, name: st.name, city: st.city, state, home: false, selected: false, train_nos: [], division_id: null })}>Add</button>}
+            </li>
+          ))}
+          {found.data && !found.data.length && <li className="px-3 py-4 text-center text-sm text-muted">No station in {city}.</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ---- the wizard ----------------------------------------------------------------------------------------
 
 export function SetupWizard({ clientId, clientName }) {
@@ -159,7 +215,13 @@ export function SetupWizard({ clientId, clientName }) {
     }
   }, [setup.data, chosen]);
 
-  const stations = setup.data?.stations ?? [];
+  // Stations added from another city this session, until the save brings them back from the server.
+  const [extra, setExtra] = useState([]);
+  const stations = useMemo(() => {
+    const saved = setup.data?.stations ?? [];
+    const have = new Set(saved.map((x) => x.code));
+    return [...saved, ...extra.filter((x) => !have.has(x.code))];
+  }, [setup.data, extra]);
   const byCode = useMemo(() => Object.fromEntries(stations.map((s) => [s.code, s])), [stations]);
   const shown = filterStations(stations, term);
   const picked = chosen ?? [];
@@ -199,6 +261,7 @@ export function SetupWizard({ clientId, clientName }) {
 
             {step === 'stations' && (
               <Panel title={`Stations of ${s.city}`} actions={<span className="text-sm text-muted">{picked.length} selected</span>}>
+                <p className="mb-3 text-xs text-muted">Its suburbs are included. A train that starts somewhere else is set up the same way — add that station below.</p>
                 <input className="input mb-3 h-10" type="search" placeholder="Search by name or code" value={term}
                   onChange={(e) => setTerm(e.target.value)} aria-label="Search stations" />
                 <ul className="max-h-[26rem] divide-y divide-slate-100 overflow-auto">
@@ -208,14 +271,19 @@ export function SetupWizard({ clientId, clientName }) {
                         <input type="checkbox" className="h-4 w-4 accent-brand-700" checked={picked.includes(st.code)} onChange={() => toggle(st.code)} />
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-semibold text-ink">{st.name} <span className="font-normal text-slate-500">({st.code})</span></span>
-                          {st.city && st.city !== s.city && <span className="block text-xs text-muted">{st.city}</span>}
+                          {st.home === false
+                            ? <span className="block text-xs text-muted">{st.city}{st.state ? `, ${st.state}` : ''}</span>
+                            : st.city && st.city !== s.city && <span className="block text-xs text-muted">{st.city}</span>}
                         </span>
+                        {st.home === false && <Badge tone="slate">Other city</Badge>}
                         {st.selected && <Badge tone="green">Set up</Badge>}
                       </label>
                     </li>
                   ))}
                   {!shown.length && <li className="py-6 text-center text-sm text-muted">No station matches.</li>}
                 </ul>
+                <AddStation have={stations.map((x) => x.code)}
+                  onAdd={(st) => { setExtra((e) => [...e, st]); setChosen((c) => [...(c ?? []), st.code]); }} />
                 <div className="mt-3 flex justify-end">
                   <button type="button" className="btn-primary h-10" disabled={!picked.length || !online} onClick={() => setStep('trains')}>
                     Next: choose trains

@@ -12,7 +12,6 @@ from app.providers.railradar import TimetableProvider, get_timetable_provider
 from app.schemas.railway import RailwayStationOut, SetupIn, SetupOut, SetupResult, StationTrainsOut, TrainCoachOut
 from app.security.principal import Principal, get_principal
 from app.services import railway as svc
-from app.services.clients import client_of_division
 from app.services.common import get_or_404
 from app.timeutil import today_ist
 
@@ -41,14 +40,12 @@ def stations(state: str = Query(min_length=1, max_length=60), city: str = Query(
 def station_trains(code: str, refresh: bool = False, db: Session = Depends(get_db),
                    p: Principal = Depends(get_principal), provider: TimetableProvider = Depends(get_timetable_provider)):
     """Trains that start at the station. Each lookup may reach RailRadar, so it is for the people who set
-    offices up: the Super Admin, or an office's Admin for a station of their own office's city."""
-    if not p.is_super_admin:
-        client = client_of_division(db, p.user.division_id)
-        own_city = {s.code for s in svc.stations_in(db, client.state, client.city)} \
-            if client is not None and client.state and client.city else set()
-        if p.role != RoleId.ADMIN or code.strip().upper() not in own_city:
-            raise Forbidden("Only the Super Admin or the office's Admin can look up a station of the office's city",
-                            code="permission_denied")
+    offices up: the Super Admin, or an office's Admin -- for any station, not only their home city's, since
+    an office may run trains out of another state. This matches /trains/{no}/coaches, which an Admin has
+    always been able to call for any train."""
+    if not (p.is_super_admin or p.role == RoleId.ADMIN):
+        raise Forbidden("Only the Super Admin or an office's Admin can look up a station's trains",
+                        code="permission_denied")
     # Only the Super Admin may force a fresh read past the cache: it is a request to RailRadar.
     return svc.station_trains(db, provider, code, refresh=refresh and p.is_super_admin)
 
