@@ -52,13 +52,27 @@ def test_a_claimed_match_is_still_judged(world):
     set_policy(world, attendance_group_photo=True, face_match_threshold=0.5)
     enroll(world)
     # Recognised in the photo and confirmed: the distance is kept as evidence and must hold up.
-    r, _ = group_punch(world, "jan", face_distance=0.3, face_model=MODEL)
+    live = {"security": {"liveness": "passed"}}
+    r, _ = group_punch(world, "jan", face_distance=0.3, face_model=MODEL, **live)
     assert r.status_code == 201 and r.json()["face_distance"] == 0.3
-    r, _ = group_punch(world, "jan", 2, face_distance=0.62, face_model=MODEL)
+    r, _ = group_punch(world, "jan", 2, face_distance=0.62, face_model=MODEL, **live)
     assert r.status_code == 422 and r.json()["error"]["code"] == "face_mismatch"
     # A distance against a model this employee was never registered with proves nothing.
-    r, _ = group_punch(world, "jan", 2, face_distance=0.2, face_model="other-model")
+    r, _ = group_punch(world, "jan", 2, face_distance=0.2, face_model="other-model", **live)
     assert r.status_code == 422 and r.json()["error"]["code"] == "face_not_verified"
+
+
+def test_a_recognised_face_must_have_been_seen_live(world):
+    # A photo of a photo (or of a screen) is flat: the app never reports it live, and a record claiming a
+    # match without that is refused.
+    set_policy(world, attendance_group_photo=True, face_match_threshold=0.5)
+    enroll(world)
+    r, _ = group_punch(world, "jan", face_distance=0.3, face_model=MODEL)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "liveness_required"
+    r, _ = group_punch(world, "jan", face_distance=0.3, face_model=MODEL, security={"liveness": "failed"})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "liveness_required"
+    r, _ = group_punch(world, "jan", face_distance=0.3, face_model=MODEL, security={"liveness": "passed"})
+    assert r.status_code == 201, r.text
 
 
 def test_a_name_supplied_by_the_supervisor_claims_no_match(world):
