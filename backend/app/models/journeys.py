@@ -73,8 +73,9 @@ class Journey(UUIDPk, Timestamps, Base):
     # Empty when the planner created it (auto_created).
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     auto_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
-    # Whether the client's wallet has paid for it. A journey somebody creates is paid for at once; a planned
-    # one on its start day (services/railway.charge_due_journeys), and cancelled if the wallet cannot.
+    # Whether the client's wallet has paid for it. Every journey is paid for when it is created, planned
+    # ones included (services/railway.plan_journeys); False only on one planned under the earlier
+    # start-day rule and not yet charged (services/railway.charge_due_journeys).
     charged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
     status: Mapped[JourneyStatus] = mapped_column(str_enum(JourneyStatus, 10), nullable=False, default=JourneyStatus.PLANNED)
     cancelled_at: Mapped[datetime | None] = mapped_column(TZDateTime())

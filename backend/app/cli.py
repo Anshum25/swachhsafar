@@ -246,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     fb.add_argument("--dry-run", action="store_true")
     f = sub.add_parser("file-media-by-journey", help="move files kept under other/ into their journey folder")
     f.add_argument("--dry-run", action="store_true")
-    pj = sub.add_parser("plan-journeys", help="plan journeys for set-up trains and charge those starting today "
+    pj = sub.add_parser("plan-journeys", help="plan and pay for journeys of set-up trains, a few days ahead "
                                               "(daily: deploy/systemd/swachhsafar-plan-journeys.timer)")
     pj.add_argument("--date", help="act as if today were this India date (YYYY-MM-DD); default today")
     args = parser.parse_args(argv)
@@ -259,11 +259,11 @@ def main(argv: list[str] | None = None) -> int:
 
         today = _date.fromisoformat(args.date) if args.date else today_ist()
         with write_intent(), get_sessionmaker()() as db:
-            created = plan_journeys(db, today=today)
+            planned = plan_journeys(db, today=today)
         with write_intent(), get_sessionmaker()() as db:
-            paid = charge_due_journeys(db, today=today)
-        print(f"{today}: {created} journey(s) planned; {paid['charged']} charged, "
-              f"{paid['cancelled']} cancelled for want of credits")
+            paid = charge_due_journeys(db, today=today)  # journeys left unpaid by the old start-day rule
+        print(f"{today}: {planned['created']} journey(s) planned and paid, {planned['skipped']} skipped for "
+              f"want of credits; {paid['charged']} older ones charged, {paid['cancelled']} cancelled")
         return 0
 
     if args.cmd == "set-role":

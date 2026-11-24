@@ -5,7 +5,8 @@
 //      trains that start there, read from RailRadar (step 2), and saves. Each station becomes one of the
 //      office's stations and each train one of its trains.
 //   3. Journeys are then planned for those trains every day, three days ahead, with no supervisor until
-//      somebody assigns one, and paid for on their start day.
+//      somebody assigns one. Each is paid for (one journey's credits) the moment it is created; one the
+//      wallet cannot pay for is not created, and is tried again the next day.
 import { useEffect, useMemo, useState } from 'react';
 import { useResource, useSession } from '../../../app/session.jsx';
 import { navigate } from '../../../app/router.js';
@@ -199,7 +200,7 @@ export function SetupWizard({ clientId, clientName }) {
 
             {step === 'trains' && (
               <>
-                <p className="text-sm text-muted">Tick the trains this office works on. Journeys are planned for them every day, three days ahead, on the days they run.</p>
+                <p className="text-sm text-muted">Tick the trains this office works on. Journeys are planned for them every day, three days ahead, on the days they run; each costs one journey's credits when it is created.</p>
                 {picked.map((code) => (
                   <StationTrains key={code} code={code} name={byCode[code]?.name ?? code} picks={picks[code] ?? {}}
                     onChange={(p) => setPicks((all) => ({ ...all, [code]: p }))} />
@@ -219,8 +220,13 @@ export function SetupWizard({ clientId, clientName }) {
                 <p className="text-sm text-ink">
                   {result.trains_planned} train{result.trains_planned === 1 ? '' : 's'} planned
                   {result.divisions_created ? `, ${result.divisions_created} new station${result.divisions_created === 1 ? '' : 's'}` : ''};
-                  {' '}{result.journeys_created} journey{result.journeys_created === 1 ? '' : 's'} created for the next days.
+                  {' '}{result.journeys_created} journey{result.journeys_created === 1 ? '' : 's'} created for the next days, each paid for from the wallet.
                 </p>
+                {result.journeys_skipped > 0 && (
+                  <p className="mt-1 text-sm font-semibold text-red-700">
+                    {result.journeys_skipped} more could not be created: not enough credits. They are created automatically once credits are added.
+                  </p>
+                )}
                 <p className="mt-1 text-sm text-amber-800">They have no supervisor yet. Assign one to each journey in Journeys before it departs; each station needs its own supervisors under Users.</p>
                 <div className="mt-3 flex gap-2">
                   <button type="button" className="btn-primary h-10" onClick={() => navigate('/journeys')}>Open Journeys</button>

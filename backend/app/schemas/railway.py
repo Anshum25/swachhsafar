@@ -92,3 +92,5 @@ class SetupResult(BaseModel):
     divisions_created: int
     trains_planned: int
     journeys_created: int
+    # Not created because the wallet could not pay for them; tried again on the next daily run.
+    journeys_skipped: int = 0

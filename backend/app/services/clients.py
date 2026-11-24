@@ -313,7 +313,8 @@ __all__ = [
 
 def wallet_summary(db: Session, p: Principal, client_id: uuid.UUID, *, today) -> dict:
     """What the office's home screen shows about its wallet: the balance and rate, what moved this month,
-    and what is coming -- planned journeys not paid for yet, which are charged on their start day and
+    and what is coming -- planned journeys not paid for yet (only those planned under the earlier start-day
+    rule; new ones are paid when created), which are charged when they start and
     cancelled if the balance cannot cover them then (services/railway.py)."""
     from datetime import datetime, time
 

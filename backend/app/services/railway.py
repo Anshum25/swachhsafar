@@ -5,9 +5,11 @@
    there (RailRadar's timetable, cached in railway_boards). `save_setup` turns each station into one of the
    client's divisions and each train into one of that division's trains, marked auto_journeys.
 3. `plan_journeys`, every day: a journey for every auto_journeys train on each of the next PLAN_DAYS days it
-   runs. Planned journeys have no supervisor until somebody assigns one, and cost nothing yet.
-4. `charge_due_journeys`, every day: a planned journey is paid for on its start day; if the wallet cannot
-   cover it (or the office is suspended) it is cancelled with the reason, and nothing is charged.
+   runs, paid for (at the office's rate) the moment it is created, like any journey. When the wallet cannot
+   cover one it is not created, and is tried again on the next run. Planned journeys have no supervisor
+   until somebody assigns one. Cancelling one before it departs gives the credit back.
+4. `charge_due_journeys`: pays for any planned journey left unpaid by the earlier rule (charged on the start
+   day), or cancels it if the wallet cannot.
 
 `python -m app.cli plan-journeys` runs 3 and 4 (deploy/systemd/swachhsafar-plan-journeys.timer).
 """
@@ -234,8 +236,9 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
     audit(db, actor_id=p.id, action="client.railway_setup", entity=client, division_id=None,
           changes={"stations": {c: [t.train_no for t in s.trains] for c, s in chosen.items()}})
     db.commit()
-    journeys = plan_journeys(db, today=today, client_id=client.id)
-    return dict(divisions_created=created_divisions, trains_planned=len(planned), journeys_created=journeys)
+    result = plan_journeys(db, today=today, client_id=client.id)
+    return dict(divisions_created=created_divisions, trains_planned=len(planned), journeys_created=result["created"],
+                journeys_skipped=result["skipped"])
 
 
 # ---- the daily planner -------------------------------------------------------------------------------------
@@ -245,9 +248,14 @@ def runs_on(train: Train, day: date) -> bool:
     return not train.run_days or WEEKDAYS[day.weekday()] in train.run_days.split(",")
 
 
-def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = None, days: int = PLAN_DAYS) -> int:
-    """A journey for every planned train on each of the next `days` days it runs, if it has none yet.
-    Idempotent: run it as often as you like (uq_journeys_auto_train_date backs that up)."""
+def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = None, days: int = PLAN_DAYS) -> dict:
+    """A journey for every planned train on each of the next `days` days it runs, if it has none yet -- and,
+    like a journey somebody creates, paid for the moment it is created (services/clients.charge_journey).
+
+    Each journey and its charge are one savepoint: when the wallet cannot cover it, that journey is not
+    created and nothing is charged; it is tried again on the next run (the timer runs daily), so it appears
+    once credits are added. Idempotent: run it as often as you like (uq_journeys_auto_train_date backs that
+    up). Returns {"created": n, "skipped": n} -- skipped for want of credits."""
     stmt = (select(Train).options(selectinload(Train.coaches)).join(Division, Division.id == Train.division_id)
             .join(Client, Client.id == Division.client_id)
             .where(Train.auto_journeys, Train.is_active, Division.is_active, Client.status == ClientStatus.ACTIVE))
@@ -255,17 +263,18 @@ def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = Non
         stmt = stmt.where(Client.id == client_id)
     trains = list(db.scalars(stmt))
     if not trains:
-        return 0
+        return dict(created=0, skipped=0)
     window = [today + timedelta(days=i) for i in range(days)]
     have = set(db.execute(select(Journey.train_id, Journey.journey_date).where(
         Journey.train_id.in_([t.id for t in trains]), Journey.journey_date.in_(window), Journey.auto_created)).all())
-    created = 0
-    for train in trains:
-        for day in window:
+    created = skipped = 0
+    # Earliest days first across all trains, so a short wallet pays for the journeys that leave soonest.
+    for day in window:
+        for train in trains:
             if (train.id, day) in have or not runs_on(train, day):
                 continue
             linked, end = derive_dates(day, train.duration_days)
-            db.add(Journey(
+            j = Journey(
                 division_id=train.division_id, train_id=train.id, journey_date=day, linked_journey_date=linked,
                 end_date=end, start_time=train.start_time, end_time=train.end_time,
                 return_start_time=train.return_start_time, return_end_time=train.return_end_time,
@@ -274,18 +283,28 @@ def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = Non
                 before_inspection_enabled=train.before_inspection_enabled,
                 after_inspection_enabled=train.after_inspection_enabled,
                 supervisor_id=None, created_by_id=None, status=JourneyStatus.PLANNED, auto_created=True,
-                charged=False,
+                charged=True,
                 coaches=[JourneyCoach(code=c.code, classification=c.classification, position=c.position)
-                         for c in train.coaches]))
-            created += 1
+                         for c in train.coaches])
+            try:
+                with db.begin_nested():
+                    db.add(j)
+                    db.flush()
+                    credits = charge_journey(db, j.division_id, j.id)
+                audit(db, actor_id=None, action="journey.plan", entity=j, division_id=j.division_id,
+                      changes={"train_no": train.train_no, "journey_date": str(day), "credits_charged": credits})
+                created += 1
+            except PaymentRequired:
+                skipped += 1  # the savepoint rolled the journey back; it is tried again on the next run
     db.commit()
-    return created
+    return dict(created=created, skipped=skipped)
 
 
 def charge_due_journeys(db: Session, *, today: date) -> dict:
-    """Pay for every planned journey that starts today (or started and was missed): one at a time, each in
-    its own savepoint, so one office's empty wallet cannot stop another's journeys. A journey the wallet
-    cannot cover, or whose office is suspended, is cancelled with the reason and costs nothing."""
+    """Pay for any planned journey still unpaid -- one planned before journeys were paid for when created
+    (the start-day rule) -- once it starts: one at a time, each in its own savepoint, so one office's empty
+    wallet cannot stop another's. One the wallet cannot cover, or whose office is suspended, is cancelled
+    with the reason and costs nothing. New planned journeys are paid when created and never reach this."""
     due = list(db.scalars(select(Journey).where(Journey.auto_created, Journey.charged.is_(False),
                                                 Journey.status == JourneyStatus.PLANNED,
                                                 Journey.journey_date <= today)

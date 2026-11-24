@@ -36,15 +36,16 @@ export default function WalletCard() {
       <dl className="mt-4 grid grid-cols-3 divide-x divide-slate-100 rounded-xl bg-slate-50 py-2 text-center">
         <div><dt className="text-[11px] text-muted">Added this month</dt><dd className="font-semibold tabular-nums text-ink">+{fmt(w.added_this_month)}</dd></div>
         <div><dt className="text-[11px] text-muted">Spent this month</dt><dd className="font-semibold tabular-nums text-ink">{fmt(w.spent_this_month)}</dd></div>
-        <div><dt className="text-[11px] text-muted">Planned, not paid yet</dt><dd className="font-semibold tabular-nums text-ink">{fmt(w.upcoming_journeys)} <span className="text-xs font-normal text-muted">({fmt(w.upcoming_cost)} cr)</span></dd></div>
+        {/* Every journey is paid for when it is created, planned ones included: what each one costs. */}
+        <div><dt className="text-[11px] text-muted">Per journey</dt><dd className="font-semibold tabular-nums text-ink">{free ? 'Free' : `${fmt(w.credit_per_journey)} cr`}</dd></div>
       </dl>
 
       {(tone !== 'ok') && (
         <p className={`mt-3 rounded-xl px-3 py-2 text-xs ${tone === 'red' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'}`}>
           {w.credit_balance === 0 && !free
-            ? 'No credits left: no new journey can be created, and planned journeys are cancelled on their start day. '
+            ? 'No credits left: no new journey can be created, and the daily planning creates none until credits are added. '
             : short
-              ? `The ${fmt(w.upcoming_journeys)} planned journeys need ${fmt(w.upcoming_cost)} credits; any the balance cannot cover are cancelled on their start day. `
+              ? `${fmt(w.upcoming_journeys)} older planned journeys still need ${fmt(w.upcoming_cost)} credits; any the balance cannot cover are cancelled when they start. `
               : 'Credits are running low. '}
           Ask the Super Admin to add credits for {w.office_id}.
         </p>

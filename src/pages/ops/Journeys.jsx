@@ -344,7 +344,7 @@ function JourneyDetail({ id }) {
               </span>
             )}
           </InfoRow>
-          {j.auto_created && <InfoRow icon={CalendarIcon} label="Planned">Automatically, from the office's trains{j.charged ? '' : ' · paid on its start day'}</InfoRow>}
+          {j.auto_created && <InfoRow icon={CalendarIcon} label="Planned">Automatically, from the office's trains{j.charged ? '' : ' · not paid yet'}</InfoRow>}
           <InfoRow icon={UsersIcon} label="No. of Alloted Staff">{s ? s.staff_allocated : allotted.length}</InfoRow>
           <div className="border-b border-line/70 py-2.5 last:border-0">
             <p className="mb-2 flex items-center gap-3 text-[13px] font-semibold text-ink"><UsersIcon className="h-[18px] w-[18px] text-brand-700" /> Alloted Staff</p>

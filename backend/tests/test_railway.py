@@ -126,14 +126,14 @@ def test_an_admin_sets_up_their_office_and_journeys_are_planned(world, rr):
     r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [
         {"train_no": "12833", "coaches": [{"code": "B1", "classification": "AC"}, {"code": "S1", "classification": "NON_AC"}]}]}])
     assert r.status_code == 200, r.text
-    assert r.json() == {"divisions_created": 1, "trains_planned": 1, "journeys_created": 3}
+    assert r.json() == {"divisions_created": 1, "trains_planned": 1, "journeys_created": 3, "journeys_skipped": 0}
 
     world.db.rollback()
     station = world.db.scalar(select(Division).where(Division.client_id == world.a.client_id, Division.station_code == "ADI"))
     assert station.kind.value == "station" and station.name == "Ahmedabad Jn"
     planned = _journeys(world, station.id)
     assert [j.journey_date for j in planned] == [today_ist() + timedelta(days=i) for i in range(3)]
-    assert all(j.supervisor_id is None and j.created_by_id is None and j.auto_created and not j.charged for j in planned)
+    assert all(j.supervisor_id is None and j.created_by_id is None and j.auto_created and j.charged for j in planned)
     assert [c.code for c in planned[0].coaches] == ["B1", "S1"]
 
     # The office's Admin sees the new station's journeys; it is a division of their office.
@@ -189,8 +189,8 @@ def test_planning_twice_plans_nothing_twice(world, rr):
     _set_area(world, world.a.client_id)
     _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
     world.db.rollback()
-    assert plan_journeys(world.db, today=today_ist()) == 0
-    assert plan_journeys(world.db, today=today_ist() + timedelta(days=1)) == 1  # the day the window moved on to
+    assert plan_journeys(world.db, today=today_ist())["created"] == 0
+    assert plan_journeys(world.db, today=today_ist() + timedelta(days=1))["created"] == 1  # the day the window moved on to
 
 
 def test_dropping_a_train_stops_planning_it(world, rr):
@@ -201,10 +201,10 @@ def test_dropping_a_train_stops_planning_it(world, rr):
     s = world.client.get(f"{API}/clients/{world.a.client_id}/setup", headers=world.h("admin")).json()
     picked = {x["code"]: x["train_nos"] for x in s["stations"] if x["selected"]}
     assert picked == {"SBI": ["22959"]}  # ADI keeps its division and history, no longer planned
-    assert plan_journeys(world.db, today=today_ist() + timedelta(days=5)) == 3  # only SBI's train
+    assert plan_journeys(world.db, today=today_ist() + timedelta(days=5))["created"] == 3  # only SBI's train
 
 
-# ---- paying on the start day -------------------------------------------------------------------------------
+# ---- paying when a journey is planned ---------------------------------------------------------------------
 
 
 def _wallet(world, client_id, rate, credits):
@@ -214,38 +214,64 @@ def _wallet(world, client_id, rate, credits):
         world.client.post(f"{API}/clients/{client_id}/credits", headers=h, json={"credits": credits})
 
 
-def test_planned_journeys_are_paid_on_their_start_day(world, rr):
+def _balance(world):
+    world.db.rollback()
+    return world.db.get(Client, world.a.client_id).credit_balance
+
+
+def test_a_planned_journey_is_paid_when_it_is_created(world, rr):
     _set_area(world, world.a.client_id)
-    _wallet(world, world.a.client_id, rate=1, credits=1)
-    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]},
-                                               {"code": "SBI", "trains": [{"train_no": "22959"}]}])
+    _wallet(world, world.a.client_id, rate=1, credits=10)
+    r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    assert r.json()["journeys_created"] == 3 and r.json()["journeys_skipped"] == 0
+    assert _balance(world) == 7  # one credit per journey, at once
+
+
+def test_journeys_the_wallet_cannot_pay_for_are_not_created_until_it_can(world, rr):
+    _set_area(world, world.a.client_id)
+    _wallet(world, world.a.client_id, rate=1, credits=2)
+    r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]},
+                                                   {"code": "SBI", "trains": [{"train_no": "22959"}]}])
+    assert (r.json()["journeys_created"], r.json()["journeys_skipped"]) == (2, 4)  # 2 trains x 3 days, 2 credits
+    assert _balance(world) == 0
     world.db.rollback()
-    balance = lambda: (world.db.rollback(), world.db.get(Client, world.a.client_id).credit_balance)[1]  # noqa: E731
-    assert balance() == 1  # planning is free
+    made = list(world.db.scalars(select(Journey).where(Journey.auto_created)))
+    # The earliest day is paid for first, for both trains; nothing exists unpaid.
+    assert {j.journey_date for j in made} == {today_ist()} and all(j.charged for j in made)
 
-    result = charge_due_journeys(world.db, today=today_ist())
-    assert result == {"charged": 1, "cancelled": 1}  # two start today, one credit
-    assert balance() == 0
-    world.db.rollback()
-    today = list(world.db.scalars(select(Journey).where(Journey.auto_created, Journey.journey_date == today_ist())))
-    cancelled = [j for j in today if j.status == JourneyStatus.CANCELLED]
-    assert len(cancelled) == 1 and cancelled[0].cancel_reason == "Not enough credits on the start day"
-    assert not cancelled[0].charged
-    # Tomorrow's are untouched until tomorrow, and running it again charges nothing twice.
-    assert charge_due_journeys(world.db, today=today_ist()) == {"charged": 0, "cancelled": 0}
+    _wallet(world, world.a.client_id, rate=1, credits=10)
+    world.db.rollback()  # a fresh snapshot: SQLite will not let a stale reader start writing
+    assert plan_journeys(world.db, today=today_ist()) == {"created": 4, "skipped": 0}  # the next run catches up
+    assert _balance(world) == 6
 
 
-def test_cancelling_an_unpaid_journey_refunds_nothing(world, rr):
+def test_cancelling_a_planned_journey_gives_the_credit_back(world, rr):
     _set_area(world, world.a.client_id)
     _wallet(world, world.a.client_id, rate=1, credits=5)
     _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
-    world.db.rollback()
+    assert _balance(world) == 2
     j = world.db.scalar(select(Journey).where(Journey.auto_created, Journey.journey_date == today_ist() + timedelta(days=2)))
     r = world.client.post(f"{API}/journeys/{j.id}/cancel", headers=world.h("admin"),
                           json={"reason": "not running", "version": j.version})
     assert r.status_code == 200, r.text
+    assert _balance(world) == 3
+
+
+def test_a_journey_left_unpaid_by_the_old_rule_is_charged_or_cancelled_when_it_starts(world, rr):
+    """Journeys planned before planning paid for them (charged=False) are settled on their start day."""
+    _set_area(world, world.a.client_id)
+    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]},
+                                               {"code": "SBI", "trains": [{"train_no": "22959"}]}])  # free: rate 0
     world.db.rollback()
-    assert world.db.get(Client, world.a.client_id).credit_balance == 5
+    for j in world.db.scalars(select(Journey).where(Journey.auto_created)):
+        j.charged = False
+    world.db.commit()
+    _wallet(world, world.a.client_id, rate=1, credits=1)
+    assert charge_due_journeys(world.db, today=today_ist()) == {"charged": 1, "cancelled": 1}  # two today, one credit
+    world.db.rollback()
+    cancelled = [j for j in world.db.scalars(select(Journey).where(Journey.journey_date == today_ist(), Journey.auto_created))
+                 if j.status == JourneyStatus.CANCELLED]
+    assert len(cancelled) == 1 and cancelled[0].cancel_reason == "Not enough credits on the start day"
 
 
 # ---- supervisors, phones, the office admin's reach ----------------------------------------------------------
@@ -329,14 +355,11 @@ def test_the_office_admin_sees_their_wallet_and_what_is_coming(world, rr):
     _wallet(world, world.a.client_id, rate=2, credits=10)
     _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
     w = world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("admin")).json()
-    assert (w["credit_balance"], w["credit_per_journey"], w["journeys_covered"]) == (10, 2, 5)
-    assert w["added_this_month"] == 10 and w["spent_this_month"] == 0
-    assert (w["upcoming_journeys"], w["upcoming_cost"]) == (3, 6)  # three planned, none paid yet
-    assert w["recent"][0]["reason"] == "top_up"
-
-    charge_due_journeys(world.db, today=today_ist())
-    w = world.client.get(f"{API}/clients/{world.a.client_id}/wallet", headers=world.h("admin")).json()
-    assert (w["credit_balance"], w["spent_this_month"], w["upcoming_journeys"]) == (8, 2, 2)
+    # Three journeys planned and paid at 2 credits each, straight away.
+    assert (w["credit_balance"], w["credit_per_journey"], w["journeys_covered"]) == (4, 2, 2)
+    assert w["added_this_month"] == 10 and w["spent_this_month"] == 6
+    assert (w["upcoming_journeys"], w["upcoming_cost"]) == (0, 0)  # nothing left to pay later
+    assert w["recent"][0]["reason"] == "journey_charge"
 
 
 def test_another_office_cannot_read_the_wallet(world):

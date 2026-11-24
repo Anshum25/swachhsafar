@@ -163,7 +163,8 @@ class WalletOut(BaseModel):
     journeys_covered: int | None
     added_this_month: int
     spent_this_month: int
-    # Planned journeys from today on that are not paid for yet: charged on their start day.
+    # Planned journeys from today on that are not paid for yet: only ones planned under the earlier
+    # start-day rule (new ones are paid when created).
     upcoming_journeys: int
     upcoming_cost: int
     recent: list[CreditLedgerOut]
