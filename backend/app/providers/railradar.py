@@ -76,6 +76,59 @@ class StationTimetable:
 
 class TimetableProvider(Protocol):
     def timetable(self, code: str) -> StationTimetable: ...
+    def composition(self, train_no: str) -> list["Coach"]: ...
+
+
+# ---- a train's coaches -------------------------------------------------------------------------------------
+#
+# RailRadar's train-status page (https://railradar.in/train-status/{number}) embeds the train's rake as
+# `"coachPosition":"ENG-SLRD-GEN-GEN-S7-...-S1-H1-A2-A1-B5-...-B1-M1-GEN-GEN-LPR"` in the same Next.js payload as
+# the station pages -- the method the user's pnrfetch tool used, read from the page's HTML rather than a
+# headless browser. Passenger coaches only: engine, guard/luggage vans (SLR, SLRD, LPR), generator (EOG),
+# pantry and parcel vans are not inspected for cleanliness.
+
+TRAIN_NO_RE = re.compile(r"^[0-9]{3,6}$")
+_AC = re.compile(r"^(H|HA|A|B|M|C|E|EA|EV|K)\d*$")       # 1A, 2A, 3A, 3E, CC, EC, executive ... (H1, A2, B5, M1, C3, E1)
+_NON_AC = re.compile(r"^(S|D|J|F)\d+$|^(GEN|GN|GS|UR|SS)\d*$")  # sleeper, second sitting, general, first class
+_COACH_POSITION = re.compile(r'"coachPosition"\s*:\s*"([A-Z0-9 /-]{1,400})"')
+
+
+@dataclass(frozen=True)
+class Coach:
+    code: str
+    classification: str  # "AC" | "NON_AC"
+
+
+def coaches_from_position(position: str) -> list[Coach]:
+    """"ENG-SLRD-GEN-GEN-S7-...-B1-M1-GEN-GEN-LPR" -> passenger coaches in order; repeated codes numbered
+    (GEN, GEN2, GEN3 ...) so every coach is told apart; codes at most 10 characters (A-Z, 0-9)."""
+    out: list[Coach] = []
+    seen: dict[str, int] = {}
+    for part in re.split(r"[-/ ]+", position.upper()):
+        code = re.sub(r"[^A-Z0-9]", "", part)[:10]
+        if not code:
+            continue
+        if _AC.match(code):
+            classification = "AC"
+        elif _NON_AC.match(code):
+            classification = "NON_AC"
+        else:
+            continue  # engine, vans, pantry, generator, or nothing recognisable
+        n = seen.get(code, 0) + 1
+        seen[code] = n
+        out.append(Coach(code if n == 1 else f"{code[:8]}{n}", classification))
+    return out
+
+
+def parse_train_composition(html: str, train_no: str) -> list[Coach]:
+    """The passenger coaches of a fetched train-status page. Raises RailRadarError(blocked | parse)."""
+    payload = decode_flight_payload(html) or html
+    m = _COACH_POSITION.search(payload)
+    if not m:
+        if CHALLENGE_RE.search(html):
+            raise RailRadarError("blocked", "RailRadar answered with a challenge/CAPTCHA page; it is not worked around.")
+        raise RailRadarError("parse", f"No coach composition on train {train_no}'s page.")
+    return coaches_from_position(m.group(1))
 
 
 def normalize_code(code: str) -> str:
@@ -273,6 +326,19 @@ class RailRadarClient:
         self._last = 0.0
         self._robots: tuple[float, list[tuple[bool, str]]] | None = None
 
+    def composition(self, train_no: str) -> list[Coach]:
+        """A train's passenger coaches from its train-status page; the same politeness as timetables."""
+        no = str(train_no or "").strip()
+        if not TRAIN_NO_RE.match(no):
+            raise RailRadarError("config", f"{no[:20]!r} is not a train number")
+        path = f"/train-status/{no}"
+        if not is_path_allowed(self._robots_rules(), path):
+            raise RailRadarError("disallowed", f"robots.txt disallows {path}; not requesting it.")
+        status, body, headers = self._get(self.base_url + path, "text/html")
+        if status != 200:
+            raise _classify(status, body, headers.get("retry-after"))
+        return parse_train_composition(body, no)
+
     def timetable(self, code: str) -> StationTimetable:
         code = normalize_code(code)
         path = f"/station/{code.lower()}?hours=8"
@@ -330,6 +396,9 @@ def _classify(status: int, body: str, retry_after: str | None) -> RailRadarError
 
 
 class DisabledTimetableProvider:
+    def composition(self, train_no: str) -> list[Coach]:
+        raise RailRadarError("config", "Train data is not enabled on this server (RAILRADAR_ENABLED).")
+
     def timetable(self, code: str) -> StationTimetable:
         raise RailRadarError("config", "Train timetables are not enabled on this server (RAILRADAR_ENABLED).")
 

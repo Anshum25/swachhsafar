@@ -3,6 +3,7 @@ import { useResource, useSession } from '../../app/session.jsx';
 import { DivisionPicker, divisionLabel, useDivision } from '../../app/division.jsx';
 import { useSave } from './masters/common.jsx';
 import { coachText, parseCoaches } from '../../utils/coaches.js';
+import CoachBreakdown from '../../components/CoachBreakdown.jsx';
 import QuestionBanks from './masters/QuestionBanks.jsx';
 import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
@@ -60,6 +61,7 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
       <Field label="Coaches" hint="Comma separated; add AC after air-conditioned coaches, e.g. B1 AC, B2 AC, S1, S2">
         <textarea className="input h-20 py-3" required value={f.coaches} onChange={set('coaches')} />
       </Field>
+      <CoachBreakdown coaches={parseCoaches(f.coaches)} />
       <SubmitBar busy={save.busy} label={train ? 'Save' : 'Create train'} onCancel={onClose} />
     </form>
   );

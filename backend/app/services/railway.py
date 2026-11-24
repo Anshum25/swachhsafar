@@ -192,6 +192,8 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
                                         code="train_not_at_station", details={"station": code, "train_nos": missing})
 
     created_divisions, planned = 0, []
+    coaches_auto: list[str] = []
+    coaches_missing: list[str] = []
     for code, pick in chosen.items():
         board = boards[code]
         division = db.scalar(select(Division).where(Division.client_id == client.id, Division.station_code == code))
@@ -224,6 +226,16 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
             if choice.coaches:
                 train.coaches = [TrainCoach(code=c.code, classification=c.classification, position=i)
                                  for i, c in enumerate(choice.coaches, 1)]
+            elif not train.coaches:
+                # None typed and none yet: the train's rake from RailRadar's train-status page, when it can be
+                # had. Setup never fails for want of it -- the train is saved, and named in coaches_missing.
+                fetched = _composition(provider, no)
+                if fetched:
+                    train.coaches = [TrainCoach(code=c.code, classification=c.classification, position=i)
+                                     for i, c in enumerate(fetched, 1)]
+                    coaches_auto.append(no)
+                else:
+                    coaches_missing.append(no)
             planned.append(no)
     # Stations dropped from the setup: keep them, stop planning their trains.
     for division in db.scalars(select(Division).where(Division.client_id == client.id,
@@ -238,7 +250,24 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
     db.commit()
     result = plan_journeys(db, today=today, client_id=client.id)
     return dict(divisions_created=created_divisions, trains_planned=len(planned), journeys_created=result["created"],
-                journeys_skipped=result["skipped"])
+                journeys_skipped=result["skipped"], coaches_auto=coaches_auto, coaches_missing=coaches_missing)
+
+
+def _composition(provider: TimetableProvider, train_no: str) -> list:
+    try:
+        return provider.composition(train_no)
+    except RailRadarError:
+        return []
+
+
+def train_coaches(provider: TimetableProvider, train_no: str) -> list[dict]:
+    """A train's passenger coaches from RailRadar, for the setup wizard to fill in before saving."""
+    try:
+        return [dict(code=c.code, classification=c.classification) for c in provider.composition(train_no)]
+    except RailRadarError as exc:
+        if exc.kind in ("not_found", "parse"):
+            raise NotFound(f"No coach composition for train {train_no}") from exc
+        raise ServiceUnavailable(str(exc), code=f"railradar_{exc.kind}") from exc
 
 
 # ---- the daily planner -------------------------------------------------------------------------------------

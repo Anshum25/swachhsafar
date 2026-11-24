@@ -9,7 +9,7 @@ from app.db import get_db
 from app.errors import Forbidden
 from app.models import Client, RoleId
 from app.providers.railradar import TimetableProvider, get_timetable_provider
-from app.schemas.railway import RailwayStationOut, SetupIn, SetupOut, SetupResult, StationTrainsOut
+from app.schemas.railway import RailwayStationOut, SetupIn, SetupOut, SetupResult, StationTrainsOut, TrainCoachOut
 from app.security.principal import Principal, get_principal
 from app.services import railway as svc
 from app.services.clients import client_of_division
@@ -51,6 +51,16 @@ def station_trains(code: str, refresh: bool = False, db: Session = Depends(get_d
                             code="permission_denied")
     # Only the Super Admin may force a fresh read past the cache: it is a request to RailRadar.
     return svc.station_trains(db, provider, code, refresh=refresh and p.is_super_admin)
+
+
+@router.get("/trains/{train_no}/coaches", response_model=list[TrainCoachOut])
+def train_coaches(train_no: str, p: Principal = Depends(get_principal),
+                  provider: TimetableProvider = Depends(get_timetable_provider)):
+    """A train's passenger coaches from its RailRadar train-status page, for the setup wizard. The people who
+    set offices up only (each lookup may reach RailRadar): the Super Admin, or an office's Admin."""
+    if not (p.is_super_admin or p.role == RoleId.ADMIN):
+        raise Forbidden("Only the Super Admin or an office's Admin can look up a train's coaches", code="permission_denied")
+    return svc.train_coaches(provider, train_no)
 
 
 @setup_router.get("/{client_id}/setup", response_model=SetupOut)

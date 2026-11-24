@@ -12,8 +12,8 @@ from sqlalchemy import select
 
 from app.models import Client, Division, Journey, JourneyStatus, RoleId
 from app.providers.railradar import (
-    OriginTrain, RailRadarError, StationTimetable, get_timetable_provider, is_path_allowed, parse_robots,
-    parse_station_timetable,
+    Coach, OriginTrain, RailRadarError, StationTimetable, coaches_from_position, get_timetable_provider,
+    is_path_allowed, parse_robots, parse_station_timetable, parse_train_composition,
 )
 from app.services.railway import charge_due_journeys, plan_journeys
 from app.timeutil import today_ist
@@ -37,11 +37,23 @@ class FakeRailRadar:
             )),
         }
 
+        self.rakes = {}           # train_no -> [Coach]; a train not here has no composition on RailRadar
+        self.rake_fail = None
+        self.rake_calls = []
+
     def timetable(self, code):
         self.calls.append(code)
         if self.fail:
             raise RailRadarError(self.fail, "fake failure")
         return self.boards.get(code, StationTimetable(code, None, ()))
+
+    def composition(self, train_no):
+        self.rake_calls.append(train_no)
+        if self.rake_fail:
+            raise RailRadarError(self.rake_fail, "fake failure")
+        if train_no not in self.rakes:
+            raise RailRadarError("parse", "no composition")
+        return list(self.rakes[train_no])
 
 
 @pytest.fixture
@@ -126,7 +138,9 @@ def test_an_admin_sets_up_their_office_and_journeys_are_planned(world, rr):
     r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [
         {"train_no": "12833", "coaches": [{"code": "B1", "classification": "AC"}, {"code": "S1", "classification": "NON_AC"}]}]}])
     assert r.status_code == 200, r.text
-    assert r.json() == {"divisions_created": 1, "trains_planned": 1, "journeys_created": 3, "journeys_skipped": 0}
+    assert r.json() == {"divisions_created": 1, "trains_planned": 1, "journeys_created": 3, "journeys_skipped": 0,
+                        "coaches_auto": [], "coaches_missing": []}
+    assert rr.rake_calls == []  # coaches were typed: RailRadar is not asked
 
     world.db.rollback()
     station = world.db.scalar(select(Division).where(Division.client_id == world.a.client_id, Division.station_code == "ADI"))
@@ -328,6 +342,72 @@ def test_a_challenge_page_is_not_worked_around():
     with pytest.raises(RailRadarError) as exc:
         parse_station_timetable("<html>hello</html>", "ADI")
     assert exc.value.kind == "parse"
+
+
+# ---- a train's coaches ---------------------------------------------------------------------------------------
+
+
+def _train_page(position):
+    """A train-status page as RailRadar serves it: the rake inside the escaped Next.js flight payload."""
+    inner = '{"trainNumber":"12189","coachPosition":"%s","rakeShare":null}' % position
+    escaped = inner.replace('"', '\\"')
+    return f'<html><body><script>self.__next_f.push([1,"{escaped}"])</script></body></html>'
+
+
+def test_coaches_are_read_from_the_coach_position():
+    got = coaches_from_position("ENG-SLRD-GEN-GEN-S2-S1-H1-A1-B2-B1-M1-PC-EOG-GEN-LPR")
+    assert [(c.code, c.classification) for c in got] == [
+        ("GEN", "NON_AC"), ("GEN2", "NON_AC"), ("S2", "NON_AC"), ("S1", "NON_AC"), ("H1", "AC"), ("A1", "AC"),
+        ("B2", "AC"), ("B1", "AC"), ("M1", "AC"), ("GEN3", "NON_AC")]
+    assert coaches_from_position("ENG-SLR-LPR") == []
+
+
+def test_the_train_status_page_gives_the_coaches():
+    got = parse_train_composition(_train_page("ENG-SLRD-GEN-S1-B1-LPR"), "12189")
+    assert got == [Coach("GEN", "NON_AC"), Coach("S1", "NON_AC"), Coach("B1", "AC")]
+    with pytest.raises(RailRadarError) as exc:
+        parse_train_composition("<html><title>Just a moment...</title>cf-chl</html>", "12189")
+    assert exc.value.kind == "blocked"
+    with pytest.raises(RailRadarError) as exc:
+        parse_train_composition("<html>no rake here</html>", "12189")
+    assert exc.value.kind == "parse"
+
+
+def test_setup_fills_a_trains_coaches_from_railradar(world, rr):
+    _set_area(world, world.a.client_id)
+    rr.rakes["12833"] = [Coach("S1", "NON_AC"), Coach("B1", "AC")]
+    r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}, {"train_no": "19015"}]}])
+    assert r.status_code == 200, r.text
+    assert r.json()["coaches_auto"] == ["12833"] and r.json()["coaches_missing"] == ["19015"]
+    world.db.rollback()
+    station = world.db.scalar(select(Division).where(Division.client_id == world.a.client_id, Division.station_code == "ADI"))
+    assert [c.code for c in _journeys(world, station.id)[0].coaches] == ["S1", "B1"]
+
+    # Saved again: the train has coaches now, so RailRadar is not asked for them twice.
+    calls = len(rr.rake_calls)
+    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    assert len(rr.rake_calls) == calls
+
+
+def test_setup_is_saved_when_the_coaches_cannot_be_had(world, rr):
+    _set_area(world, world.a.client_id)
+    rr.rake_fail = "blocked"
+    r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    assert r.status_code == 200, r.text
+    assert r.json()["trains_planned"] == 1 and r.json()["coaches_missing"] == ["12833"]
+
+
+def test_the_wizard_looks_up_a_trains_coaches(world, rr):
+    rr.rakes["12833"] = [Coach("B1", "AC"), Coach("S1", "NON_AC")]
+    url = f"{API}/railway/trains/12833/coaches"
+    assert world.client.get(url, headers=world.h("admin")).json() == [
+        {"code": "B1", "classification": "AC"}, {"code": "S1", "classification": "NON_AC"}]
+    assert world.client.get(url, headers=world.h("sa")).status_code == 200
+    assert world.client.get(url, headers=world.h("manager")).status_code == 403
+    assert world.client.get(f"{API}/railway/trains/19015/coaches", headers=world.h("admin")).status_code == 404
+    rr.rake_fail = "rate_limited"
+    r = world.client.get(url, headers=world.h("admin"))
+    assert r.status_code == 503 and r.json()["error"]["code"] == "railradar_rate_limited"
 
 
 def test_robots_rules_are_obeyed():
