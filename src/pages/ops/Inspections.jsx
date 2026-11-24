@@ -12,10 +12,11 @@ import {
 import { CheckBoldIcon, MessageIcon, TrainSolidIcon } from '../../components/Icons.jsx';
 import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp } from '../../utils/capture.js';
+import { COACH_CLASSES, classLabel } from '../../utils/coaches.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 
 const PHASES = { B: 'Before', A: 'After' };
-const CLASSES = [{ value: '', label: 'All coaches' }, { value: 'AC', label: 'AC' }, { value: 'NON_AC', label: 'Non-AC' }];
+const CLASSES = [{ value: '', label: 'All coaches' }, ...COACH_CLASSES];
 const VERIFICATION = [{ value: 'pending', label: 'Pending review' }, { value: 'verified', label: 'Verified' }, { value: 'rejected', label: 'Rejected' }];
 
 function InspectDialog({ target, journey, onClose, onDone }) {
@@ -126,7 +127,7 @@ function InspectionGrid({ journey: j, grid }) {
               <div className="relative mb-2 text-center">
                 <h3 className="text-[17px] font-extrabold text-brand-900">{coach}</h3>
                 <span className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-canvas px-2 py-0.5 text-[11px] font-semibold text-muted">
-                  {classOf(coach) === 'AC' ? 'AC' : 'Non-AC'} · {days.reduce((n, d) => n + d.done, 0)}/{days.reduce((n, d) => n + d.required, 0)}
+                  {classLabel(classOf(coach))} · {days.reduce((n, d) => n + d.done, 0)}/{days.reduce((n, d) => n + d.required, 0)}
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -180,7 +181,7 @@ function InspectionDetail({ record, journey, onClose, onChanged }) {
     <Dialog open title={`Coach ${record.coach_code} · Day ${record.day} · R${record.round} · ${PHASES[record.phase]}`} onClose={onClose} wide>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2"><SyncBadge status={record.sync_status} error={record.last_sync_error} />
-          {record.coach_class && <Badge>{record.coach_class === 'AC' ? 'AC' : 'Non-AC'}</Badge>}</div>
+          {record.coach_class && <Badge>{classLabel(record.coach_class)}</Badge>}</div>
         {record.origin === 'server' && !record.device_timestamp && <p className="text-xs text-slate-500">Recorded on the server; its details are shown when online.</p>}
         <DetailList items={[
           ['Captured (device)', record.device_timestamp ? fmtDateTime(record.device_timestamp) : null],

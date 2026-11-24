@@ -11,6 +11,7 @@ from app.models.base import Base, Timestamps, UUIDPk, str_enum
 class CoachClass(StrEnum):
     AC = "AC"
     NON_AC = "NON_AC"
+    GEN = "GEN"  # General (unreserved): its own feedback questions
 
 
 class Train(UUIDPk, Timestamps, Base):

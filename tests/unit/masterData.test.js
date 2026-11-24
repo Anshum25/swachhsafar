@@ -73,7 +73,7 @@ describe('master-data form validation (mirrors the Pydantic schemas)', () => {
     expect(validateBank({ name: 'Bank', audience: 'railway', scale_min: 1, scale_max: 5, questions: Array.from({ length: 21 }, () => q()) }).questions).toBeDefined();
     expect(bankPayload({ name: ' Bank ', audience: 'railway', scale_min: 1, scale_max: 5, questions: [q({ text_hi: ' ', psi_weight: '25' })] }, IDS.division)).toEqual({
       division_id: IDS.division, audience: 'railway', name: 'Bank', scale_min: 1, scale_max: 5,
-      questions: [{ text_en: 'Toilet cleanliness', text_hi: null, applies_ac: true, applies_non_ac: true, required: true, psi_weight: 25 }],
+      questions: [{ text_en: 'Toilet cleanliness', text_hi: null, applies_ac: true, applies_non_ac: true, applies_gen: true, required: true, psi_weight: 25 }],
     });
   });
 

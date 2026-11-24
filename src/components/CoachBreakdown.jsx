@@ -1,13 +1,14 @@
 import { coachBreakdown } from '../utils/coaches.js';
 
-// A train's coaches as two small tables, AC and Non-AC, each grouped by class with a count.
+// A train's coaches as three small tables, AC, Non-AC and General, each grouped by class with a count.
 export default function CoachBreakdown({ coaches, className = '' }) {
   const b = coachBreakdown(coaches);
-  if (!b.ac.total && !b.nonAc.total) return null;
+  if (!b.ac.total && !b.nonAc.total && !b.gen.total) return null;
   return (
-    <div className={`grid gap-2 sm:grid-cols-2 ${className}`}>
+    <div className={`grid gap-2 sm:grid-cols-3 ${className}`}>
       <Side title="AC coaches" side={b.ac} tone="text-sky-800" />
       <Side title="Non-AC coaches" side={b.nonAc} tone="text-amber-800" />
+      <Side title="General coaches" side={b.gen} tone="text-emerald-800" />
     </div>
   );
 }

@@ -44,6 +44,7 @@ function ModuleRow({ href, icon: Icon, title, tint = 'blue', children }) {
 }
 import { canAct } from '../../services/authorization.js';
 import { ONLINE_ONLY, isVersionConflict } from '../../services/operations.js';
+import { COACH_CLASSES, classLabel } from '../../utils/coaches.js';
 
 // Reference tabs: Active · Schedule · History; cancelled journeys are a filter inside History.
 const TABS = [
@@ -230,7 +231,7 @@ function CoachEditor({ journey, onClose, onSaved, onConflict }) {
       <ul className="divide-y divide-slate-100 rounded-2xl text-sm ring-1 ring-slate-200">
         {coaches.map((c, i) => (
           <li key={c.code} className="flex items-center justify-between px-3 py-2">
-            <span><span className="font-semibold">{i + 1}. {c.code}</span> <span className="text-slate-500">· {c.classification === 'AC' ? 'AC' : 'Non-AC'}</span></span>
+            <span><span className="font-semibold">{i + 1}. {c.code}</span> <span className="text-slate-500">· {classLabel(c.classification)}</span></span>
             <button type="button" className="text-xs font-semibold text-red-600" onClick={() => setCoaches((l) => l.filter((x) => x.code !== c.code))}>Remove</button>
           </li>
         ))}
@@ -238,7 +239,7 @@ function CoachEditor({ journey, onClose, onSaved, onConflict }) {
       </ul>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Coach code" error={invalid || undefined}><input className="input w-32 uppercase" value={code} maxLength={10} onChange={(e) => setCode(e.target.value)} /></Field>
-        <Field label="Class"><Select value={cls} onChange={setCls} options={[{ value: 'AC', label: 'AC' }, { value: 'NON_AC', label: 'Non-AC' }]} /></Field>
+        <Field label="Class"><Select value={cls} onChange={setCls} options={COACH_CLASSES} /></Field>
         <button type="button" className="btn-secondary h-12" disabled={!clean || !!invalid}
           onClick={() => { setCoaches((l) => [...l, { code: clean, classification: cls }]); setCode(''); }}>Add coach</button>
       </div>
@@ -387,7 +388,7 @@ function JourneyDetail({ id }) {
         <StaffPanel journey={j} onChanged={refresh} />
         <Panel title={`Coaches (${j.coaches.length})`}>
           <div className="flex flex-wrap gap-2">
-            {j.coaches.map((c) => <Badge key={c.code} tone={c.classification === 'AC' ? 'brand' : 'slate'}>{c.code} · {c.classification === 'AC' ? 'AC' : 'Non-AC'}</Badge>)}
+            {j.coaches.map((c) => <Badge key={c.code} tone={c.classification === 'AC' ? 'brand' : 'slate'}>{c.code} · {classLabel(c.classification)}</Badge>)}
           </div>
         </Panel>
         <JourneyTimeline journey={j} />

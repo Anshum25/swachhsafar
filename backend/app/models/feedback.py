@@ -51,7 +51,7 @@ class Question(UUIDPk, Base):
     __tablename__ = "questions"
     __table_args__ = (
         UniqueConstraint("bank_id", "position"),
-        CheckConstraint("applies_ac OR applies_non_ac", name="applies_somewhere"),
+        CheckConstraint("applies_ac OR applies_non_ac OR applies_gen", name="applies_somewhere"),
     )
 
     bank_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("question_banks.id", ondelete="CASCADE"), nullable=False)
@@ -60,6 +60,7 @@ class Question(UUIDPk, Base):
     text_hi: Mapped[str | None] = mapped_column(Text)
     applies_ac: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     applies_non_ac: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    applies_gen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # General coaches
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Weight used by the PSI calculation. NULL on every question of a bank = PSI not configured.
     psi_weight: Mapped[float | None] = mapped_column(Numeric(6, 3, asdecimal=False))

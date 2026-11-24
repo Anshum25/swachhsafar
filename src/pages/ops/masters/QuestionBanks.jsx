@@ -9,7 +9,7 @@ import { bankPayload, validateBank } from '../../../utils/masterValidation.js';
 import { ActiveBadge, ConfirmDialog, FilterBar, OfflineWriteNote, matches, useMasterAccess, useSave } from './common.jsx';
 
 const AUDIENCES = [{ value: 'passenger', label: 'Passenger' }, { value: 'railway', label: 'Railway official' }];
-const blankQuestion = () => ({ text_en: '', text_hi: '', applies_ac: true, applies_non_ac: true, required: true, psi_weight: '' });
+const blankQuestion = () => ({ text_en: '', text_hi: '', applies_ac: true, applies_non_ac: true, applies_gen: true, required: true, psi_weight: '' });
 
 function fromBank(bank) {
   if (!bank) return { name: '', audience: 'passenger', scale_min: 1, scale_max: 5, questions: [blankQuestion()] };
@@ -39,6 +39,7 @@ function QuestionEditor({ q, i, count, errors, onChange, onMove, onRemove }) {
       <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={q.applies_ac} onChange={set('applies_ac')} /> AC coaches</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={q.applies_non_ac} onChange={set('applies_non_ac')} /> Non-AC coaches</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={q.applies_gen ?? q.applies_non_ac} onChange={set('applies_gen')} /> General coaches</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={q.required} onChange={set('required')} /> Mandatory</label>
         <label className="flex items-center gap-2">PSI weight
           <input className="input h-9 w-24" inputMode="decimal" aria-label={`Question ${i + 1} PSI weight`} value={q.psi_weight} onChange={set('psi_weight')} />
@@ -108,7 +109,7 @@ function BankQuestions({ bank }) {
       <Table rows={bank.questions} columns={[
         { key: 'position', label: '#' },
         { key: 'text', label: 'Question', render: (q) => <>{q.text_en}{q.text_hi && <span className="block text-xs text-slate-500">{q.text_hi}</span>}</> },
-        { key: 'applies', label: 'Coaches', render: (q) => [q.applies_ac && 'AC', q.applies_non_ac && 'Non-AC'].filter(Boolean).join(', ') },
+        { key: 'applies', label: 'Coaches', render: (q) => [q.applies_ac && 'AC', q.applies_non_ac && 'Non-AC', (q.applies_gen ?? q.applies_non_ac) && 'General'].filter(Boolean).join(', ') },
         { key: 'required', label: 'Mandatory', render: (q) => (q.required ? 'Yes' : 'No') },
         { key: 'psi_weight', label: 'PSI weight', render: (q) => q.psi_weight ?? '—' },
       ]} />

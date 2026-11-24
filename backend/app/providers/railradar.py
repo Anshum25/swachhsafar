@@ -89,14 +89,15 @@ class TimetableProvider(Protocol):
 
 TRAIN_NO_RE = re.compile(r"^[0-9]{3,6}$")
 _AC = re.compile(r"^(H|HA|A|B|M|C|E|EA|EV|K)\d*$")       # 1A, 2A, 3A, 3E, CC, EC, executive ... (H1, A2, B5, M1, C3, E1)
-_NON_AC = re.compile(r"^(S|D|J|F)\d+$|^(GEN|GN|GS|UR|SS)\d*$")  # sleeper, second sitting, general, first class
+_NON_AC = re.compile(r"^(S|D|J|F)\d+$|^SS\d*$")  # sleeper, second sitting, first class
+_GEN = re.compile(r"^(GEN|GN|GS|UR)\d*$")  # general (unreserved)
 _COACH_POSITION = re.compile(r'"coachPosition"\s*:\s*"([A-Z0-9 /-]{1,400})"')
 
 
 @dataclass(frozen=True)
 class Coach:
     code: str
-    classification: str  # "AC" | "NON_AC"
+    classification: str  # "AC" | "NON_AC" | "GEN"
 
 
 def coaches_from_position(position: str) -> list[Coach]:
@@ -112,6 +113,8 @@ def coaches_from_position(position: str) -> list[Coach]:
             classification = "AC"
         elif _NON_AC.match(code):
             classification = "NON_AC"
+        elif _GEN.match(code):
+            classification = "GEN"
         else:
             continue  # engine, vans, pantry, generator, or nothing recognisable
         n = seen.get(code, 0) + 1

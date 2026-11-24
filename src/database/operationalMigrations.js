@@ -745,4 +745,38 @@ const V14 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14];
+// v15: General (unreserved) coaches are a class of their own, GEN, beside AC and NON_AC (backend 0018), and a
+// feedback question says whether it applies to them (applies_gen, starting as applies_non_ac: General coaches
+// were Non-AC until now, so they keep being asked the same questions).
+//
+// Five tables check their class against ('AC', 'NON_AC'). SQLite cannot alter a CHECK, and these tables
+// cannot be rebuilt in place: inspections, feedback and inventory reference journey_coaches. Widening the list
+// is the change SQLite documents for writable_schema (it loosens a constraint, so every stored row still
+// passes it): the table's CREATE text gets 'GEN' added, and schema_version is bumped so SQLite reloads it.
+// Coaches already stored under a general code as NON_AC become GEN, as on the server.
+const V15_CLASS_TABLES = ['train_coaches', 'journey_coaches', 'inspection_records', 'passenger_feedback', 'complaints'];
+const V15_GENERAL_CODE = ['GEN', 'GN', 'GS', 'UR'].map((p) => `code = '${p}' OR code GLOB '${p}[0-9]*'`).join(' OR ');
+const V15 = {
+  version: 15,
+  name: 'general coach class',
+  async prepare(db) {
+    const [{ schema_version: schemaVersion }] = await db.query('PRAGMA schema_version');
+    // A column added already (a test running today's store on an older database) is not added twice.
+    const hasAppliesGen = (await db.query('PRAGMA table_info(feedback_questions)')).some((c) => c.name === 'applies_gen');
+    return [
+      'PRAGMA writable_schema = ON',
+      `UPDATE sqlite_master SET sql = replace(sql, 'IN (''AC'', ''NON_AC'')', 'IN (''AC'', ''NON_AC'', ''GEN'')')
+        WHERE type = 'table' AND name IN (${V15_CLASS_TABLES.map((t) => `'${t}'`).join(', ')})`,
+      `PRAGMA schema_version = ${Number(schemaVersion) + 1}`,
+      'PRAGMA writable_schema = OFF',
+      ...(hasAppliesGen ? [] : [
+        'ALTER TABLE feedback_questions ADD COLUMN applies_gen INTEGER NOT NULL DEFAULT 1',
+        'UPDATE feedback_questions SET applies_gen = applies_non_ac',
+      ]),
+      `UPDATE train_coaches SET classification = 'GEN' WHERE classification = 'NON_AC' AND (${V15_GENERAL_CODE})`,
+      `UPDATE journey_coaches SET classification = 'GEN' WHERE classification = 'NON_AC' AND (${V15_GENERAL_CODE})`,
+    ];
+  },
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15];

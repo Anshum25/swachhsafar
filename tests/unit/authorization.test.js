@@ -126,7 +126,7 @@ describe('outbox ownership on a shared device', () => {
       ('o-1', 'operation', 'att-1', 'attendance.create', '{}', 't', 't'),
       ('o-2', 'operation', 'gone', 'attendance.create', '{}', 't', 't'),
       ('o-3', 'user', 'u1', 'register', '{}', 't', 't')`);
-    expect(await runMigrations(db)).toMatchObject({ from: 6, applied: [7, 8, 9, 10, 11, 12, 13, 14] });
+    expect(await runMigrations(db)).toMatchObject({ from: 6, applied: [7, 8, 9, 10, 11, 12, 13, 14, 15] });
     expect(await db.query('SELECT id, owner_user_id FROM sync_outbox ORDER BY id')).toEqual([
       { id: 'o-1', owner_user_id: IDS.supervisor }, { id: 'o-2', owner_user_id: null }, { id: 'o-3', owner_user_id: null },
     ]);

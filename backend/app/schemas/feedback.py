@@ -15,13 +15,14 @@ class QuestionIn(StrictModel):
     text_hi: str | None = Field(default=None, max_length=500)
     applies_ac: bool = True
     applies_non_ac: bool = True
+    applies_gen: bool = True
     required: bool = True
     psi_weight: float | None = Field(default=None, gt=0, le=100)
 
     @model_validator(mode="after")
     def _applies(self):
-        if not (self.applies_ac or self.applies_non_ac):
-            raise ValueError("question must apply to AC, Non-AC or both")
+        if not (self.applies_ac or self.applies_non_ac or self.applies_gen):
+            raise ValueError("question must apply to AC, Non-AC or General coaches")
         return self
 
 
@@ -47,6 +48,7 @@ class QuestionOut(ReadModel):
     text_hi: str | None
     applies_ac: bool
     applies_non_ac: bool
+    applies_gen: bool
     required: bool
     psi_weight: float | None
 

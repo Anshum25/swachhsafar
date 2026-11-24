@@ -109,7 +109,15 @@ def active_bank(db: Session, division_id: uuid.UUID, audience: str) -> QuestionB
 def applicable(bank: QuestionBank, coach_class: CoachClass | None) -> list[Question]:
     if coach_class is None:
         return list(bank.questions)
-    return [q for q in bank.questions if (q.applies_ac if coach_class == CoachClass.AC else q.applies_non_ac)]
+    return [q for q in bank.questions if applies_to(q, coach_class)]
+
+
+def applies_to(q: Question, coach_class: CoachClass) -> bool:
+    if coach_class == CoachClass.AC:
+        return q.applies_ac
+    if coach_class == CoachClass.GEN:
+        return q.applies_gen
+    return q.applies_non_ac
 
 
 def _validate_ratings(bank: QuestionBank, coach_class: CoachClass | None, ratings: list[Rating]) -> None:

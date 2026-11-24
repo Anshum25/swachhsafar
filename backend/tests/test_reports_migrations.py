@@ -139,3 +139,41 @@ def test_0011_grants_a_database_created_before_the_client_permissions(pg):
             f"WHERE division_id IS NULL AND permission_code IN {new_codes} AND created_at IS NOT NULL").all())
     assert grants == {(1, "clients.read"), (1, "clients.manage"), (1, "credits.manage"), (2, "clients.read")}
     engine.dispose()
+
+
+def test_0018_moves_general_coaches_to_their_own_class(pg):
+    """General coaches saved as NON_AC become GEN, and every question keeps asking General coaches what it asked
+    them as Non-AC coaches."""
+    server, url_for = pg
+    server.psql("DROP DATABASE IF EXISTS swachh_pre0018 WITH (FORCE);")
+    server.psql("CREATE DATABASE swachh_pre0018;")
+    url = url_for("swachh_pre0018")
+    run_migrations(url, "0017")
+    engine = create_engine(url)
+    bank, train = uuid.uuid4(), uuid.uuid4()
+    with engine.begin() as conn:
+        conn.exec_driver_sql("SET session_replication_role = replica")  # coach rows without their train
+        conn.exec_driver_sql(
+            "INSERT INTO question_banks (id, division_id, audience, name, scale_min, scale_max, is_active) "
+            f"VALUES ('{bank}', NULL, 'passenger', 'P', 1, 5, false)")
+        for pos, ac, non_ac in ((1, True, True), (2, True, False)):
+            conn.exec_driver_sql(
+                "INSERT INTO questions (id, bank_id, position, text_en, applies_ac, applies_non_ac, required) "
+                f"VALUES ('{uuid.uuid4()}', '{bank}', {pos}, 'Q{pos}', {ac}, {non_ac}, true)")
+        for pos, (code, cls) in enumerate((("B1", "AC"), ("S1", "NON_AC"), ("GEN", "NON_AC"), ("GEN2", "NON_AC"),
+                                           ("UR1", "NON_AC")), 1):
+            conn.exec_driver_sql(
+                "INSERT INTO train_coaches (id, train_id, code, classification, position) "
+                f"VALUES ('{uuid.uuid4()}', '{train}', '{code}', '{cls}', {pos})")
+
+    run_migrations(url)
+
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT position, applies_gen FROM questions ORDER BY position").all() == [
+            (1, True), (2, False)]
+        assert dict(conn.exec_driver_sql("SELECT code, classification FROM train_coaches").all()) == {
+            "B1": "AC", "S1": "NON_AC", "GEN": "GEN", "GEN2": "GEN", "UR1": "GEN"}
+    run_migrations(url, "0017", "downgrade")
+    with engine.connect() as conn:
+        assert {c for (c,) in conn.exec_driver_sql("SELECT DISTINCT classification FROM train_coaches")} == {"AC", "NON_AC"}
+    engine.dispose()

@@ -275,7 +275,7 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 |---|---|---|
 | `train_id` | UUID | → trains.id not null |
 | `code` | VARCHAR(10) | not null |
-| `classification` | VARCHAR(8) | not null |
+| `classification` | VARCHAR(8) | not null: AC, NON_AC or GEN (general) |
 | `position` | INTEGER | not null |
 | `id` | UUID | PK |
 
@@ -306,6 +306,7 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `text_hi` | TEXT |  |
 | `applies_ac` | BOOLEAN | not null |
 | `applies_non_ac` | BOOLEAN | not null |
+| `applies_gen` | BOOLEAN | not null (General coaches; at least one of the three) |
 | `required` | BOOLEAN | not null |
 | `psi_weight` | NUMERIC(6, 3) |  |
 | `id` | UUID | PK |
@@ -404,7 +405,7 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 |---|---|---|
 | `journey_id` | UUID | → journeys.id not null |
 | `code` | VARCHAR(10) | not null |
-| `classification` | VARCHAR(8) | not null |
+| `classification` | VARCHAR(8) | not null: AC, NON_AC or GEN (general) |
 | `position` | INTEGER | not null |
 | `id` | UUID | PK |
 
@@ -528,7 +529,7 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `journey_id` | UUID | → journeys.id not null |
 | `bank_id` | UUID | → question_banks.id not null |
 | `coach_code` | VARCHAR(10) | not null |
-| `coach_class` | VARCHAR(8) | not null |
+| `coach_class` | VARCHAR(8) | not null: AC, NON_AC or GEN |
 | `journey_day` | INTEGER | not null |
 | `feedback_date` | DATE | not null |
 | `passenger_name` | VARCHAR(100) | not null |
@@ -627,7 +628,7 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `journey_id` | UUID | → journeys.id |
 | `train_id` | UUID | → trains.id |
 | `coach_code` | VARCHAR(10) |  |
-| `coach_class` | VARCHAR(8) |  |
+| `coach_class` | VARCHAR(8) | AC, NON_AC or GEN |
 | `category_id` | UUID | → complaint_categories.id not null |
 | `subcategory_id` | UUID | → complaint_categories.id |
 | `description` | TEXT | not null |

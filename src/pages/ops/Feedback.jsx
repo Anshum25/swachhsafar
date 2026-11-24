@@ -16,6 +16,7 @@ import { useAction } from '../../hooks/useAction.js';
 import { canAct } from '../../services/authorization.js';
 import { ONLINE_ONLY } from '../../services/operations.js';
 import { deviceTimestamp } from '../../utils/capture.js';
+import { classLabel } from '../../utils/coaches.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 
 const journeyDay = (j) => Math.max(1, Math.floor((Date.now() - new Date(`${j.journey_date}T00:00:00`)) / 86_400_000) + 1);
@@ -61,7 +62,7 @@ function JourneyCoachFields({ journeys, form, set, coachRequired = true }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Coach">
           <Select value={form.coach_code} required={coachRequired} placeholder="Select coach" onChange={(v) => set({ coach_code: v })}
-            options={(j?.coaches ?? []).map((c) => ({ value: c.code, label: `${c.code} (${c.classification === 'AC' ? 'AC' : 'Non-AC'})` }))} />
+            options={(j?.coaches ?? []).map((c) => ({ value: c.code, label: `${c.code} (${classLabel(c.classification)})` }))} />
         </Field>
         <Field label="Journey day"><input type="number" min={1} max={30} className="input" required value={form.journey_day} onChange={(e) => set({ journey_day: Number(e.target.value) })} /></Field>
       </div>
@@ -224,7 +225,7 @@ function PassengerStart({ journeyId, coach, day }) {
         {journey.error && !j && <ErrorNote error={journey.error} onRetry={journey.reload} />}
         {j && (
           <p className="-mt-1 mb-4 rounded-xl bg-canvas px-3 py-2 text-center text-xs font-medium text-muted">
-            {j.train_no} · {j.train_name} · Coach <b className="text-ink">{coach}</b>{known ? ` (${known.classification === 'AC' ? 'AC' : 'Non-AC'})` : ''} · Day <b className="text-ink">{day}</b>
+            {j.train_no} · {j.train_name} · Coach <b className="text-ink">{coach}</b>{known ? ` (${classLabel(known.classification)})` : ''} · Day <b className="text-ink">{day}</b>
           </p>
         )}
         {j && !known && <ErrorNote error={{ message: `Coach ${coach} is not on this journey.` }} />}
@@ -311,7 +312,7 @@ function PassengerFlow({ id }) {
             </div>
           </div>
           <p className="mt-3 rounded-xl bg-canvas px-3 py-2 text-xs font-medium text-muted">
-            {j ? `${j.train_no} · ${fmtDate(j.journey_date)} · ` : ''}Coach <b className="text-ink">{fb.coach_code}</b> ({fb.coach_class === 'AC' ? 'AC' : 'Non-AC'}) · Day <b className="text-ink">{fb.journey_day}</b>
+            {j ? `${j.train_no} · ${fmtDate(j.journey_date)} · ` : ''}Coach <b className="text-ink">{fb.coach_code}</b> ({classLabel(fb.coach_class)}) · Day <b className="text-ink">{fb.journey_day}</b>
           </p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             <Badge tone={STATE_TONE[fb.status]}>{label(fb.status)}</Badge>

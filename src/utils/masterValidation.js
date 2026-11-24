@@ -20,7 +20,9 @@ export function validateBank(f) {
     const n = i + 1;
     if (len(q.text_en) < 3 || len(q.text_en) > 500) e[`q${i}.text_en`] = `Question ${n}: English text must be 3–500 characters.`;
     if (len(q.text_hi) > 500) e[`q${i}.text_hi`] = `Question ${n}: Hindi text must be at most 500 characters.`;
-    if (!q.applies_ac && !q.applies_non_ac) e[`q${i}.applies`] = `Question ${n}: must apply to AC, Non-AC or both.`;
+    if (!q.applies_ac && !q.applies_non_ac && !(q.applies_gen ?? q.applies_non_ac)) {
+      e[`q${i}.applies`] = `Question ${n}: must apply to AC, Non-AC or General coaches.`;
+    }
     if (q.psi_weight !== '' && q.psi_weight != null && !(Number(q.psi_weight) > 0 && Number(q.psi_weight) <= 100)) {
       e[`q${i}.psi_weight`] = `Question ${n}: PSI weight must be more than 0 and at most 100.`;
     }
@@ -34,7 +36,7 @@ export function bankPayload(f, divisionId) {
     division_id: divisionId ?? null, audience: f.audience, name: f.name.trim(), scale_min: f.scale_min, scale_max: f.scale_max,
     questions: f.questions.map((q) => ({
       text_en: q.text_en.trim(), text_hi: q.text_hi?.trim() || null, applies_ac: !!q.applies_ac, applies_non_ac: !!q.applies_non_ac,
-      required: !!q.required, psi_weight: q.psi_weight === '' || q.psi_weight == null ? null : Number(q.psi_weight),
+      applies_gen: !!(q.applies_gen ?? q.applies_non_ac), required: !!q.required, psi_weight: q.psi_weight === '' || q.psi_weight == null ? null : Number(q.psi_weight),
     })),
   };
 }

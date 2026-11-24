@@ -23,7 +23,8 @@ def valid_pnr(fakes, pnr="1234567890", train="12001", coaches=("B1",)):
 
 def ratings(world, coach_class="AC"):
     qs = world.passenger_bank["questions"]
-    applicable = [q for q in qs if (q["applies_ac"] if coach_class == "AC" else q["applies_non_ac"])]
+    key = {"AC": "applies_ac", "GEN": "applies_gen"}.get(coach_class, "applies_non_ac")
+    applicable = [q for q in qs if q[key]]
     return [{"question_id": q["id"], "value": 4} for q in applicable if q["required"]]
 
 
@@ -203,6 +204,31 @@ def test_railway_feedback_limit(world):
 def test_questions_endpoint_filters_by_coach_class(world):
     r = world.client.get(f"{API}/questions?journey_id={world.journey['id']}&coach_code=S1", headers=world.h("sup"))
     assert [q["text_en"] for q in r.json()] == ["Toilet cleaning", "Staff behaviour"]
+
+
+def test_general_coaches_get_their_own_questions(world):
+    """GEN (general, unreserved) is a class of its own: a question can be for General coaches only, or not for them."""
+    train = world.create_train(train_no="12002", coaches=[
+        {"code": "B1", "classification": "AC"}, {"code": "S1", "classification": "NON_AC"},
+        {"code": "GEN1", "classification": "GEN"}])
+    journey = world.create_journey(train=train)
+    r = world.client.post(f"{API}/question-banks", headers=world.h("admin"), json=dict(
+        division_id=str(world.a.id), audience="passenger", name="passenger v2", scale_min=1, scale_max=5,
+        questions=[dict(text_en="Toilet cleaning"),
+                   dict(text_en="Bedroll quality", applies_non_ac=False, applies_gen=False),
+                   dict(text_en="Seats and floor of the general coach", applies_ac=False, applies_non_ac=False)]))
+    assert r.status_code == 201, r.text
+    assert r.json()["questions"][2]["applies_gen"] is True and r.json()["questions"][1]["applies_gen"] is False
+    world.client.post(f"{API}/question-banks/{r.json()['id']}/activate", headers=world.h("admin"))
+    asked = lambda coach: [q["text_en"] for q in world.client.get(  # noqa: E731
+        f"{API}/questions?journey_id={journey['id']}&coach_code={coach}", headers=world.h("sup")).json()]
+    assert asked("B1") == ["Toilet cleaning", "Bedroll quality"]
+    assert asked("S1") == ["Toilet cleaning"]
+    assert asked("GEN1") == ["Toilet cleaning", "Seats and floor of the general coach"]
+    bad = world.client.post(f"{API}/question-banks", headers=world.h("admin"), json=dict(
+        division_id=str(world.a.id), audience="passenger", name="passenger v3", scale_min=1, scale_max=5,
+        questions=[dict(text_en="Nowhere", applies_ac=False, applies_non_ac=False, applies_gen=False)]))
+    assert bad.status_code == 422
 
 
 def test_void_by_reviewer(world, fakes):

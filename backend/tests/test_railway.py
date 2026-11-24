@@ -357,14 +357,14 @@ def _train_page(position):
 def test_coaches_are_read_from_the_coach_position():
     got = coaches_from_position("ENG-SLRD-GEN-GEN-S2-S1-H1-A1-B2-B1-M1-PC-EOG-GEN-LPR")
     assert [(c.code, c.classification) for c in got] == [
-        ("GEN", "NON_AC"), ("GEN2", "NON_AC"), ("S2", "NON_AC"), ("S1", "NON_AC"), ("H1", "AC"), ("A1", "AC"),
-        ("B2", "AC"), ("B1", "AC"), ("M1", "AC"), ("GEN3", "NON_AC")]
+        ("GEN", "GEN"), ("GEN2", "GEN"), ("S2", "NON_AC"), ("S1", "NON_AC"), ("H1", "AC"), ("A1", "AC"),
+        ("B2", "AC"), ("B1", "AC"), ("M1", "AC"), ("GEN3", "GEN")]
     assert coaches_from_position("ENG-SLR-LPR") == []
 
 
 def test_the_train_status_page_gives_the_coaches():
     got = parse_train_composition(_train_page("ENG-SLRD-GEN-S1-B1-LPR"), "12189")
-    assert got == [Coach("GEN", "NON_AC"), Coach("S1", "NON_AC"), Coach("B1", "AC")]
+    assert got == [Coach("GEN", "GEN"), Coach("S1", "NON_AC"), Coach("B1", "AC")]
     with pytest.raises(RailRadarError) as exc:
         parse_train_composition("<html><title>Just a moment...</title>cf-chl</html>", "12189")
     assert exc.value.kind == "blocked"

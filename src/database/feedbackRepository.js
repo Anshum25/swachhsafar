@@ -20,7 +20,8 @@ export const maskMobile = (m) => (m ? `${m.slice(0, 2)}XXXXX${m.slice(-3)}` : nu
 
 // Questions of a bank that apply to a coach class (backend feedback.applicable).
 export const applicableQuestions = (bank, coachClass) => (bank?.questions ?? [])
-  .filter((q) => (coachClass == null ? true : coachClass === 'AC' ? q.applies_ac : q.applies_non_ac));
+  .filter((q) => (coachClass == null ? true
+    : coachClass === 'AC' ? q.applies_ac : coachClass === 'GEN' ? (q.applies_gen ?? q.applies_non_ac) : q.applies_non_ac));
 
 function validateRatings(bank, coachClass, ratings) {
   if (!Array.isArray(ratings) || ratings.length < 1 || ratings.length > 20) {

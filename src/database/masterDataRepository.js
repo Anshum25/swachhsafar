@@ -49,7 +49,8 @@ const trainOut = (t, coaches) => ({
 
 const questionOut = (q) => ({
   id: q.id, position: q.position, text_en: q.text_en, text_hi: q.text_hi, applies_ac: fromBool(q.applies_ac),
-  applies_non_ac: fromBool(q.applies_non_ac), required: fromBool(q.required), psi_weight: q.psi_weight,
+  applies_non_ac: fromBool(q.applies_non_ac), applies_gen: fromBool(q.applies_gen), required: fromBool(q.required),
+  psi_weight: q.psi_weight,
 });
 
 export function createMasterDataRepository(db) {
@@ -130,7 +131,9 @@ export function createMasterDataRepository(db) {
         },
         ...(b.questions ?? []).map((q) => upsertStatement('feedback_questions', {
           id: q.id, bank_id: b.id, position: q.position, text_en: q.text_en, text_hi: q.text_hi ?? null,
-          applies_ac: bool(q.applies_ac ?? true), applies_non_ac: bool(q.applies_non_ac ?? true), required: bool(q.required ?? true),
+          applies_ac: bool(q.applies_ac ?? true), applies_non_ac: bool(q.applies_non_ac ?? true),
+          // A server from before General coaches had their own class asked them the Non-AC questions.
+          applies_gen: bool(q.applies_gen ?? q.applies_non_ac ?? true), required: bool(q.required ?? true),
           psi_weight: q.psi_weight ?? null, is_active: 1,
         }, { insertOnly: [] })),
       ];
