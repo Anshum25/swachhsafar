@@ -279,6 +279,12 @@ export function createFakeNetwork({ users, today }) {
     if (method === 'GET' && path === '/complaints/categories') return list(masters.categories);
     // ---- offices and the Super Admin overview (api/v1/clients.py, reports.py overview), read-only -------
     if (method === 'GET' && path === '/clients') return { status: 200, body: FAKE_CLIENTS };
+    if (method === 'GET' && /^\/clients\/[^/]+\/wallet$/.test(path)) {
+      return { status: 200, body: { client_id: FAKE_CLIENTS[1].id, office_id: '002', name: 'skydot', status: 'active', credit_balance: 509,
+        credit_per_journey: 1, low_credit_threshold: 10, low_credit: false, journeys_covered: 509, added_this_month: 522, spent_this_month: 13,
+        upcoming_journeys: 0, upcoming_cost: 0, recent: [1, 2, 3].map((i) => ({ id: `l${i}`, created_at: new Date().toISOString(), delta: -1,
+          balance_after: 509 + i - 1, reason: 'journey_charge', journey_id: null, reference: null, note: null, created_by_id: null, is_system: true })) } };
+    }
     if (method === 'GET' && path === '/dashboard/overview') {
       if (me.user.role_id !== 1 && !Object.values(me.divisions).some((p) => p.includes('dashboard.read'))) return forbidden;
       return { status: 200, body: fakeOverview(query, today) };

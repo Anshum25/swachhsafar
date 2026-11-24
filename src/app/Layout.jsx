@@ -8,6 +8,7 @@ import {
 import { useSecurity } from '../security/SecurityProvider.jsx';
 import { BLOCKS } from '../security/messages.js';
 import { BarSlotContext } from '../components/ui.jsx';
+import WalletButton from '../pages/ops/WalletCard.jsx';
 import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
 import { ROLE_NAMES, useQueueState, useSession } from './session.jsx';
 import { MODULES, moduleAllowed } from './modules.js';
@@ -286,16 +287,20 @@ export default function Layout({ path, children }) {
           <div className={masters ? 'lg:pl-132' : 'lg:pl-68'}>
             <header className="sticky top-0 z-20 bg-white pt-[env(safe-area-inset-top)] shadow-bar">
               <div className={home ? '' : 'hidden'}>
-                {/* Home: menu · centred brand · bell (reference home screen). */}
-                <div className="grid min-h-14 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center px-1.5 sm:px-3" data-testid={home ? 'topbar-main' : undefined}>
-                  <button type="button" className="icon-btn lg:invisible" onClick={() => setOpen(true)} aria-label="Open menu">
+                {/* Home: menu · centred brand · bell and the office's wallet (reference home screen). The two
+                    side columns share the width equally so the brand stays centred whatever the right holds. */}
+                <div className="grid min-h-14 grid-cols-[minmax(2.75rem,1fr)_minmax(0,auto)_minmax(2.75rem,1fr)] items-center gap-1 px-1.5 sm:px-3" data-testid={home ? 'topbar-main' : undefined}>
+                  <button type="button" className="icon-btn justify-self-start lg:invisible" onClick={() => setOpen(true)} aria-label="Open menu">
                     <MenuIcon className="h-6 w-6" />
                   </button>
                   <a href="#/" className="flex min-w-0 items-center justify-center gap-2" aria-label="Swachh Safar home">
                     <TrainIcon className="h-6 w-6 shrink-0 text-brand-700" />
-                    <span className="truncate text-xl font-extrabold tracking-tight text-brand-700">Swachh Safar</span>
+                    <span className="hidden truncate text-xl font-extrabold tracking-tight text-brand-700 min-[400px]:inline">Swachh Safar</span>
                   </a>
-                  <SyncBell online={online} />
+                  <div className="flex items-center justify-end gap-1">
+                    <SyncBell online={online} />
+                    <WalletButton />
+                  </div>
                 </div>
               </div>
               {/* Inner screens: their PageHeader renders the back arrow and title here. */}

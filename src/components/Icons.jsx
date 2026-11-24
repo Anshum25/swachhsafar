@@ -134,6 +134,10 @@ export const CheckCircleIcon = (p) => (
 export const BellIcon = (p) => (
   <Icon {...p}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /></Icon>
 );
+// Lucide "wallet": the office's credit wallet in the top bar.
+export const WalletIcon = (p) => (
+  <Icon {...p}><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></Icon>
+);
 export const ArrowLeftIcon = (p) => (
   <Icon {...p}><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></Icon>
 );

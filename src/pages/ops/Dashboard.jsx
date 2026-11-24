@@ -5,7 +5,6 @@ import { Badge, DataState, ErrorNote, Loading, Panel, STATE_TONE, Stat, Table, f
 import { daysAgo, today } from '../../utils/capture.js';
 import { navigate } from '../../app/router.js';
 import SuperAdminDashboard from './SuperAdminDashboard.jsx';
-import WalletCard from './WalletCard.jsx';
 
 const SUPER_ADMIN = 1;
 const ADMIN = 2;
@@ -253,8 +252,8 @@ export default function Dashboard() {
       {/* Whose session this is (devices are shared between staff). */}
       <h1 className="mb-3 truncate text-[17px] font-bold text-ink">Welcome, {user.name.split(' ')[0]}</h1>
       <SetupNote />
-      {/* The office's Admin gets the whole wallet; anyone else who may read it, the warning only. */}
-      {user.role_id === ADMIN ? <WalletCard /> : <LowCreditNote />}
+      {/* The wallet itself is in the top bar (WalletCard.jsx); here, only the warning when it runs low. */}
+      <LowCreditNote />
       {/* The Super Admin's home is the dashboard itself: the banner and module tiles repeat the sidebar. */}
       {user.role_id !== SUPER_ADMIN && <><HomeBanner /><ModuleTiles /></>}
       {/* A Super Admin sees every office at once, with filters on top (SuperAdminDashboard.jsx); everyone
