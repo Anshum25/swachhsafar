@@ -254,12 +254,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "plan-journeys":
         from datetime import date as _date
 
+        from app.providers.railradar import get_timetable_provider
         from app.services.railway import charge_due_journeys, plan_journeys
         from app.timeutil import today_ist
 
         today = _date.fromisoformat(args.date) if args.date else today_ist()
         with write_intent(), get_sessionmaker()() as db:
-            planned = plan_journeys(db, today=today)
+            planned = plan_journeys(db, today=today, provider=get_timetable_provider())
         with write_intent(), get_sessionmaker()() as db:
             paid = charge_due_journeys(db, today=today)  # journeys left unpaid by the old start-day rule
         print(f"{today}: {planned['created']} journey(s) planned and paid, {planned['skipped']} skipped for "

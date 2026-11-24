@@ -198,6 +198,16 @@ function StaffPanel({ journey, onChanged }) {
   );
 }
 
+// " · 24 Nov 07:55 → 24 Nov 10:50": a leg's departure and arrival, the parts that are known.
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '');
+const shortDate = (d) => fmtDate(d).replace(/ \d{4}$/, '');
+function legTimes(fromDate, fromTime, toDate, toTime) {
+  if (!fromTime && !toTime) return '';
+  const from = [shortDate(fromDate), hhmm(fromTime)].filter(Boolean).join(' ');
+  const to = [shortDate(toDate), hhmm(toTime)].filter(Boolean).join(' ');
+  return ` · ${from} → ${to}`;
+}
+
 const COACH_CODE = /^[A-Z0-9 ]{1,10}$/; // backend CoachCode
 
 // Journey coach list (PATCH /journeys/{id} `coaches`, version-checked). The server refuses to remove a
@@ -337,6 +347,17 @@ function JourneyDetail({ id }) {
             </div>
           </div>
           <InfoRow icon={CalendarIcon} label="Journey Date">{fmtDate(j.journey_date)}{j.end_date && j.end_date !== j.journey_date ? ` → ${fmtDate(j.end_date)}` : ''}</InfoRow>
+          {/* Out with the train, back with its linked (return) train: the journey is done when that is back. */}
+          {j.outbound_end_date && (
+            <InfoRow icon={TrainIcon} label="Outbound">
+              {j.train_no}{legTimes(j.journey_date, j.start_time, j.outbound_end_date, j.end_time)}
+            </InfoRow>
+          )}
+          {j.linked_train_no && (
+            <InfoRow icon={LinkIcon} label="Linked Train">
+              <b className="font-semibold text-ink">{j.linked_train_no}</b>{legTimes(j.linked_journey_date, j.return_start_time, j.end_date, j.return_end_time)}
+            </InfoRow>
+          )}
           <InfoRow icon={LinkIcon} label="Linked Date">{fmtDate(j.linked_journey_date)}</InfoRow>
           <InfoRow icon={UserIcon} label="Supervisor/EHK">
             {j.supervisor_name ?? (

@@ -22,6 +22,7 @@ class Train(UUIDPk, Timestamps, Base):
         CheckConstraint("operational_days >= 1 AND operational_days <= 30", name="operational_days_range"),
         CheckConstraint("inspection_rounds_per_day >= 1 AND inspection_rounds_per_day <= 20", name="rounds_range"),
         CheckConstraint("before_inspection_enabled OR after_inspection_enabled", name="some_phase_enabled"),
+        CheckConstraint("arrival_days IS NULL OR (arrival_days >= 0 AND arrival_days <= 7)", name="arrival_days_range"),
     )
 
     division_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("divisions.id"), nullable=False, index=True)
@@ -48,6 +49,12 @@ class Train(UUIDPk, Timestamps, Base):
     run_days: Mapped[str | None] = mapped_column(String(27))
     # Journeys are created for this train every day, a few days ahead (services/railway.plan_journeys).
     auto_journeys: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # ---- from RailRadar's train-status page (migration 0019) ----
+    # Days after departure that it reaches its last station (0 = same day); None = schedule not read yet.
+    arrival_days: Mapped[int | None] = mapped_column(Integer)
+    # The train that makes the return trip, kept as a train of the same division (journeys link it).
+    return_train_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("trains.id", ondelete="SET NULL"))
+    return_train: Mapped["Train | None"] = relationship(remote_side="Train.id", foreign_keys=[return_train_id])
 
     coaches: Mapped[list["TrainCoach"]] = relationship(
         back_populates="train", cascade="all, delete-orphan", order_by="TrainCoach.position"
@@ -64,3 +71,4 @@ class TrainCoach(UUIDPk, Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
 
     train: Mapped[Train] = relationship(back_populates="coaches")
+    

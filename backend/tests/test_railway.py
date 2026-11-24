@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from app.models import Client, Division, Journey, JourneyStatus, RoleId
+from app.models import Client, Division, Journey, JourneyStatus, RoleId, Train
 from app.providers.railradar import (
-    Coach, OriginTrain, RailRadarError, StationTimetable, coaches_from_position, get_timetable_provider,
-    is_path_allowed, parse_robots, parse_station_timetable, parse_train_composition,
+    Coach, OriginTrain, RailRadarError, StationTimetable, TrainRun, coaches_from_position, get_timetable_provider,
+    is_path_allowed, parse_robots, parse_station_timetable, parse_train_composition, parse_train_run,
 )
 from app.services.railway import charge_due_journeys, plan_journeys
 from app.timeutil import today_ist
@@ -38,6 +38,7 @@ class FakeRailRadar:
         }
 
         self.rakes = {}           # train_no -> [Coach]; a train not here has no composition on RailRadar
+        self.runs = {}            # train_no -> TrainRun (schedule and return train); else made from rakes
         self.rake_fail = None
         self.rake_calls = []
 
@@ -54,6 +55,22 @@ class FakeRailRadar:
         if train_no not in self.rakes:
             raise RailRadarError("parse", "no composition")
         return list(self.rakes[train_no])
+
+    def train_run(self, train_no):
+        self.rake_calls.append(train_no)
+        if self.rake_fail:
+            raise RailRadarError(self.rake_fail, "fake failure")
+        if train_no in self.runs:
+            return self.runs[train_no]
+        if train_no not in self.rakes:
+            raise RailRadarError("parse", "no schedule")
+        return _run(train_no, coaches=self.rakes[train_no])
+
+
+def _run(no, *, dep="00:25", arr="10:00", days=0, back=None, run_days=None, coaches=(), origin="ADI", dest="HWH"):
+    return TrainRun(train_no=no, name=f"Train {no}", origin_code=origin, destination_code=dest,
+                    destination_name=dest.title(), departure=dep, arrival=arr, arrival_days=days, run_days=run_days,
+                    return_train_no=back, coaches=tuple(coaches))
 
 
 @pytest.fixture
@@ -140,7 +157,7 @@ def test_an_admin_sets_up_their_office_and_journeys_are_planned(world, rr):
     assert r.status_code == 200, r.text
     assert r.json() == {"divisions_created": 1, "trains_planned": 1, "journeys_created": 3, "journeys_skipped": 0,
                         "coaches_auto": [], "coaches_missing": []}
-    assert rr.rake_calls == []  # coaches were typed: RailRadar is not asked
+    assert rr.rake_calls == ["12833"]  # its schedule is read once; the typed coaches are kept
 
     world.db.rollback()
     station = world.db.scalar(select(Division).where(Division.client_id == world.a.client_id, Division.station_code == "ADI"))
@@ -408,6 +425,104 @@ def test_the_wizard_looks_up_a_trains_coaches(world, rr):
     rr.rake_fail = "rate_limited"
     r = world.client.get(url, headers=world.h("admin"))
     assert r.status_code == 503 and r.json()["error"]["code"] == "railradar_rate_limited"
+
+
+# ---- the return trip ------------------------------------------------------------------------------------
+
+
+def _train_status_page(schedule):
+    import json
+    inner = json.dumps({"trainNumber": schedule["train"]["number"], "initialSchedule": schedule})
+    escaped = inner.replace('"', '\\"')
+    return f'<html><body><script>self.__next_f.push([1,"{escaped}"])</script></body></html>'
+
+
+def test_the_train_status_page_gives_the_schedule_and_the_return_train():
+    page = _train_status_page({"train": {
+        "number": "20947", "name": "Ahmedabad - Ekta Nagar Jan Shatabdi", "source": {"code": "ADI"},
+        "destination": {"code": "EKNR", "name": "Ekta Nagar (Kevadiya)"}, "runDays": ["mon", "tue", "wed"],
+        "returnTrain": "20948", "coachPosition": "ENG-LPR-C1-D1-D2-EV1"},
+        "route": [{"sequence": 1, "departure": "07:55", "departureDay": 1},
+                  {"sequence": 2, "arrival": "08:30", "arrivalDay": 1, "departure": "08:32", "departureDay": 1},
+                  {"sequence": 3, "arrival": "10:50", "arrivalDay": 2}]})
+    run = parse_train_run(page, "20947")
+    assert (run.departure, run.arrival, run.arrival_days, run.return_train_no) == ("07:55", "10:50", 1, "20948")
+    assert (run.origin_code, run.destination_code, run.run_days) == ("ADI", "EKNR", ("mon", "tue", "wed"))
+    assert [c.code for c in run.coaches] == ["C1", "D1", "D2", "EV1"]
+    with pytest.raises(RailRadarError) as exc:
+        parse_train_run(page, "12001")  # the page is 20947's
+    assert exc.value.kind == "parse"
+
+
+def _station(world, code="ADI"):
+    world.db.rollback()
+    return world.db.scalar(select(Division).where(Division.client_id == world.a.client_id, Division.station_code == code))
+
+
+def test_a_planned_journey_ends_when_the_return_train_is_back(world, rr):
+    """Out with 12833 (00:25, arriving 10:00 the next day), back with 12834 that evening at 23:00, home at 08:00
+    the day after: three days, and the journey shows its linked train."""
+    _set_area(world, world.a.client_id)
+    rr.runs["12833"] = _run("12833", dep="00:25", arr="10:00", days=1, back="12834", coaches=[Coach("B1", "AC")])
+    rr.runs["12834"] = _run("12834", dep="23:00", arr="08:00", days=1, origin="HWH", dest="ADI")
+    r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    assert r.status_code == 200, r.text
+
+    station = _station(world)
+    back = world.db.scalar(select(Train).where(Train.division_id == station.id, Train.train_no == "12834"))
+    assert back is not None and not back.auto_journeys and [c.code for c in back.coaches] == ["B1"]  # the same rake
+    j = _journeys(world, station.id)[0]
+    d = j.journey_date
+    assert (j.outbound_end_date, j.linked_journey_date, j.end_date) == (d + timedelta(days=1), d + timedelta(days=1),
+                                                                        d + timedelta(days=2))
+    assert (j.duration_days, j.operational_days, j.linked_train_id) == (1, 3, back.id)
+    assert (str(j.start_time), str(j.end_time), str(j.return_start_time), str(j.return_end_time)) == (
+        "00:25:00", "10:00:00", "23:00:00", "08:00:00")
+    out = world.client.get(f"{API}/journeys/{j.id}", headers=world.h("admin")).json()
+    assert out["linked_train_no"] == "12834"
+    assert len(_journeys(world, back.division_id)) == 3  # the return train is not planned on its own
+
+
+def test_the_return_leaves_on_a_day_it_runs_and_after_the_train_arrives(world, rr):
+    _set_area(world, world.a.client_id)
+    # Arrives 10:50 the same day; the return leaves at 09:00, so not that day; and only on Wednesdays.
+    rr.runs["12833"] = _run("12833", dep="07:55", arr="10:50", days=0, back="12834")
+    rr.runs["12834"] = _run("12834", dep="09:00", arr="12:00", days=0, run_days=("wed",), origin="HWH", dest="ADI")
+    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    for j in _journeys(world, _station(world).id):
+        d = j.journey_date
+        wed = next(d + timedelta(days=k) for k in range(1, 8) if (d + timedelta(days=k)).weekday() == 2)
+        assert (j.outbound_end_date, j.linked_journey_date, j.end_date) == (d, wed, wed)
+
+
+def test_a_train_with_no_return_ends_when_it_arrives(world, rr):
+    _set_area(world, world.a.client_id)
+    rr.runs["12833"] = _run("12833", dep="22:00", arr="06:00", days=1)
+    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    j = _journeys(world, _station(world).id)[0]
+    d = j.journey_date
+    assert (j.linked_journey_date, j.end_date, j.linked_train_id, j.operational_days) == (
+        d + timedelta(days=1), d + timedelta(days=1), None, 2)
+
+
+def test_trains_set_up_before_schedules_were_read_get_them_on_the_next_planner_run(world, rr):
+    _set_area(world, world.a.client_id)
+    rr.rake_fail = "blocked"  # RailRadar unreadable at setup: dated as before
+    _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "12833"}]}])
+    station = _station(world)
+    before = _journeys(world, station.id)
+    assert all(j.linked_train_id is None for j in before)
+
+    rr.rake_fail = None
+    rr.runs["12833"] = _run("12833", dep="00:25", arr="10:00", days=0, back="12834", coaches=[Coach("S1", "NON_AC")])
+    rr.runs["12834"] = _run("12834", dep="18:00", arr="23:00", days=0, origin="HWH", dest="ADI")
+    world.db.rollback()
+    plan_journeys(world.db, today=today_ist(), provider=rr)
+    after = {j.journey_date: j for j in _journeys(world, station.id)}
+    today = today_ist()
+    assert after[today].linked_train_id is None  # under way: left as it was
+    for d in (today + timedelta(days=1), today + timedelta(days=2)):
+        assert after[d].linked_train_id is not None and after[d].end_date == d  # back the same evening
 
 
 def test_robots_rules_are_obeyed():
