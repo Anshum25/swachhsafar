@@ -70,6 +70,15 @@ def stations_in(db: Session, state: str, city: str) -> list[RailwayStation]:
         .order_by(RailwayStation.name)))
 
 
+def stations_by_code(db: Session, codes) -> dict[str, RailwayStation]:
+    """The stations with these codes, whatever city they are in. An office's home city is where its setup
+    starts, not where it ends: a Gujarat client that runs a train out of Jabalpur adds that station too."""
+    codes = [c.strip().upper() for c in codes]
+    if not codes:
+        return {}
+    return {s.code: s for s in db.scalars(select(RailwayStation).where(RailwayStation.code.in_(codes)))}
+
+
 # ---- who may set a client up -------------------------------------------------------------------------------
 
 
@@ -141,13 +150,21 @@ def get_setup(db: Session, p: Principal, client_id: uuid.UUID) -> dict:
                                                 Train.auto_journeys)):
             trains.setdefault(t.division_id, []).append(t.train_no)
     stations = stations_in(db, client.state, client.city) if client.state and client.city else []
+    # Stations this office already has that are not in its home city: added deliberately from elsewhere, so
+    # they belong in the wizard beside the home ones. Without this they would vanish from the screen while
+    # still planning journeys and spending credits every night, which is the worst of both.
+    elsewhere = sorted(
+        (s for code, s in stations_by_code(db, divisions).items() if code not in {h.code for h in stations}),
+        key=lambda s: (s.state or "", s.city or "", s.name),
+    )
     return dict(
         client_id=client.id, state=client.state, city=client.city, setup_completed_at=client.setup_completed_at,
         stations=[dict(code=s.code, name=s.name, city=s.city,
                        division_id=divisions[s.code].id if s.code in divisions else None,
                        selected=s.code in divisions and bool(trains.get(divisions[s.code].id)),
-                       train_nos=sorted(trains.get(divisions[s.code].id, [])) if s.code in divisions else [])
-                  for s in stations],
+                       train_nos=sorted(trains.get(divisions[s.code].id, [])) if s.code in divisions else [],
+                       state=s.state, home=s.code in {h.code for h in stations})
+                  for s in [*stations, *elsewhere]],
     )
 
 
@@ -173,12 +190,16 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
     none of their trains is planned any more. Nothing is deleted."""
     client = get_or_404(db, Client, client_id, "Client")
     require_setup_access(db, p, client)
-    state, city = _client_area(client)
-    allowed = {s.code: s for s in stations_in(db, state, city)}
+    _client_area(client)  # the home city the wizard opens on must still be set deliberately
     chosen = {s.code.strip().upper(): s for s in body.stations}
+    # Any real station, not only the home city's. A client's work follows the trains, and a train out of
+    # another state is still their train. What must hold is that the station exists -- a typo would
+    # otherwise become a division that no timetable will ever fill. uq_divisions_client_station keeps one
+    # division per station per office, so adding the same station twice cannot happen either.
+    allowed = stations_by_code(db, chosen)
     unknown = sorted(set(chosen) - set(allowed))
     if unknown:
-        raise BusinessRuleViolation(f"Not stations of {city}: {', '.join(unknown)}", code="station_outside_city",
+        raise BusinessRuleViolation(f"No such station: {', '.join(unknown)}", code="unknown_station",
                                     details={"codes": unknown})
 
     # Every station's timetable is read and every pick checked before anything is written: reading a

@@ -42,6 +42,9 @@ class SetupStationOut(BaseModel):
     division_id: uuid.UUID | None
     selected: bool
     train_nos: list[str]
+    state: str = ""
+    # False for a station the office added from outside its home city, so the screen can say where it is.
+    home: bool = True
 
 
 class SetupOut(BaseModel):

@@ -121,12 +121,13 @@ def test_only_real_states_and_cities_are_accepted(world):
 # ---- a station's trains ------------------------------------------------------------------------------------
 
 
-def test_an_admin_reads_trains_of_their_own_city_only(world, rr):
+def test_an_admin_reads_any_station_but_other_roles_read_none(world, rr):
     _set_area(world, world.a.client_id)
     r = world.client.get(f"{API}/railway/stations/ADI/trains", headers=world.h("admin"))
     assert r.status_code == 200, r.text
     assert [t["train_no"] for t in r.json()["trains"]] == ["12833", "19015"]
-    assert world.client.get(f"{API}/railway/stations/NDLS/trains", headers=world.h("admin")).status_code == 403
+    # Outside the office's home city: an office may run trains out of another state, so this is allowed.
+    assert world.client.get(f"{API}/railway/stations/NDLS/trains", headers=world.h("admin")).status_code == 200
     assert world.client.get(f"{API}/railway/stations/ADI/trains", headers=world.h("manager")).status_code == 403
 
 
@@ -190,10 +191,36 @@ def test_only_the_office_admin_or_super_admin_sets_up(world, rr):
 
 def test_stations_and_trains_are_checked(world, rr):
     _set_area(world, world.a.client_id)
-    r = _setup(world, "admin", world.a.client_id, [{"code": "NDLS", "trains": [{"train_no": "12001"}]}])
-    assert r.json()["error"]["code"] == "station_outside_city"
+    r = _setup(world, "admin", world.a.client_id, [{"code": "ZZZZ", "trains": [{"train_no": "12001"}]}])
+    assert r.json()["error"]["code"] == "unknown_station"
     r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [{"train_no": "99999"}]}])
     assert r.json()["error"]["code"] == "train_not_at_station"
+
+
+def test_an_office_adds_a_station_from_another_state(world, rr):
+    """A Gujarat office that runs a train out of Jabalpur sets that station up too. The home city is where
+    the wizard starts, not a boundary -- before this it was refused as station_outside_city."""
+    _set_area(world, world.a.client_id)
+    rr.boards["JBP"] = StationTimetable("JBP", "Jabalpur", (
+        OriginTrain("12321", "Howrah Mail", "Mail", "HWH", "Howrah Jn", "05:40", 1, ALL_DAYS),))
+    r = _setup(world, "admin", world.a.client_id, [
+        {"code": "ADI", "trains": [{"train_no": "12833"}]},
+        {"code": "JBP", "trains": [{"train_no": "12321"}]}])
+    assert r.status_code == 200, r.text
+    assert r.json()["divisions_created"] == 2 and r.json()["trains_planned"] == 2
+
+    world.db.rollback()
+    jbp = world.db.scalar(select(Division).where(Division.client_id == world.a.client_id,
+                                                 Division.station_code == "JBP"))
+    # A real station division, not an inert one: it has the station code the nightly planner works from.
+    assert jbp is not None and jbp.kind.value == "station" and jbp.name == "Jabalpur"
+    assert len(_journeys(world, jbp.id)) == 3
+
+    # And it stays visible in the wizard, flagged as being outside the home city rather than dropped.
+    s = world.client.get(f"{API}/clients/{world.a.client_id}/setup", headers=world.h("admin")).json()
+    out = next(x for x in s["stations"] if x["code"] == "JBP")
+    assert out["home"] is False and out["state"] == "Madhya Pradesh" and out["selected"]
+    assert next(x for x in s["stations"] if x["code"] == "ADI")["home"] is True
 
 
 def test_a_refused_setup_leaves_nothing_behind(world, rr):
