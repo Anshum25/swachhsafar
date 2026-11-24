@@ -126,7 +126,8 @@ def test_an_admin_sets_up_their_office_and_journeys_are_planned(world, rr):
     r = _setup(world, "admin", world.a.client_id, [{"code": "ADI", "trains": [
         {"train_no": "12833", "coaches": [{"code": "B1", "classification": "AC"}, {"code": "S1", "classification": "NON_AC"}]}]}])
     assert r.status_code == 200, r.text
-    assert r.json() == {"divisions_created": 1, "trains_planned": 1, "journeys_created": 3, "journeys_skipped": 0}
+    assert r.json() == {"divisions_created": 1, "trains_planned": 1, "journeys_created": 3, "journeys_skipped": 0,
+                        "coaches_auto": [], "coaches_missing": []}  # coaches were typed, so none fetched
 
     world.db.rollback()
     station = world.db.scalar(select(Division).where(Division.client_id == world.a.client_id, Division.station_code == "ADI"))

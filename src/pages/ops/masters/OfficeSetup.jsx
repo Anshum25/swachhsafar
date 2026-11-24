@@ -14,6 +14,7 @@ import { Badge, DataState, ErrorNote, Field, Panel, Select } from '../../../comp
 import { ConfirmDialog, useSave } from './common.jsx';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
 import { filterStations, initialPicks, runDaysLabel, setupBody, stationsWithoutTrains } from './officeSetup.js';
+import { coachText } from '../../../utils/coaches.js';
 
 const SUPER_ADMIN = 1;
 
@@ -73,9 +74,26 @@ export function AreaEditor({ client, onSaved }) {
 
 // ---- step 2: one station's trains ----------------------------------------------------------------------
 
-function StationTrains({ code, name, picks, onChange }) {
+// `onPatch(trainNo, patch)` merges into this station's picks from the latest state, so the coaches that arrive
+// after a tick never overwrite a change made in the meantime.
+function StationTrains({ code, name, picks, onPatch }) {
+  const { api } = useSession();
   const res = useResource(`/railway/stations/${code}/trains`);
-  const set = (trainNo, patch) => onChange({ ...picks, [trainNo]: { checked: false, coaches: '', ...picks[trainNo], ...patch } });
+  const [fetching, setFetching] = useState({}); // train_no -> 'loading' | 'none'
+  const set = (trainNo, patch) => onPatch(trainNo, patch);
+  // Ticking a train with no coaches typed fills them from RailEngine (backend GET /railway/trains/{no}/coaches).
+  // If that cannot be had the box stays empty: saving tries again, and coaches can always be typed.
+  const tick = (trainNo, checked) => {
+    set(trainNo, { checked });
+    if (!checked || picks[trainNo]?.coaches) return;
+    setFetching((f) => ({ ...f, [trainNo]: 'loading' }));
+    api.get(`/railway/trains/${trainNo}/coaches`)
+      .then((cs) => {
+        if (cs?.length) set(trainNo, { coaches: coachText(cs), auto: true });
+        setFetching((f) => ({ ...f, [trainNo]: cs?.length ? undefined : 'none' }));
+      })
+      .catch(() => setFetching((f) => ({ ...f, [trainNo]: 'none' })));
+  };
   return (
     <Panel title={`${name} (${code})`} actions={res.data?.stale && <Badge tone="amber">Saved copy: RailRadar unreachable</Badge>}>
       <DataState res={res} isEmpty={(d) => !d.trains.length} empty="No train starts at this station.">
@@ -87,7 +105,7 @@ function StationTrains({ code, name, picks, onChange }) {
                 <li key={t.train_no} className="py-2.5">
                   <label className="flex cursor-pointer items-start gap-3">
                     <input type="checkbox" className="mt-1 h-4 w-4 accent-brand-700" checked={pick.checked}
-                      onChange={(e) => set(t.train_no, { checked: e.target.checked })} aria-label={`Plan ${t.train_no} ${t.name ?? ''}`} />
+                      onChange={(e) => tick(t.train_no, e.target.checked)} aria-label={`Plan ${t.train_no} ${t.name ?? ''}`} />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold text-ink">{t.train_no} · {t.name ?? 'Unnamed train'}</span>
                       <span className="block text-xs text-slate-600">
@@ -97,8 +115,14 @@ function StationTrains({ code, name, picks, onChange }) {
                   </label>
                   {pick.checked && (
                     <div className="ml-7 mt-2">
-                      <input className="input h-9 text-sm" placeholder="Coaches (optional), e.g. B1 AC, B2 AC, S1, S2" value={pick.coaches}
-                        aria-label={`Coaches of ${t.train_no}`} onChange={(e) => set(t.train_no, { coaches: e.target.value })} />
+                      <input className="input h-9 text-sm" placeholder={fetching[t.train_no] === 'loading' ? 'Fetching coaches…' : 'Coaches, e.g. B1 AC, B2 AC, S1, S2'} value={pick.coaches}
+                        aria-label={`Coaches of ${t.train_no}`} onChange={(e) => set(t.train_no, { coaches: e.target.value, auto: false })} />
+                      <p className="mt-1 text-[11px] text-muted">
+                        {fetching[t.train_no] === 'loading' ? 'Fetching this train\'s coaches…'
+                          : pick.auto ? 'Filled in from the train\'s composition (RailEngine). Edit if this office works on fewer coaches.'
+                            : fetching[t.train_no] === 'none' ? 'Could not fetch the coaches: type them, or add them later on the train.'
+                              : 'Add AC after air-conditioned coaches.'}
+                      </p>
                     </div>
                   )}
                 </li>
@@ -203,7 +227,9 @@ export function SetupWizard({ clientId, clientName }) {
                 <p className="text-sm text-muted">Tick the trains this office works on. Journeys are planned for them every day, three days ahead, on the days they run; each costs one journey's credits when it is created.</p>
                 {picked.map((code) => (
                   <StationTrains key={code} code={code} name={byCode[code]?.name ?? code} picks={picks[code] ?? {}}
-                    onChange={(p) => setPicks((all) => ({ ...all, [code]: p }))} />
+                    onPatch={(trainNo, patch) => setPicks((all) => ({
+                      ...all, [code]: { ...all[code], [trainNo]: { checked: false, coaches: '', ...(all[code] ?? {})[trainNo], ...patch } },
+                    }))} />
                 ))}
                 <div className="sticky bottom-2 z-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white p-3 shadow-raised ring-1 ring-line">
                   <span className="text-sm text-ink">{trainCount} train{trainCount === 1 ? '' : 's'} at {body.stations.length} station{body.stations.length === 1 ? '' : 's'}</span>
@@ -222,6 +248,14 @@ export function SetupWizard({ clientId, clientName }) {
                   {result.divisions_created ? `, ${result.divisions_created} new station${result.divisions_created === 1 ? '' : 's'}` : ''};
                   {' '}{result.journeys_created} journey{result.journeys_created === 1 ? '' : 's'} created for the next days, each paid for from the wallet.
                 </p>
+                {result.coaches_auto?.length > 0 && (
+                  <p className="mt-1 text-sm text-ink">Coaches filled in automatically for {result.coaches_auto.join(', ')}.</p>
+                )}
+                {result.coaches_missing?.length > 0 && (
+                  <p className="mt-1 text-sm font-semibold text-amber-800">
+                    No coaches yet for {result.coaches_missing.join(', ')}: add them under Master data → Trains & Coaches before inspections.
+                  </p>
+                )}
                 {result.journeys_skipped > 0 && (
                   <p className="mt-1 text-sm font-semibold text-red-700">
                     {result.journeys_skipped} more could not be created: not enough credits. They are created automatically once credits are added.
