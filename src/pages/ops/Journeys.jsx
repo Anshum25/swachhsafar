@@ -253,121 +253,6 @@ function CoachEditor({ journey, onClose, onSaved, onConflict }) {
   );
 }
 
-const hhmm = (t) => (t ? t.slice(0, 5) : '');
-// "25 Nov 2026 · 16:55" -- a leg's end, the time left out when it is not known.
-const at = (d, t) => (d ? `${fmtDate(d)}${t ? ` · ${hhmm(t)}` : ''}` : '—');
-
-const LEG_SOURCE = {
-  saved: 'The return train linked to this train earlier.',
-  railradar: 'Found on RailRadar and linked to this train, so its next journeys get it too.',
-  picked: null,
-  none: null,
-};
-
-// Journey B: the train that brings the rake back, and when. The server works the dates out from both
-// trains' timetables (POST /journeys/{id}/return-leg, saving nothing); the user reviews or adjusts them and
-// saves them on the journey (PATCH, version-checked).
-function ReturnLegEditor({ journey, onClose, onSaved, onConflict }) {
-  const { ops } = useSession();
-  const trains = useResource('/trains', { division_id: journey.division_id, active: true, page_size: 200 });
-  const [form, setForm] = useState(() => ({
-    linked_train_id: journey.linked_train_id ?? '',
-    outbound_end_date: journey.outbound_end_date ?? '',
-    end_time: hhmm(journey.end_time),
-    linked_journey_date: journey.linked_journey_date ?? '',
-    return_start_time: hhmm(journey.return_start_time),
-    end_date: journey.end_date ?? '',
-    return_end_time: hhmm(journey.return_end_time),
-  }));
-  const [note, setNote] = useState(null);
-  const [busy, setBusy] = useState(null); // 'lookup' | 'pick' | 'save' | 'unlink'
-  const [error, setError] = useState(null);
-  const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
-
-  const options = (trains.data?.items ?? []).filter((t) => t.id !== journey.train_id)
-    .map((t) => ({ value: t.id, label: `${t.train_no} · ${t.name}` }));
-  if (journey.linked_train_id && !options.some((o) => o.value === journey.linked_train_id)) {
-    options.unshift({ value: journey.linked_train_id, label: `${journey.linked_train_no}${journey.linked_train_name ? ` · ${journey.linked_train_name}` : ''}` });
-  }
-
-  async function suggest(query, kind) {
-    setBusy(kind);
-    setError(null);
-    try {
-      const r = await ops.journeys.returnLeg(journey, query);
-      setForm((f) => ({
-        linked_train_id: r.linked_train_id ?? (query.linkedTrainId || f.linked_train_id),
-        outbound_end_date: r.outbound_end_date ?? '',
-        end_time: hhmm(r.end_time),
-        linked_journey_date: r.linked_journey_date,
-        return_start_time: hhmm(r.return_start_time),
-        end_date: r.end_date,
-        return_end_time: hhmm(r.return_end_time),
-      }));
-      const lines = [r.message, LEG_SOURCE[r.source],
-        r.linked_train_id && !r.from_timetable ? 'Dates are from the train\'s duration: the run times are not known, so check them.' : null];
-      setNote(lines.filter(Boolean).join(' ') || null);
-      if (r.source === 'railradar') trains.reload();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function save(fn) {
-    setError(null);
-    try {
-      onSaved(await fn());
-    } catch (e) {
-      setError(e);
-      if (isVersionConflict(e)) onConflict();
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); setBusy('save'); save(() => ops.journeys.setReturnLeg(journey, form)); }}>
-      <ErrorNote error={error} />
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-0 flex-1">
-          <Field label="Return train" hint="The train that brings this rake back from the destination" error={trains.error?.message}>
-            <Select value={form.linked_train_id} placeholder={trains.loading ? 'Loading…' : 'No return train'} options={options}
-              onChange={(v) => { set('linked_train_id')(v); if (v) suggest({ linkedTrainId: v, lookup: false }, 'pick'); }} />
-          </Field>
-        </div>
-        <OnlineButton reason={ONLINE_ONLY.journey} className="btn-secondary h-12 shrink-0" disabled={!!busy}
-          onClick={() => suggest({ linkedTrainId: null, lookup: true }, 'lookup')}>
-          {busy === 'lookup' ? 'Finding…' : 'Find from RailRadar'}
-        </OnlineButton>
-      </div>
-      {note && <p className="rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-900 ring-1 ring-brand-200/70">{note}</p>}
-      <p className="pt-1 text-[13px] font-semibold text-ink">Journey A · {journey.train_no} reaches its destination</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Arrival date"><input type="date" className="input" value={form.outbound_end_date} min={journey.journey_date}
-          onChange={(e) => set('outbound_end_date')(e.target.value)} /></Field>
-        <Field label="Arrival time"><input type="time" className="input" value={form.end_time} onChange={(e) => set('end_time')(e.target.value)} /></Field>
-      </div>
-      <p className="pt-1 text-[13px] font-semibold text-ink">Journey B · the return</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Return start date"><input type="date" className="input" required value={form.linked_journey_date} min={journey.journey_date}
-          onChange={(e) => set('linked_journey_date')(e.target.value)} /></Field>
-        <Field label="Return start time"><input type="time" className="input" value={form.return_start_time} onChange={(e) => set('return_start_time')(e.target.value)} /></Field>
-        <Field label="Return end date"><input type="date" className="input" required value={form.end_date} min={form.linked_journey_date || journey.journey_date}
-          onChange={(e) => set('end_date')(e.target.value)} /></Field>
-        <Field label="Return end time"><input type="time" className="input" value={form.return_end_time} onChange={(e) => set('return_end_time')(e.target.value)} /></Field>
-      </div>
-      <OfflineActionsNote reason={ONLINE_ONLY.journey} />
-      {journey.linked_train_id && (
-        <button type="button" className="text-xs font-semibold text-red-600 disabled:opacity-40" disabled={!!busy}
-          onClick={() => { setBusy('unlink'); save(() => ops.journeys.unlinkReturn(journey)); }}>Unlink return train</button>
-      )}
-      <SubmitBar busy={busy === 'save'} disabled={!!busy && busy !== 'save'} label="Save journey B" onCancel={onClose} />
-    </form>
-  );
-}
-
 // What the journey record itself shows happened, plus the audit trail for users with audit.read.
 function JourneyTimeline({ journey }) {
   const { can } = useSession();
@@ -430,7 +315,6 @@ function JourneyDetail({ id }) {
 
   const allotted = j.staff.filter((x) => !x.removed_at);
   const offlineHint = online ? undefined : ONLINE_ONLY.journey;
-  const editableLeg = j.state === 'scheduled' || j.state === 'active'; // the server refuses ended and cancelled
   return (
     <>
       <PageHeader back="#/journeys" title={`Journey Details (${label(j.state)})`}
@@ -438,7 +322,6 @@ function JourneyDetail({ id }) {
           <ActionMenu label="Manage journey" items={[
             { label: 'Edit journey', onClick: () => setDialog('edit'), disabled: !online, hint: offlineHint },
             { label: 'Coaches', onClick: () => setDialog('coaches'), disabled: !online, hint: offlineHint },
-            ...(editableLeg ? [{ label: 'Return train (Journey B)', onClick: () => setDialog('return'), disabled: !online, hint: offlineHint }] : []),
             { label: j.supervisor_id ? 'Change supervisor' : 'Assign supervisor', onClick: () => setDialog('supervisor'), disabled: !online, hint: offlineHint },
             { label: 'Cancel journey', onClick: () => setDialog('cancel'), disabled: !online, hint: offlineHint, danger: true },
           ]} />
@@ -454,22 +337,7 @@ function JourneyDetail({ id }) {
             </div>
           </div>
           <InfoRow icon={CalendarIcon} label="Journey Date">{fmtDate(j.journey_date)}{j.end_date && j.end_date !== j.journey_date ? ` → ${fmtDate(j.end_date)}` : ''}</InfoRow>
-          <InfoRow icon={TrainIcon} label="Return Train">
-            <span className="inline-flex flex-wrap items-center justify-end gap-2">
-              {j.linked_train_no
-                ? <span>{j.linked_train_no}{j.linked_train_name ? ` · ${j.linked_train_name}` : ''}</span>
-                : <span className="font-semibold text-amber-700">Not linked</span>}
-              {manage && online && editableLeg && (
-                <button type="button" className="btn-secondary h-8 text-xs" onClick={() => setDialog('return')}>{j.linked_train_no ? 'Change' : 'Link'}</button>
-              )}
-            </span>
-          </InfoRow>
-          <InfoRow icon={CalendarIcon} label="Journey A (Outbound)">
-            {at(j.journey_date, j.start_time)}{j.outbound_end_date || j.end_time ? ` → ${at(j.outbound_end_date, j.end_time)}` : ''}
-          </InfoRow>
-          <InfoRow icon={LinkIcon} label="Journey B (Return)">
-            {at(j.linked_journey_date, j.return_start_time)} → {at(j.end_date, j.return_end_time)}
-          </InfoRow>
+          <InfoRow icon={LinkIcon} label="Linked Date">{fmtDate(j.linked_journey_date)}</InfoRow>
           <InfoRow icon={UserIcon} label="Supervisor/EHK">
             {j.supervisor_name ?? (
               <span className="inline-flex flex-wrap items-center gap-2">
@@ -534,10 +402,6 @@ function JourneyDetail({ id }) {
       <Dialog open={dialog === 'coaches'} title="Journey coaches" onClose={() => setDialog(null)} wide>
         <CoachEditor journey={j} onClose={() => setDialog(null)} onConflict={conflict}
           onSaved={() => { notify('success', 'Coaches updated.'); setDialog(null); refresh(); }} />
-      </Dialog>
-      <Dialog open={dialog === 'return'} title="Return train · Journey B" onClose={() => setDialog(null)} wide>
-        <ReturnLegEditor journey={j} onClose={() => setDialog(null)} onConflict={conflict}
-          onSaved={() => { notify('success', 'Journey B saved.'); setDialog(null); refresh(); }} />
       </Dialog>
       <Dialog open={dialog === 'cancel'} title="Cancel journey" onClose={() => setDialog(null)}>
         <form onSubmit={(e) => { e.preventDefault(); act(() => ops.journeys.cancel(j, reason), 'Journey cancelled.'); }}>

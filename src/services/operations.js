@@ -31,19 +31,6 @@ export function createOperations(api) {
         version: j.version, coaches: coaches.map(({ code, classification }) => ({ code, classification })),
       }),
       cancel: (j, reason) => api.post(`/journeys/${j.id}/cancel`, { version: j.version, reason }),
-      // Journey B worked out (return train, dates, times) for review; nothing is saved. `linkedTrainId`: a train
-      // of the division, or null for the train's own return train (looked up on RailRadar when `lookup`).
-      returnLeg: (j, { linkedTrainId = null, lookup = true } = {}) => api.post(`/journeys/${j.id}/return-leg`, {
-        linked_train_id: linkedTrainId, lookup,
-      }),
-      // Saves journey B on the journey (version-checked). `leg`: the ReturnLegEditor form; empty times clear.
-      setReturnLeg: (j, leg) => api.patch(`/journeys/${j.id}`, {
-        version: j.version, linked_train_id: leg.linked_train_id || null,
-        outbound_end_date: leg.outbound_end_date || null, linked_journey_date: leg.linked_journey_date,
-        end_date: leg.end_date, end_time: leg.end_time || null,
-        return_start_time: leg.return_start_time || null, return_end_time: leg.return_end_time || null,
-      }),
-      unlinkReturn: (j) => api.patch(`/journeys/${j.id}`, { version: j.version, linked_train_id: null }),
       assignSupervisor: (j, supervisorId) => api.post(`/journeys/${j.id}/supervisor`, { version: j.version, supervisor_id: supervisorId }),
       addStaff: (j, userIds) => api.post(`/staff-allocation/${j.id}`, { user_ids: userIds }),
       removeStaff: (j, userId) => api.del(`/staff-allocation/${j.id}/${userId}`),

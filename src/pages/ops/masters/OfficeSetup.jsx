@@ -253,11 +253,6 @@ export function SetupWizard({ clientId, clientName }) {
                 {result.coaches_auto?.length > 0 && (
                   <p className="mt-1 text-sm text-ink">Coaches filled in automatically for {result.coaches_auto.join(', ')}.</p>
                 )}
-                {Object.keys(result.return_trains ?? {}).length > 0 && (
-                  <p className="mt-1 text-sm text-ink">
-                    Return trains linked (Journey B): {Object.entries(result.return_trains).map(([out, back]) => `${out} ↔ ${back}`).join(', ')}.
-                  </p>
-                )}
                 {result.coaches_missing?.length > 0 && (
                   <p className="mt-1 text-sm font-semibold text-amber-800">
                     No coaches yet for {result.coaches_missing.join(', ')}: add them under Master data → Trains & Coaches before inspections.

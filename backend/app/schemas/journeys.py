@@ -1,8 +1,7 @@
 import uuid
 from datetime import date, datetime, time
-from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 
 from app.models import JourneyState
 from app.schemas.common import ReadModel, StrictModel
@@ -44,34 +43,6 @@ class JourneyUpdate(StrictModel):
     _codes = field_validator("coaches")(lambda v: v if v is None else _unique_codes(v))
 
 
-class ReturnLegQuery(StrictModel):
-    """Which return train to work journey B out for. Nothing is saved: the dates come back to be reviewed and
-    saved with PATCH /journeys/{id}."""
-
-    # A train of the journey's division. Empty: the train's own return train, found on RailRadar if needed.
-    linked_train_id: uuid.UUID | None = None
-    # Ask RailRadar when the train has no return train linked yet (reads the train's page once).
-    lookup: bool = True
-
-
-class ReturnLegOut(BaseModel):
-    # saved: the train's return train, linked before · railradar: found just now · picked: the train asked for
-    # · none: no return train known
-    source: Literal["saved", "railradar", "picked", "none"]
-    message: str | None = None
-    linked_train_id: uuid.UUID | None = None
-    linked_train_no: str | None = None
-    linked_train_name: str | None = None
-    # True: dates from both trains' timetables; False: from the train's duration_days (run times not known).
-    from_timetable: bool = False
-    outbound_end_date: date | None = None   # the day the train reaches its destination
-    linked_journey_date: date               # journey B (the return) starts
-    end_date: date                          # journey B ends
-    end_time: time | None = None            # arrival at the destination
-    return_start_time: time | None = None
-    return_end_time: time | None = None
-
-
 class SupervisorAssign(StrictModel):
     version: int
     supervisor_id: uuid.UUID
@@ -104,7 +75,6 @@ class JourneyOut(ReadModel):
     train_name: str
     linked_train_id: uuid.UUID | None
     linked_train_no: str | None
-    linked_train_name: str | None = None
     journey_date: date
     outbound_end_date: date | None
     linked_journey_date: date

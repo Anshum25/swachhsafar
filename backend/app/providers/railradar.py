@@ -77,7 +77,6 @@ class StationTimetable:
 class TimetableProvider(Protocol):
     def timetable(self, code: str) -> StationTimetable: ...
     def composition(self, train_no: str) -> list["Coach"]: ...
-    def schedule(self, train_no: str) -> "TrainSchedule": ...
 
 
 # ---- a train's coaches -------------------------------------------------------------------------------------
@@ -133,62 +132,6 @@ def parse_train_composition(html: str, train_no: str) -> list[Coach]:
             raise RailRadarError("blocked", "RailRadar answered with a challenge/CAPTCHA page; it is not worked around.")
         raise RailRadarError("parse", f"No coach composition on train {train_no}'s page.")
     return coaches_from_position(m.group(1))
-
-
-# ---- a train's run and its return train ----------------------------------------------------------------------
-#
-# The same train-status page embeds `"initialSchedule":{"train":{...,"runDays":[...],"returnTrain":"12952",
-# "coachPosition":"..."},"route":[{"departure":"17:00","departureDay":1,...}, ..., {"arrival":"08:32",
-# "arrivalDay":2,...}]}`: when the train leaves its origin, when it reaches its destination, and the train that
-# takes the same rake back. Reading it costs no more than reading the coaches: it is one request.
-
-
-@dataclass(frozen=True)
-class TrainSchedule:
-    train_no: str
-    name: str | None
-    origin_code: str | None
-    destination_code: str | None
-    destination_name: str | None
-    departure: str | None         # "HH:MM" at the origin, India time
-    arrival: str | None           # "HH:MM" at the destination
-    arrival_day_offset: int | None  # days after the departure day it arrives (0 = the same day)
-    run_days: tuple[str, ...] | None
-    return_train_no: str | None   # the train that runs the rake back, when RailRadar names one
-    coaches: tuple[Coach, ...]
-
-
-def parse_train_schedule(html: str, train_no: str) -> TrainSchedule:
-    """The run of a fetched train-status page. Raises RailRadarError(blocked | parse)."""
-    payload = decode_flight_payload(html)
-    sched = extract_json_after_key(payload, "initialSchedule")
-    train = sched.get("train") if isinstance(sched, dict) else None
-    route = sched.get("route") if isinstance(sched, dict) else None
-    if not isinstance(train, dict) or not isinstance(route, list) or not route:
-        if CHALLENGE_RE.search(html):
-            raise RailRadarError("blocked", "RailRadar answered with a challenge/CAPTCHA page; it is not worked around.")
-        raise RailRadarError("parse", f"No schedule on train {train_no}'s page.")
-    number = _text(train.get("number")) or (str(train["number"]) if isinstance(train.get("number"), int) else None)
-    if number and number != train_no:
-        raise RailRadarError("parse", f"Asked for train {train_no} but the page is for {number}.")
-    origin, _ = _ref(train.get("source"), {})
-    dest_code, dest_name = _ref(train.get("destination"), {})
-    first, last = route[0] if isinstance(route[0], dict) else {}, route[-1] if isinstance(route[-1], dict) else {}
-    dep_day, arr_day = first.get("departureDay"), last.get("arrivalDay")
-    offset = arr_day - dep_day if isinstance(dep_day, int) and isinstance(arr_day, int) and arr_day >= dep_day \
-        else None
-    days = train.get("runDays")
-    run_days = tuple(d for d in WEEKDAYS if d in {str(x).strip().lower()[:3] for x in days}) \
-        if isinstance(days, list) and days else None
-    ret = _text(train.get("returnTrain")) or (str(train["returnTrain"]) if isinstance(train.get("returnTrain"), int)
-                                              else None)
-    position = _text(train.get("coachPosition"))
-    return TrainSchedule(
-        train_no=train_no, name=_text(train.get("name")), origin_code=origin, destination_code=dest_code,
-        destination_name=dest_name, departure=_clock(first.get("departure")), arrival=_clock(last.get("arrival")),
-        arrival_day_offset=offset, run_days=run_days,
-        return_train_no=ret if ret and TRAIN_NO_RE.match(ret) and ret != train_no else None,
-        coaches=tuple(coaches_from_position(position)) if position else ())
 
 
 def normalize_code(code: str) -> str:
@@ -388,15 +331,6 @@ class RailRadarClient:
 
     def composition(self, train_no: str) -> list[Coach]:
         """A train's passenger coaches from its train-status page; the same politeness as timetables."""
-        no, body = self._train_status(train_no)
-        return parse_train_composition(body, no)
-
-    def schedule(self, train_no: str) -> TrainSchedule:
-        """A train's run (departure, arrival, run days), its return train and its coaches: one page."""
-        no, body = self._train_status(train_no)
-        return parse_train_schedule(body, no)
-
-    def _train_status(self, train_no: str) -> tuple[str, str]:
         no = str(train_no or "").strip()
         if not TRAIN_NO_RE.match(no):
             raise RailRadarError("config", f"{no[:20]!r} is not a train number")
@@ -406,7 +340,7 @@ class RailRadarClient:
         status, body, headers = self._get(self.base_url + path, "text/html")
         if status != 200:
             raise _classify(status, body, headers.get("retry-after"))
-        return no, body
+        return parse_train_composition(body, no)
 
     def timetable(self, code: str) -> StationTimetable:
         code = normalize_code(code)
@@ -466,9 +400,6 @@ def _classify(status: int, body: str, retry_after: str | None) -> RailRadarError
 
 class DisabledTimetableProvider:
     def composition(self, train_no: str) -> list[Coach]:
-        raise RailRadarError("config", "Train data is not enabled on this server (RAILRADAR_ENABLED).")
-
-    def schedule(self, train_no: str) -> TrainSchedule:
         raise RailRadarError("config", "Train data is not enabled on this server (RAILRADAR_ENABLED).")
 
     def timetable(self, code: str) -> StationTimetable:

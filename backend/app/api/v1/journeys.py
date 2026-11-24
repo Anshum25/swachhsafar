@@ -13,18 +13,14 @@ from app.schemas.journeys import (
     JourneyDetail,
     JourneyOut,
     JourneyUpdate,
-    ReturnLegOut,
-    ReturnLegQuery,
     StaffAdd,
     StaffOut,
     SupervisorAssign,
 )
-from app.providers.railradar import TimetableProvider, get_timetable_provider
 from app.schemas.reports import JourneySummary
 from app.security.principal import Principal, get_principal
 from app.services import journeys as svc
-from app.services import railway, reports
-from app.timeutil import today_ist
+from app.services import reports
 
 router = APIRouter(prefix="/journeys", tags=["journeys"])
 staff_router = APIRouter(prefix="/staff-allocation", tags=["staff-allocation"])
@@ -62,15 +58,6 @@ def get_journey(journey_id: uuid.UUID, db: Session = Depends(get_db), p: Princip
 def update_journey(journey_id: uuid.UUID, body: JourneyUpdate, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     svc.update_journey(db, p, journey_id, body)
     return _detail(db, p, journey_id)
-
-
-@router.post("/{journey_id}/return-leg", response_model=ReturnLegOut)
-def suggest_return_leg(journey_id: uuid.UUID, body: ReturnLegQuery, db: Session = Depends(get_db),
-                       p: Principal = Depends(get_principal),
-                       provider: TimetableProvider = Depends(get_timetable_provider)):
-    """Journey B (the return train and its dates/times) worked out for review; saved with PATCH. May read
-    RailRadar once when the train's return train is not known yet (body.lookup)."""
-    return railway.suggest_return_leg(db, p, journey_id, body, provider, today=today_ist())
 
 
 @router.post("/{journey_id}/supervisor", response_model=JourneyDetail)
