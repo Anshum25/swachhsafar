@@ -155,7 +155,9 @@ jobs:
   # tenth of the phones first); unset means everybody. With PUBLISH_BUNDLE unset, this job does not run and
   # the pipeline behaves exactly as it did before.
   publish-bundle:
+    # Not for a superseded commit either: publishing its bundle would push older code to every phone.
     if: vars.PUBLISH_BUNDLE == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      && needs.deploy.outputs.superseded != 'true'
     needs: [test-web, test-backend, deploy]
     runs-on: ubuntu-latest
     environment: production
@@ -212,13 +214,32 @@ jobs:
     needs: [build-web, build-apk]
     runs-on: ubuntu-latest
     environment: production
+    outputs:
+      superseded: ${{ steps.tip.outputs.superseded }}
     steps:
+      # Two pushes to main can reach this job out of order: a run that started earlier can arrive here
+      # after a later commit has already gone live, and would then put an OLDER release back on the
+      # server. Nothing downstream catches that -- receive-release checks the SHA is on main, and a
+      # commit behind the tip still is. The APK's rising versionCode is the only thing that notices, and
+      # it notices by failing the pipeline after the backend and frontend have already been rolled back
+      # a commit. So the check belongs here, before anything is sent.
+      - name: Stand down if a newer commit is already on main
+        id: tip
+        run: |
+          api="${{ github.api_url }}/repos/${{ github.repository }}/commits/main"
+          tip=$(curl -fsS -H "Authorization: Bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" "$api" | jq -r .sha)
+          if [ "$tip" != "${{ github.sha }}" ]; then
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::main is now $tip. ${{ github.sha }} is superseded and is not deployed; that commit's own run deploys it."
+          fi
       - uses: actions/download-artifact@v4
+        if: steps.tip.outputs.superseded != 'true'
         with: { name: web, path: bundle/web }
       - uses: actions/download-artifact@v4
-        if: needs.build-apk.result == 'success'
+        if: steps.tip.outputs.superseded != 'true' && needs.build-apk.result == 'success'
         with: { name: apk, path: bundle }
       - name: Send the bundle to the server (it runs receive-release, nothing else)
+        if: steps.tip.outputs.superseded != 'true'
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
