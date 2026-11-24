@@ -456,3 +456,36 @@ def test_an_office_can_be_created_with_its_state_and_city(world):
     r = world.client.post(f"{API}/clients", headers=h, json={"office_id": "OFF-X", "name": "Nowhere", "state": "Gujarat",
                                                              "city": "Atlantis"})
     assert r.status_code == 422 and r.json()["error"]["code"] == "unknown_city"
+
+
+# ---- stations of several cities made divisions of one office -------------------------------------------------
+
+
+def _add_stations(world, who, client_id, codes, kind="station"):
+    return world.client.post(f"{API}/divisions/stations", headers=world.h(who),
+                             json={"client_id": str(client_id), "station_codes": codes, "kind": kind})
+
+
+def test_stations_of_different_states_become_divisions_of_one_office(world):
+    r = _add_stations(world, "sa", world.a.client_id, ["ADI", "jbp"])
+    assert r.status_code == 201, r.text
+    created = {d["station_code"]: d for d in r.json()["created"]}
+    assert set(created) == {"ADI", "JBP"} and r.json()["existing"] == []
+    assert created["JBP"]["name"] == "Jabalpur" and created["ADI"]["client_id"] == str(world.a.client_id)
+    # Asked again, nothing is made twice; a new station alongside is still added.
+    r = _add_stations(world, "sa", world.a.client_id, ["JBP", "SBI"])
+    assert r.status_code == 201, r.text
+    assert [d["station_code"] for d in r.json()["created"]] == ["SBI"] and r.json()["existing"] == ["JBP"]
+    # The office's Admin works in all of them.
+    me = world.client.get(f"{API}/auth/me", headers=world.h("admin")).json()
+    assert {created["ADI"]["id"], created["JBP"]["id"]} <= set(me["divisions"])
+
+
+def test_adding_stations_is_checked(world):
+    assert _add_stations(world, "admin", world.a.client_id, ["ADI"]).status_code == 403
+    r = _add_stations(world, "sa", world.a.client_id, ["ADI", "NOPE"])
+    assert r.status_code == 422 and r.json()["error"]["code"] == "unknown_station"
+    world.db.rollback()
+    assert world.db.scalar(select(Division).where(Division.station_code == "ADI")) is None
+    assert _add_stations(world, "sa", world.a.client_id, ["ADI", "adi"]).status_code == 422
+

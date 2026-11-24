@@ -17,6 +17,8 @@ from app.schemas.org import (
     ChargeMapOut,
     DivisionCreate,
     DivisionOut,
+    DivisionStationsCreate,
+    DivisionStationsResult,
     DivisionUpdate,
     GrantIn,
     GrantOut,
@@ -237,6 +239,13 @@ def list_divisions(db: Session = Depends(get_db), p: Principal = Depends(get_pri
 @divisions_router.post("", response_model=DivisionOut, status_code=status.HTTP_201_CREATED)
 def create_division(body: DivisionCreate, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return org.create_division(db, p, body)
+
+
+@divisions_router.post("/stations", response_model=DivisionStationsResult, status_code=status.HTTP_201_CREATED)
+def create_station_divisions(body: DivisionStationsCreate, db: Session = Depends(get_db),
+                             p: Principal = Depends(get_principal)):
+    """Railway stations, from any state or city, made divisions of one office."""
+    return org.create_station_divisions(db, p, body)
 
 
 @divisions_router.patch("/{division_id}", response_model=DivisionOut)

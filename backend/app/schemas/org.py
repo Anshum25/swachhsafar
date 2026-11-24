@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.models import DivisionKind, PermissionEffect, UserStatus
 from app.schemas.clients import ClientSummary
@@ -15,6 +15,23 @@ class DivisionCreate(StrictModel):
     # The client (office) whose wallet this division's journeys spend and whose modules its users see.
     client_id: uuid.UUID
     kind: DivisionKind = DivisionKind.STATION
+
+
+class DivisionStationsCreate(StrictModel):
+    """Railway stations, from any state or city, made divisions of one client (office) in one go."""
+    client_id: uuid.UUID
+    station_codes: list[str] = Field(min_length=1, max_length=50)
+    kind: DivisionKind = DivisionKind.STATION
+
+    @field_validator("station_codes")
+    @classmethod
+    def _codes(cls, v: list[str]) -> list[str]:
+        codes = [c.strip().upper() for c in v]
+        if any(not c or len(c) > 8 for c in codes):
+            raise ValueError("a station code is 1 to 8 characters")
+        if len(codes) != len(set(codes)):
+            raise ValueError("a station is listed twice")
+        return codes
 
 
 class DivisionUpdate(StrictModel):
@@ -30,7 +47,15 @@ class DivisionOut(ReadModel):
     is_active: bool
     client_id: uuid.UUID
     kind: DivisionKind
+    # The railway station this division stands for, when it was made from one.
+    station_code: str | None = None
     updated_at: datetime
+
+
+class DivisionStationsResult(BaseModel):
+    created: list[DivisionOut]
+    # Stations that already were divisions of the office: left as they were.
+    existing: list[str]
 
 
 class RoleOut(ReadModel):

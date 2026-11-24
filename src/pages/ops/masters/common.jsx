@@ -17,7 +17,8 @@ export function useSave(onDone) {
     setError(null);
     try {
       const out = await fn();
-      notify('success', ok);
+      // `ok` may be a function of the server's answer, for a message that depends on it.
+      notify('success', typeof ok === 'function' ? ok(out) : ok);
       onDone(out);
     } catch (e) {
       setError(e);

@@ -151,7 +151,7 @@ def get_setup(db: Session, p: Principal, client_id: uuid.UUID) -> dict:
     )
 
 
-def _division_code(db: Session, client: Client, station: str) -> str:
+def division_code_for(db: Session, client: Client, station: str) -> str:
     base = re.sub(r"[^A-Z0-9]", "", client.office_id.upper())[:8] or "C"
     for n in range(100):
         code = f"{base if n == 0 else base[:6] + str(n)}_{station}"[:16]
@@ -199,7 +199,7 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
         division = db.scalar(select(Division).where(Division.client_id == client.id, Division.station_code == code))
         if division is None:
             station = allowed[code]
-            division = Division(code=_division_code(db, client, code), name=station.name.title(),
+            division = Division(code=division_code_for(db, client, code), name=station.name.title(),
                                 client_id=client.id, kind=DivisionKind.STATION, station_code=code)
             db.add(division)
             db.flush()

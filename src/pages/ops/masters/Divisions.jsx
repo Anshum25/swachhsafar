@@ -5,6 +5,7 @@
 // The type matters beyond the label: role rights can be set for every station, or every headquarters, of
 // an office at once (Role rights; role_permissions.division_kind).
 import { useState } from 'react';
+import StationPicker from './StationPicker.jsx';
 import { useResource, useSession } from '../../../app/session.jsx';
 import { Badge, DataState, Dialog, ErrorNote, Field, Panel, Select, SubmitBar, Table } from '../../../components/ui.jsx';
 import { PlusIcon } from '../../../components/Icons.jsx';
@@ -23,11 +24,27 @@ export default function Divisions({ clientId = null, onChanged }) {
   const manage = can('divisions.manage');
   const clients = useResource(manage && !clientId ? '/clients' : null);
   const [creating, setCreating] = useState(false);
-  const blank = { code: '', name: '', client_id: clientId ?? '', kind: 'station' };
+  const blank = { code: '', name: '', client_id: clientId ?? '', kind: 'station', stations: [] };
   const [f, setF] = useState(blank);
   const changed = () => { res.reload(); onChanged?.(); };
   const save = useSave(() => { setCreating(false); setF(blank); changed(); });
   const setKind = useSave(changed);
+  // Picked railway stations each become a division (code and name from the station); none picked, the
+  // code and name typed in make one, as before.
+  const submit = (e) => {
+    e.preventDefault();
+    const Label = what === 'station' ? 'Station' : 'Division';
+    if (!f.stations.length) {
+      save.run(() => api.post('/divisions', { code: f.code.toUpperCase(), name: f.name, client_id: f.client_id, kind: f.kind }), `${Label} created.`);
+      return;
+    }
+    save.run(async () => {
+      const out = await api.post('/divisions/stations', { client_id: f.client_id, kind: f.kind, station_codes: f.stations.map((s) => s.code) });
+      if (!out.created.length) throw new Error(`Already ${what}s of this office: ${out.existing.join(', ')}`);
+      return out;
+    }, (out) => `${out.created.length} ${out.created.length > 1 ? `${what}s` : what} created.`
+      + (out.existing.length ? ` Already there: ${out.existing.join(', ')}.` : ''));
+  };
   const officeName = (id) => {
     const c = (clients.data ?? []).find((x) => x.id === id);
     return c ? `${c.office_id} — ${c.name}` : '';
@@ -65,10 +82,15 @@ export default function Divisions({ clientId = null, onChanged }) {
       </DataState>
       <ErrorNote error={setKind.error} />
       <Dialog open={creating} title={`Add ${what}`} onClose={() => setCreating(false)}>
-        <form onSubmit={(e) => { e.preventDefault(); save.run(() => api.post('/divisions', { code: f.code.toUpperCase(), name: f.name, client_id: f.client_id, kind: f.kind }), `${what === 'station' ? 'Station' : 'Division'} created.`); }} className="space-y-3">
+        <form onSubmit={submit} className="space-y-3">
           <ErrorNote error={save.error} />
-          <Field label="Code" hint="Uppercase letters, digits, underscore"><input className="input" required pattern="[A-Za-z0-9_]{2,16}" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} /></Field>
-          <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+          <StationPicker picked={f.stations} onChange={(stations) => setF({ ...f, stations })} />
+          {!f.stations.length && (
+            <>
+              <Field label="Code" hint="Uppercase letters, digits, underscore"><input className="input" required pattern="[A-Za-z0-9_]{2,16}" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} /></Field>
+              <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+            </>
+          )}
           {!clientId && (
             <Field label="Client (office)" hint="Whose modules and credits this division uses">
               <Select value={f.client_id} onChange={(v) => setF({ ...f, client_id: v })} placeholder="Select an office"
@@ -78,7 +100,8 @@ export default function Divisions({ clientId = null, onChanged }) {
           <Field label="Type" hint="Role rights can be set for all stations or the headquarters of an office at once">
             <Select value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={DIVISION_KINDS} />
           </Field>
-          <SubmitBar busy={save.busy} disabled={!f.client_id} label="Create" onCancel={() => setCreating(false)} />
+          <SubmitBar busy={save.busy} disabled={!f.client_id} onCancel={() => setCreating(false)}
+            label={f.stations.length > 1 ? `Create ${f.stations.length} ${what}s` : 'Create'} />
         </form>
       </Dialog>
     </Panel>

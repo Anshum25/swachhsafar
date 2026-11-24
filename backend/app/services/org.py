@@ -6,12 +6,26 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound
-from app.models import ChargeMap, Client, Division, DivisionKind, EmployeeKyc, Permission, Role, RoleId, RolePermission, User, UserStatus
+from app.models import (
+    ChargeMap,
+    Client,
+    Division,
+    DivisionKind,
+    EmployeeKyc,
+    Permission,
+    RailwayStation,
+    Role,
+    RoleId,
+    RolePermission,
+    User,
+    UserStatus,
+)
 from app.schemas.common import PageParams
-from app.schemas.org import ChargeMapCreate, DivisionCreate, DivisionUpdate, GrantIn, KycIn, UserCreate, UserUpdate
+from app.schemas.org import ChargeMapCreate, DivisionCreate, DivisionStationsCreate, DivisionUpdate, GrantIn, KycIn, UserCreate, UserUpdate
 from app.security.catalog import CHARGE_ELIGIBLE_ROLES
 from app.security.principal import Principal
 from app.services.common import audit, commit_or_conflict, diff, flush_or_conflict, get_or_404, paginate
+from app.services.railway import division_code_for
 from app.timeutil import utcnow
 
 # ---- divisions ---------------------------------------------------------------------------------------------
@@ -27,6 +41,36 @@ def create_division(db: Session, p: Principal, body: DivisionCreate) -> Division
     audit(db, actor_id=p.id, action="division.create", entity=division, division_id=division.id, changes=body.model_dump())
     commit_or_conflict(db, "Division code already exists")
     return division
+
+
+def create_station_divisions(db: Session, p: Principal, body: DivisionStationsCreate) -> dict:
+    """Each picked railway station becomes a division of the office, whatever its state or city: one office
+    can work Ahmedabad and Jabalpur. A station already a division of the office is left as it is. All or
+    nothing: an unknown station refuses the whole request."""
+    if not p.is_super_admin:
+        raise Forbidden("Only Super Admin can create divisions", code="permission_denied")
+    client = get_or_404(db, Client, body.client_id, "Client")
+    stations = {s.code: s for s in db.scalars(select(RailwayStation).where(RailwayStation.code.in_(body.station_codes)))}
+    unknown = [c for c in body.station_codes if c not in stations]
+    if unknown:
+        raise BusinessRuleViolation(f"Unknown stations: {', '.join(unknown)}", code="unknown_station",
+                                    details={"codes": unknown})
+    have = set(db.scalars(select(Division.station_code).where(Division.client_id == client.id,
+                                                              Division.station_code.in_(body.station_codes))))
+    created = []
+    for code in body.station_codes:
+        if code in have:
+            continue
+        division = Division(code=division_code_for(db, client, code), name=stations[code].name.title(),
+                            client_id=client.id, kind=body.kind, station_code=code)
+        db.add(division)
+        flush_or_conflict(db, "Division code already exists")
+        audit(db, actor_id=p.id, action="division.create", entity=division, division_id=division.id,
+              changes={"code": division.code, "name": division.name, "client_id": str(client.id),
+                       "kind": body.kind, "station_code": code})
+        created.append(division)
+    commit_or_conflict(db, "Division code already exists")
+    return {"created": created, "existing": [c for c in body.station_codes if c in have]}
 
 
 def update_division(db: Session, p: Principal, division_id: uuid.UUID, body: DivisionUpdate) -> Division:
