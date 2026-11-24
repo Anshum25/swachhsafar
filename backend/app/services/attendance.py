@@ -10,7 +10,7 @@ from app.models import (Attendance, AttendanceStage, FaceEnrollment, Fingerprint
 from app.schemas.common import PageParams
 from app.schemas.operations import AttendanceIn, GroupAttendanceIn, ReviewIn
 from app.security.principal import Principal
-from app.services import liveness, security
+from app.services import security
 from app.services import media
 from app.services.common import audit, check_replay, get_or_404, paginate, payload_hash
 from app.services.journeys import check_capture_window, get_journey, is_allocated
@@ -62,12 +62,6 @@ def _check_group_photo(db: Session, p: Principal, j: Journey, policy, body: Atte
     # Where a face was recognised the distance is kept as evidence and still has to be within the
     # division's threshold; where the supervisor named the person themselves there is no distance to judge.
     if body.face_distance is not None:
-        # A face recognised in the crew photo counts only if the app watched that face move in 3-D during
-        # the preview (GroupPhotoCapture). A printed photo or a screen held up to the camera is flat and
-        # never gets "passed", so the app does not send it -- this refuses a client that does anyway.
-        if not (body.security and body.security.liveness == "passed"):
-            raise BusinessRuleViolation("The face in the group photo was not verified as a live person",
-                                        code="liveness_required")
         enrollment = db.get(FaceEnrollment, body.employee_id)
         if enrollment is None or body.face_model != enrollment.model:
             raise BusinessRuleViolation("The group photo match does not refer to this employee's registered face",
@@ -139,12 +133,6 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
     # is still required whenever the face check is what proved identity.
     evidence = security.check_capture(db, p, policy, body, kind="attendance",
                                       liveness_required=verified_by == "face" and policy.face_liveness_required)
-    if verified_by == "face":
-        # A face match alone never authorises attendance: the face must also have been proved live, with a
-        # challenge this server issued and that no other record has used.
-        proof = liveness.verify_and_consume(db, p, attendance_id=body.id, device_timestamp=body.device_timestamp,
-                                            proof=body.liveness_proof)
-        evidence["security"] = {**(evidence["security"] or {}), "liveness_proof": proof}
     photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO,
                            j.division_id, p.id,
                            required=policy.attendance_photo_required or verified_by in ("face", "group_photo"),
@@ -184,8 +172,7 @@ def create_group(db: Session, p: Principal, body: GroupAttendanceIn) -> list[dic
                             fingerprint_finger=m.fingerprint_finger, group_photo=m.group_photo,
                             device_timestamp=body.device_timestamp, latitude=body.latitude, longitude=body.longitude,
                             gps_accuracy_m=body.gps_accuracy_m, gps_timestamp=body.gps_timestamp,
-                            security=body.security.model_copy(update={"liveness": m.liveness}) if body.security else None,
-                            liveness_proof=m.liveness_proof)
+                            security=body.security.model_copy(update={"liveness": m.liveness}) if body.security else None)
         savepoint = db.begin_nested()
         try:
             record, replayed = create(db, p, item, commit=False)

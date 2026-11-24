@@ -158,8 +158,7 @@ def test_either_biometric_satisfies_a_division_that_asks_for_both(world):
     assert enroll(world).status_code == 200
     assert enroll_face(world).status_code == 200
 
-    from tests.test_liveness import live_face
-    r, _ = punch(world, "jan", 1, **{**live_face(world), "face_distance": 0.2})  # face only (proved live)
+    r, _ = punch(world, "jan", 1, face_distance=0.2, face_model=MODEL)  # face only
     assert r.status_code == 201, r.text
     r, _ = punch(world, "jan", 2, fingerprint_score=90, fingerprint_matcher=M)  # fingerprint only
     assert r.status_code == 201, r.text

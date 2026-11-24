@@ -63,16 +63,22 @@ def test_attendance_blocked_without_a_verified_match_when_required(world):
     assert r.json()["error"]["code"] == "face_not_verified"
     r, _ = punch(world, "jan", 1, face_distance=0.61, face_model=MODEL)
     assert r.status_code == 422 and r.json()["error"]["code"] == "face_mismatch"
-    # A matching face alone is not enough: it must have been proved live (tests/test_liveness.py).
-    r, _ = punch(world, "jan", 1, face_distance=0.31, face_model=MODEL)
-    assert r.status_code == 422 and r.json()["error"]["code"] == "liveness_proof_required"
-    from tests.test_liveness import live_face
-    r, body = punch(world, "jan", 1, **{**live_face(world), "face_distance": 0.31})
+    r, body = punch(world, "jan", 1, face_distance=0.31, face_model=MODEL)
     assert r.status_code == 201, r.text
     assert r.json()["face_distance"] == 0.31 and r.json()["face_model"] == MODEL
     # A photo is required while face verification is on.
     r, _ = punch(world, "jan", 2, photo=False, face_distance=0.2, face_model=MODEL)
     assert r.status_code == 422
+
+
+def test_a_record_queued_by_an_older_app_with_a_liveness_proof_still_syncs(world):
+    # App builds that briefly had server-issued liveness challenges sent `liveness_proof`. Records they
+    # queued offline must still be accepted; the proof is ignored.
+    set_policy(world, attendance_face_verification=True, face_match_threshold=0.5)
+    assert enroll(world).status_code == 200
+    proof = {"challenge_id": "c1", "signature": "a" * 64, "steps": [{"action": "blink"}]}
+    r, _ = punch(world, "jan", 1, face_distance=0.3, face_model=MODEL, liveness_proof=proof)
+    assert r.status_code == 201, r.text
 
 
 def test_attendance_unchanged_when_face_verification_is_off(world):

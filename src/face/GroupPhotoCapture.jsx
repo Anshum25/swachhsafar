@@ -8,11 +8,6 @@
 // makes reading a group photo slow), waits for that count to hold steady, and only then captures at full
 // resolution and runs the real recognition.
 //
-// Liveness. Before the shutter fires, everyone is asked to turn their head, and each face is followed in
-// the live preview until it has shown real 3-D depth (groupLiveness.js). A printed photo, or a photo or
-// video on a phone held up to the camera, is flat and never passes: such a face is shown as "Not live" and
-// is never marked present, even when it is recognised.
-//
 // What this proves, which is less than a per-person capture. A live per-person capture watches one face
 // for a blink before taking the still, because a photograph of a face does not blink; that is what stops
 // someone being marked present with a picture of them. One frame holding many faces cannot do that for
@@ -21,8 +16,7 @@
 // never guesses: a face whose closest match does not clearly beat the runner-up, or which is too small to
 // carry a usable descriptor, is reported as unrecognised rather than named (see identifyFaces).
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GROUP_INPUT_SIZE, analyseFaces, cropFace, describeAll, loadFaceEngine } from './faceEngine.js';
-import { createGroupLiveness, liveTrackFor } from './groupLiveness.js';
+import { GROUP_INPUT_SIZE, cropFace, describeAll, detectFaces, loadFaceEngine } from './faceEngine.js';
 import { identifyFaces, similarityPercent } from './faceMatch.js';
 import { RefreshIcon, UsersIcon } from '../components/Icons.jsx';
 
@@ -43,9 +37,6 @@ const MIN_FACE_SHARE = 0.02;
 // If the crew never settles, the photo is taken anyway on whatever is in view: a usable answer late beats
 // no answer at all, and the supervisor can retake it.
 const PATIENCE_MS = 4000;
-// How long the crew is given to turn their heads. After this the photo is taken anyway; only the faces that
-// were verified live are marked, everyone else is reported.
-const LIVE_PATIENCE_MS = 15000;
 
 export default function GroupPhotoCapture({ candidates, profiles, threshold, onChange }) {
   const video = useRef(null);
@@ -59,7 +50,6 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   const [photo, setPhoto] = useState(null);
   const [rows, setRows] = useState([]);
   const [crops, setCrops] = useState([]);
-  const [liveSeen, setLiveSeen] = useState({ live: 0, total: 0 });
 
   // Frees the camera. Leaves the run id alone: the slow pass that follows the shutter is still this run.
   const release = useCallback(() => {
@@ -75,9 +65,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   useEffect(() => stop, [stop]);
 
   const byId = new Map((candidates ?? []).map((c) => [c.employee_id, c]));
-  // Only a face recognised AND seen live counts. A recognised face that never showed depth is a picture.
-  const known = rows.filter((r) => r.status === 'identified' && r.live && byId.has(r.userId));
-  const spoofed = rows.filter((r) => r.status === 'identified' && !r.live).length;
+  const known = rows.filter((r) => r.status === 'identified' && byId.has(r.userId));
   // Recognised, but already finished all five stages: shown as completed, never marked again.
   const finished = known.filter((r) => byId.get(r.userId).completed);
   const named = known.filter((r) => !byId.get(r.userId).completed);
@@ -91,13 +79,13 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       recognised: named.length,
       ready: phase === 'done',
       members: named.map((r) => ({
-        employee_id: r.userId, crop: crops[r.index] ?? null, distance: r.distance, confirmed: 'matched', liveness: 'passed',
+        employee_id: r.userId, crop: crops[r.index] ?? null, distance: r.distance, confirmed: 'matched',
       })),
     });
     // `named` and `crops` are derived from `rows`, so `rows` is the dependency that matters.
   }, [rows, crops, photo, phase, onChange]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const read = useCallback(async (canvas, myRun, liveCtx) => {
+  const read = useCallback(async (canvas, myRun) => {
     setPhase('reading');
     try {
       const { faces } = await describeAll(canvas, { inputSize: GROUP_INPUT_SIZE });
@@ -108,8 +96,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
         return;
       }
       const found = identifyFaces({ faces, profiles, threshold })
-        .map((r) => ({ ...r, small: faces[r.index].small,
-          live: !!liveTrackFor(liveCtx?.tracks, faces[r.index].box, { sx: liveCtx?.sx ?? 1, sy: liveCtx?.sy ?? 1 }) }));
+        .map((r) => ({ ...r, small: faces[r.index].small }));
       const cut = await Promise.all(faces.map((f) => cropFace(canvas, f.box)));
       if (myRun !== runId.current) return;
       setCrops(cut);
@@ -125,9 +112,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   const start = useCallback(async (useCamera) => {
     setError(null);
     setPhase('starting');
-    setPhoto(null); setRows([]); setCrops([]); setSeen(0); setLiveSeen({ live: 0, total: 0 });
-    const liveness = createGroupLiveness();
-    let liveState = liveness.snapshot();
+    setPhoto(null); setRows([]); setCrops([]); setSeen(0);
     stop();
     const myRun = (runId.current += 1);
     try {
@@ -157,20 +142,15 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
         if (track && window.ImageCapture) still = await createImageBitmap(await new window.ImageCapture(track).takePhoto());
       } catch { still = null; }
       // Very large stills are scaled to 3000px wide: plenty for recognition, and keeps the phone responsive.
-      const vw = video.current.videoWidth || 1280;
-      const vh = video.current.videoHeight || 720;
-      // The live checks were made on preview coordinates; a sensor still with a different framing
-      // (another aspect ratio) could not be matched back to them, so the preview frame is used instead.
-      if (still && Math.abs(still.width / still.height - vw / vh) > 0.02) still = null;
-      const srcW = still?.width || vw;
-      const srcH = still?.height || vh;
+      const srcW = still?.width || video.current.videoWidth || 1280;
+      const srcH = still?.height || video.current.videoHeight || 720;
       const k = Math.min(1, 3000 / srcW);
       canvas.width = Math.round(srcW * k);
       canvas.height = Math.round(srcH * k);
       canvas.getContext('2d').drawImage(still ?? video.current, 0, 0, canvas.width, canvas.height);
       setPhoto(canvas.toDataURL('image/jpeg', 0.9));
       release();                  // the preview has done its job; free the camera before the slow pass
-      await read(canvas, myRun, { tracks: liveState.tracks, sx: canvas.width / vw, sy: canvas.height / vh });
+      await read(canvas, myRun);
     };
 
     let steady = 0;
@@ -180,11 +160,9 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
 
     const look = async () => {
       if (myRun !== runId.current || !video.current) return;
-      const found = await analyseFaces(video.current).catch(() => []);
+      const found = await detectFaces(video.current).catch(() => []);
       if (myRun !== runId.current || !video.current) return;
       const height = video.current.videoHeight || 720;
-      liveState = liveness.feed(found);
-      setLiveSeen({ live: liveState.live, total: liveState.total });
       // Only faces big enough to recognise are counted, so the shutter never fires on a crowd in the
       // distance that the slow pass would fail to identify anyway.
       const usable = found.filter((f) => f.box.height / height >= MIN_FACE_SHARE);
@@ -199,11 +177,9 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
         steady += 1;
       }
       setHoldLeft(since != null ? Math.max(0, STEADY_MS - (t - since)) : null);
-      // Everyone in view has to have shown a live 3-D face before the photo is taken.
-      const allLive = liveState.total > 0 && liveState.live >= Math.min(liveState.total, usable.length);
-      const settled = allLive && usable.length > 0 && steady >= STEADY_FRAMES && since != null && t - since >= STEADY_MS;
-      // Out of patience: take the photo anyway. Faces not verified live are reported, never marked.
-      const impatient = usable.length > 0 && t - startedAt >= Math.max(PATIENCE_MS, LIVE_PATIENCE_MS);
+      const settled = usable.length > 0 && steady >= STEADY_FRAMES && since != null && t - since >= STEADY_MS;
+      // Out of patience: take whatever is in view rather than stand here.
+      const impatient = usable.length > 0 && t - startedAt >= PATIENCE_MS;
       if (settled || impatient) { await shoot(); return; }
       setTimeout(look, 0);
     };
@@ -216,7 +192,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   const flip = () => setFacing((f) => (f === 'user' ? 'environment' : 'user'));
 
   const shot = phase === 'done' || phase === 'reading';
-  const unknown = rows.length - named.length - finished.length - spoofed;
+  const unknown = rows.length - named.length - finished.length;
 
   return (
     <div className="space-y-2">
@@ -242,9 +218,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
             {phase === 'starting' ? 'Starting the camera\u2026'
               : phase === 'failed' ? 'The camera stopped'
                 : seen === 0 ? 'Point the camera at the crew'
-                  : liveSeen.live < liveSeen.total
-                    ? `Everyone: slowly turn your head to one side and back · ${liveSeen.live}/${liveSeen.total} live`
-                    : `Hold still \u2014 ${seen} ${seen === 1 ? 'face' : 'faces'} in view${holdLeft != null ? ` · ${(holdLeft / 1000).toFixed(1)}s` : ''}`}
+                  : `Hold still \u2014 ${seen} ${seen === 1 ? 'face' : 'faces'} in view${holdLeft != null ? ` · ${(holdLeft / 1000).toFixed(1)}s` : ''}`}
           </p>
         )}
       </div>
@@ -257,15 +231,8 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
             <UsersIcon className="h-4 w-4" />
             {rows.length} {rows.length === 1 ? 'face' : 'faces'} {'\u00b7'} {named.length} recognised
             {finished.length > 0 && <span className="font-normal text-sky-700">{'·'} {finished.length} already completed</span>}
-            {spoofed > 0 && <span className="font-normal text-red-700">{'·'} {spoofed} not live</span>}
             {unknown > 0 && <span className="font-normal text-amber-700">{'\u00b7'} {unknown} not recognised</span>}
           </p>
-          {spoofed > 0 && (
-            <p className="text-xs text-red-700">
-              A face that did not move like a real person (a photo, or a picture on a screen) is never marked
-              present. Retake, and ask everyone to turn their head when prompted.
-            </p>
-          )}
           {unknown > 0 && (
             <p className="text-xs text-amber-700">
               Only the people the app recognised are marked present. For anyone it could not place, retake
@@ -275,8 +242,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
           <ul className="flex flex-wrap gap-2">
             {rows.map((r) => {
               const person = byId.get(r.userId);
-              const ok = r.status === 'identified' && r.live && person;
-              const fake = r.status === 'identified' && !r.live;
+              const ok = r.status === 'identified' && person;
               const complete = ok && person.completed;
               if (complete) {
                 return (
@@ -292,7 +258,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
                   <img src={crops[r.index]} alt="" className={`h-24 w-24 rounded-xl object-cover ring-2 ${ok ? 'ring-success' : 'ring-amber-400'}`} />
                   <p className={`mt-1 truncate text-xs font-semibold ${ok ? 'text-success' : 'text-amber-700'}`}
                     title={ok ? person.name : undefined}>
-                    {ok ? person.name : fake ? 'Not live' : 'Not recognised'}
+                    {ok ? person.name : 'Not recognised'}
                   </p>
                   {ok && <p className="text-xs text-slate-500">{similarityPercent(r.distance)}%</p>}
                 </li>

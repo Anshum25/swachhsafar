@@ -98,11 +98,6 @@ export function createAttendanceRepository(db, { journeys, masters }) {
         // Only a face the device actually recognised carries a distance, and it still has to be within
         // the threshold; a person the supervisor named has none to judge.
         if (typeof p.face_distance === 'number') {
-          // Backend _check_group_photo: the recognised face must have been seen moving in 3-D in the live
-          // preview. A photo of a printed picture or of a screen is flat and is never marked.
-          if (p.security?.liveness !== 'passed') {
-            throw new LocalRuleError('liveness_required', 'This face was not verified as a live person. A photo or a screen cannot be used for attendance.');
-          }
           const profile = await masters?.getFaceProfile(p.employee_id);
           if (!profile || p.face_model !== profile.model) {
             throw new LocalRuleError('face_not_verified', "The group photo match does not refer to this employee's registered face.");
@@ -121,12 +116,6 @@ export function createAttendanceRepository(db, { journeys, masters }) {
         }
         if (p.face_distance > policy.face_match_threshold) {
           throw new LocalRuleError('face_mismatch', "The photo does not match the employee's registered face.");
-        }
-        // Backend liveness.verify_and_consume: a face match never stands alone. The capture must carry the
-        // proof of a server-issued liveness challenge; the server checks it again (and consumes it) at sync.
-        const lp = p.liveness_proof;
-        if (!lp || typeof lp.challenge_id !== 'string' || typeof lp.signature !== 'string' || !Array.isArray(lp.steps) || !lp.steps.length) {
-          throw new LocalRuleError('liveness_proof_required', 'Face attendance needs a live verification performed in front of the camera.');
         }
       }
       const done = new Set((await liveStages(journey.id, p.employee_id)).map((r) => r.stage));
