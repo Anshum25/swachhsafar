@@ -8,7 +8,9 @@ import { Badge, DataState, Dialog, FilterBar, Field, Pager, Panel, Select, Table
 import { FingerprintIcon, MoreIcon, PlusIcon, SearchIcon, UserIcon } from '../../../components/Icons.jsx';
 import FaceEnrollDialog from './FaceEnrollment.jsx';
 import FingerprintEnrollDialog from './FingerprintEnrollment.jsx';
-import { canManageRole, EditUserDialog, ResetPasswordDialog, SignInForm, StatusDialog, UserForm } from './UserDialogs.jsx';
+import {
+  canManageRole, DeleteUserDialog, EditUserDialog, ResetPasswordDialog, SignInForm, StatusDialog, TransferUserDialog, UserForm,
+} from './UserDialogs.jsx';
 
 const PAGE_SIZE = 25;
 const STATUSES = [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }];
@@ -132,7 +134,9 @@ export default function Users({ division }) {
                     { label: 'View profile', onClick: () => navigate(userPath(u)) },
                     { label: 'Edit user', onClick: () => open('edit', u) },
                     u.password_set ? { label: 'Change password', onClick: () => open('password', u) } : { label: 'Create sign-in', onClick: () => open('signin', u) },
+                    { label: 'Move to another station', onClick: () => open('move', u) },
                     { label: u.status === 'active' ? 'Deactivate' : 'Activate', danger: u.status === 'active', onClick: () => open('status', u) },
+                    { label: 'Delete user', danger: true, onClick: () => open('delete', u) },
                   ]} />
                 </Stop>
               ) : null) }] : []),
@@ -146,6 +150,8 @@ export default function Users({ division }) {
       {dialog?.kind === 'edit' && <EditUserDialog user={dialog.user} division={division} onClose={closeDialog} onSaved={res.reload} />}
       {dialog?.kind === 'password' && <ResetPasswordDialog user={dialog.user} onClose={closeDialog} />}
       {dialog?.kind === 'status' && <StatusDialog user={dialog.user} onClose={closeDialog} onDone={res.reload} />}
+      {dialog?.kind === 'move' && <TransferUserDialog user={dialog.user} division={division} onClose={closeDialog} onSaved={res.reload} />}
+      {dialog?.kind === 'delete' && <DeleteUserDialog user={dialog.user} onClose={closeDialog} onDone={res.reload} />}
       <Dialog open={dialog?.kind === 'signin'} title="Create sign-in" onClose={closeDialog}>
         {dialog?.kind === 'signin' && <SignInForm user={dialog.user} onClose={closeDialog} onSaved={res.reload} />}
       </Dialog>

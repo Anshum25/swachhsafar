@@ -364,3 +364,94 @@ export function SignInForm({ user, onClose, onSaved }) {
     </form>
   );
 }
+
+// Delete: the employee disappears from every list and can never sign in again (status `deleted`; devices
+// already signed in are refused on their next request). Their attendance, inspections and other records
+// stay, under their name -- the history is not rewritten. Backend: POST /users/{id}/status {deleted}.
+export function DeleteUserDialog({ user, onClose, onDone }) {
+  const { api } = useSession();
+  const notify = useNotify();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [typed, setTyped] = useState('');
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/users/${user.id}/status`, { status: 'deleted' });
+      notify('success', `${user.name} is deleted.`);
+      onDone?.();
+      onClose();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <ConfirmDialog open title="Delete user" danger busy={busy} confirmLabel="Delete user" onClose={onClose}
+      onConfirm={confirm} disabled={typed.trim() !== user.emp_id}>
+      <ErrorNote error={error} />
+      <p><b>{user.name}</b> ({user.emp_id}) will be removed from every list and can never sign in again. Their past attendance, inspections and other records are kept.</p>
+      <p className="mt-2">If they may come back, <b>Deactivate</b> them instead.</p>
+      <Field label={`Type the employee ID (${user.emp_id}) to confirm`}>
+        <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+      </Field>
+    </ConfirmDialog>
+  );
+}
+
+// Move to another station (or headquarters), possibly of another office: the employee's home division
+// changes and with it what they see and which office's modules and rules apply. Journeys they are already
+// on are not changed. Backend: PATCH /users/{id} {division_id} (users.manage needed in the new one).
+// `division`: the page's useDivision().
+export function TransferUserDialog({ user, division, onClose, onSaved }) {
+  const { api, canIn } = useSession();
+  const notify = useNotify();
+  const targets = division.divisions.filter((d) => d.id !== user.division_id && canIn('users.manage', d.id));
+  const offices = division.clients.filter((c) => targets.some((d) => d.client_id === c.id));
+  const current = division.divisions.find((d) => d.id === user.division_id);
+  const [clientId, setClientId] = useState(current?.client_id && offices.some((c) => c.id === current.client_id) ? current.client_id : offices[0]?.id ?? '');
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const choices = targets.filter((d) => !offices.length || d.client_id === clientId);
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.patch(`/users/${user.id}`, { division_id: to });
+      const dest = division.divisions.find((d) => d.id === to);
+      notify('success', `${user.name} moved to ${dest ? divisionLabel(division, dest) : 'the new station'}.`);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog open title={`Move ${user.name}`} onClose={onClose} onSubmit={save}>
+      <ErrorNote error={error} />
+      <p className="mb-3 text-sm text-slate-700">
+        Now at <b>{current ? divisionLabel(division, current) : 'their current division'}</b>. Their role stays {ROLE_NAMES[user.role_id]}; journeys they are already on are not changed.
+      </p>
+      {targets.length === 0 ? <p className="text-sm text-muted">There is no other station you can move them to.</p> : (
+        <div className="space-y-3">
+          {offices.length > 1 && (
+            <Field label="Office">
+              <Select value={clientId} onChange={(v) => { setClientId(v); setTo(''); }} options={offices.map((c) => ({ value: c.id, label: c.name }))} />
+            </Field>
+          )}
+          <Field label="Station or headquarters">
+            <Select value={to} onChange={setTo} placeholder="Choose where to move them"
+              options={choices.map((d) => ({ value: d.id, label: `${d.name}${d.kind === 'headquarters' ? ' (HQ)' : ''}` }))} />
+          </Field>
+        </div>
+      )}
+      <SubmitBar busy={busy} disabled={!to} label="Move" onCancel={onClose} />
+    </Dialog>
+  );
+}

@@ -8,7 +8,10 @@ import { ArrowLeftIcon, FingerprintIcon, KeyIcon, UserIcon } from '../../../comp
 import FaceEnrollDialog from './FaceEnrollment.jsx';
 import FingerprintEnrollDialog from './FingerprintEnrollment.jsx';
 import { RowMenu } from './Users.jsx';
-import { EditUserDialog, ResetPasswordDialog, SignInForm, StatusDialog, useCanManageUser } from './UserDialogs.jsx';
+import {
+  DeleteUserDialog, EditUserDialog, ResetPasswordDialog, SignInForm, StatusDialog, TransferUserDialog, useCanManageUser,
+} from './UserDialogs.jsx';
+import { navigate } from '../../../app/router.js';
 
 const GENDER = { M: 'Male', F: 'Female', O: 'Other' };
 const LANG = { en: 'English', hi: 'Hindi' };
@@ -91,7 +94,9 @@ export default function UserProfile({ userId, division }) {
               <RowMenu user={user} label="More user actions" className="icon-btn h-11 w-11 rounded-xl ring-1 ring-line" items={[
                 { label: user.face_enrolled ? 'Re-register face' : 'Register face', onClick: () => setDialog('face') },
                 { label: user.fingerprint_enrolled ? 'Re-register fingers' : 'Register fingers', onClick: () => setDialog('finger') },
+                { label: 'Move to another station', onClick: () => setDialog('move') },
                 { label: active ? 'Deactivate user' : 'Activate user', danger: active, onClick: () => setDialog('status') },
+                { label: 'Delete user', danger: true, onClick: () => setDialog('delete') },
               ]} />
             </div>
           )}
@@ -189,6 +194,9 @@ export default function UserProfile({ userId, division }) {
       {dialog === 'edit' && <EditUserDialog user={user} division={division} onClose={close} onSaved={reloadAll} />}
       {dialog === 'password' && <ResetPasswordDialog user={user} onClose={close} onDone={reloadAll} />}
       {dialog === 'status' && <StatusDialog user={user} onClose={close} onDone={reloadAll} />}
+      {dialog === 'move' && <TransferUserDialog user={user} division={division} onClose={close} onSaved={reloadAll} />}
+      {/* A deleted user has no profile to come back to: return to the list. */}
+      {dialog === 'delete' && <DeleteUserDialog user={user} onClose={close} onDone={() => navigate('/masters/users')} />}
       {dialog === 'face' && <FaceEnrollDialog user={user} onClose={() => { close(); reloadAll(); }} />}
       {dialog === 'finger' && <FingerprintEnrollDialog user={user} onClose={() => { close(); reloadAll(); }} />}
       <Dialog open={dialog === 'signin'} title="Create sign-in" onClose={close}>
