@@ -14,7 +14,7 @@ import OfficeSetupSection from './masters/OfficeSetup.jsx';
 import RolePermissions from './masters/RolePermissions.jsx';
 import UserProfile from './masters/UserProfile.jsx';
 import { MastersMobileNav } from './masters/MastersNav.jsx';
-import { visibleSections } from './masters/sections.js';
+import { usesDivisionFilter, visibleSections } from './masters/sections.js';
 import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, SubmitBar, Table } from '../../components/ui.jsx';
 import { PlusIcon } from '../../components/Icons.jsx';
 
@@ -104,10 +104,12 @@ export default function Masters({ parts = [] }) {
   }, [known, first]);
   if (!known) return null;
   const title = sections.find((s) => s.key === section)?.label;
+  const filtered = usesDivisionFilter(section, userId);
   return (
     <>
-      <PageHeader title="Master data" subtitle={<><span className="hidden lg:inline">{title} · </span><span className="text-slate-500">{division.current && divisionLabel(division, division.current)}</span></>}
-        actions={<DivisionPicker division={division} />} />
+      <PageHeader title="Master data"
+        subtitle={<><span className="hidden lg:inline">{title}{filtered ? ' · ' : ''}</span>{filtered && <span className="text-slate-500">{division.current && divisionLabel(division, division.current)}</span>}</>}
+        actions={filtered ? <DivisionPicker division={division} /> : null} />
       <MastersMobileNav path={`/masters/${parts.join('/')}`} />
       {section === 'trains' && <Trains divisionId={division.divisionId} />}
       {section === 'users' && (userId ? <UserProfile key={userId} userId={userId} division={division} /> : <Users division={division} />)}

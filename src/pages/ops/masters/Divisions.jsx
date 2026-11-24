@@ -33,14 +33,25 @@ export default function Divisions({ clientId = null, onChanged }) {
     return c ? `${c.office_id} — ${c.name}` : '';
   };
   const what = clientId ? 'station' : 'division';
+  // The full list (Master data -> Divisions) can be narrowed to one office; an office's own page is already.
+  const [office, setOffice] = useState('');
+  const only = clientId || office;
+  const shownRows = (rows) => (only ? rows.filter((d) => d.client_id === only) : rows);
 
   return (
     <Panel title={clientId ? 'Headquarters and stations' : 'Divisions'}
-      actions={manage && <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><PlusIcon /> Add {what}</button>}>
-      <DataState res={res} isEmpty={(rows) => !(clientId ? rows.filter((d) => d.client_id === clientId) : rows).length}
-        empty={clientId ? 'This office has no headquarters or stations yet. Add one to give its users somewhere to work.' : 'No divisions.'}>
+      actions={manage && <button type="button" className="btn-secondary" onClick={() => { setF({ ...blank, client_id: clientId ?? office }); setCreating(true); }}><PlusIcon /> Add {what}</button>}>
+      {!clientId && (clients.data?.length ?? 0) > 1 && (
+        <div className="mb-3 max-w-xs">
+          <Select value={office} onChange={setOffice} aria-label="Office"
+            options={[{ value: '', label: 'All offices' }, ...clients.data.map((c) => ({ value: c.id, label: `${c.office_id} — ${c.name}` }))]} />
+        </div>
+      )}
+      <DataState res={res} isEmpty={(rows) => !shownRows(rows).length}
+        empty={clientId ? 'This office has no headquarters or stations yet. Add one to give its users somewhere to work.'
+          : office ? 'This office has no divisions yet.' : 'No divisions.'}>
         {(rows) => (
-          <Table rows={clientId ? rows.filter((d) => d.client_id === clientId) : rows} columns={[
+          <Table rows={shownRows(rows)} columns={[
             { key: 'code', label: 'Code', render: (d) => <span className="font-semibold">{d.code}</span> },
             { key: 'name', label: 'Name' },
             ...(!clientId && clients.data?.length ? [{ key: 'client_id', label: 'Office', render: (d) => officeName(d.client_id) }] : []),

@@ -97,3 +97,16 @@ describe('user form helpers', () => {
     expect(canManageRole(4, 5)).toBe(false);
   });
 });
+
+describe('master data: where the office / division pickers apply', () => {
+  it('shows them on the division-scoped sections only', async () => {
+    const { usesDivisionFilter } = await import('../../src/pages/ops/masters/sections.js');
+    for (const key of ['trains', 'users', 'roles', 'questions', 'categories', 'departments', 'items', 'policy']) {
+      expect(usesDivisionFilter(key)).toBe(true);
+    }
+    // These list or pick offices themselves: the header pickers would change nothing there.
+    for (const key of ['clients', 'divisions', 'setup']) expect(usesDivisionFilter(key)).toBe(false);
+    // A user's profile is one person.
+    expect(usesDivisionFilter('users', 'some-user-id')).toBe(false);
+  });
+});

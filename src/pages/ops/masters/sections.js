@@ -29,5 +29,12 @@ export const MASTER_SECTIONS = [
 
 export const visibleSections = (can) => MASTER_SECTIONS.filter((s) => !s.show || s.show(can));
 
+// The sections whose content is one division's (or, for Role rights, one office's and one division's): the
+// page header's office / division pickers apply to them, and only to them. Clients & Credits, Divisions and
+// Stations & trains list or pick offices themselves, and a user's profile is one person, so the pickers would
+// change nothing there and are not shown.
+const DIVISION_SCOPED = new Set(['trains', 'users', 'roles', 'questions', 'categories', 'departments', 'items', 'policy']);
+export const usesDivisionFilter = (section, userId = null) => DIVISION_SCOPED.has(section) && !(section === 'users' && userId);
+
 // '/masters/users/abc' -> 'users'; '/masters' -> null.
 export const sectionOf = (path) => (path.startsWith('/masters/') ? path.split('/')[2] || null : null);
