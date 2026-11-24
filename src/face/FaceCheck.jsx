@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from '../app/session.jsx';
 import { AlertIcon, CheckIcon, Spinner } from '../components/Icons.jsx';
 import { describeFace } from './faceEngine.js';
-import { matchFace, similarityPercent } from './faceMatch.js';
+import { RECOMMENDED_THRESHOLD, isStrict, matchFace, requiredPercent, similarityPercent } from './faceMatch.js';
 
 export function useFaceCheck({ photo, employeeId, enabled, threshold }) {
   const { store } = useSession();
@@ -20,7 +20,7 @@ export function useFaceCheck({ photo, employeeId, enabled, threshold }) {
       const { descriptor, model } = await describeFace(photo);
       if (profile.model !== model) return { status: 'not_enrolled' };
       const m = matchFace({ descriptor, profile, threshold });
-      return { status: m.matched ? 'matched' : 'mismatch', distance: m.distance, model };
+      return { status: m.matched ? 'matched' : 'mismatch', distance: m.distance, model, threshold };
     })().then((r) => !cancelled && setState(r), (e) => !cancelled && setState({ status: e.code ?? 'error', message: e.message }));
     return () => { cancelled = true; };
   }, [photo, employeeId, enabled, threshold, store]);
@@ -37,7 +37,9 @@ export function FaceCheckNote({ check, name }) {
     waiting: [`${base} bg-brand-50 text-brand-900`, null, `Face verification is on: take a photo of ${name}'s face.`],
     checking: [`${base} bg-brand-50 text-brand-900`, <Spinner key="s" className="mt-0.5 h-4 w-4" />, 'Checking the face…'],
     matched: [`${base} bg-emerald-50 text-emerald-800`, <CheckIcon key="c" className="mt-0.5 h-4 w-4" />, `Face matched: ${name} (${similarityPercent(check.distance)}% similar).`],
-    mismatch: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />, `The face does not match ${name} (${similarityPercent(check.distance)}% similar). Retake the photo of ${name}.`],
+    mismatch: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />,
+      `The face does not match ${name} closely enough (${similarityPercent(check.distance)}% similar; this office requires ${requiredPercent(check.threshold)}%). Retake the photo of ${name}, face-on and in good light.`
+      + (isStrict(check.threshold) ? ` Face match strictness is set to ${check.threshold}, stricter than the recommended ${RECOMMENDED_THRESHOLD}, so clear photos of the right person can be refused. An administrator can change it in Master data → Division Policy.` : '')],
     not_enrolled: [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />, `${name} has no registered face on this device. An administrator must register it (Masters → Users → Face), then sync.`],
   }[check.status] ?? [`${base} bg-red-50 text-red-800`, <AlertIcon key="a" className="mt-0.5 h-4 w-4" />, check.message ?? 'Face verification failed.'];
   return <p className={body[0]} role={check.status === 'matched' || check.status === 'checking' ? 'status' : 'alert'} data-testid="face-check" data-status={check.status}>{body[1]}<span>{body[2]}</span></p>;

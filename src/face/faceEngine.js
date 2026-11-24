@@ -39,15 +39,83 @@ async function imageFrom(src) {
   return img;
 }
 
-// Descriptor of the one face in the photo (a data URL or object URL). Throws FaceError no_face / many_faces.
-export async function describeFace(src) {
+// ---- photo quality ----------------------------------------------------------------------------------------
+// Measured on a small grey copy of the photo: mean brightness (0-255) and sharpness (variance of the
+// Laplacian, which falls as a photo blurs). These are used to EXPLAIN a failure -- "too dark", "blurred" --
+// never to accept a face, and the limits are deliberately loose: they flag the clearly bad photo only.
+export const QUALITY = { dark: 55, bright: 225, blurry: 40 };
+export function photoQuality(input) {
+  const w0 = input.naturalWidth || input.videoWidth || input.width;
+  const h0 = input.naturalHeight || input.videoHeight || input.height;
+  const k = Math.min(1, 320 / Math.max(w0, h0, 1));
+  const w = Math.max(3, Math.round(w0 * k));
+  const h = Math.max(3, Math.round(h0 * k));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(input, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+  const g = new Float32Array(w * h);
+  let sum = 0;
+  for (let i = 0, j = 0; i < data.length; i += 4, j += 1) {
+    g[j] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    sum += g[j];
+  }
+  let lsum = 0; let lsq = 0; let n = 0;
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const i = y * w + x;
+      const l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w];
+      lsum += l; lsq += l * l; n += 1;
+    }
+  }
+  const mean = lsum / Math.max(1, n);
+  return { brightness: sum / (w * h), sharpness: lsq / Math.max(1, n) - mean * mean };
+}
+
+// Why no face was found, in words the person holding the phone can act on.
+export function noFaceReason(q) {
+  if (q.brightness < QUALITY.dark) return ['too_dark', 'No face found: the photo is too dark. Move to a brighter place or face the light, and take it again.'];
+  if (q.brightness > QUALITY.bright) return ['too_bright', 'No face found: the photo is washed out. Move out of direct sunlight or away from a bright window behind the person.'];
+  if (q.sharpness < QUALITY.blurry) return ['blurry', 'No face found: the photo is blurred. Hold the phone steady and tap the screen to focus before taking it.'];
+  return ['no_face', 'No face found. Fill most of the photo with the face, looking straight at the camera, and take it again.'];
+}
+
+// Faces in a single photo: the fast detector first, then the thorough one (SSD MobileNet) when the fast one
+// finds nothing -- it misses faces that are turned a little, in shade, or small in the frame.
+async function detectInPhoto(faceapi, img) {
+  const tiny = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 });
+  let faces = await faceapi.detectAllFaces(img, tiny).withFaceLandmarks().withFaceDescriptors();
+  if (!faces.length && await ssdReady(faceapi)) {
+    faces = await faceapi.detectAllFaces(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 }))
+      .withFaceLandmarks().withFaceDescriptors();
+  }
+  return faces;
+}
+
+// Descriptor of the one face in the photo (a data URL or object URL). Throws FaceError with a code that says
+// what to do: too_dark / too_bright / blurry / no_face / many_faces / face_too_small (enrolment only).
+// `minFaceShare`: the smallest face width, as a share of the photo's width, that is accepted -- set for
+// enrolment, where a small face makes a poor reference that every later check is compared against.
+export async function describeFace(src, { minFaceShare = 0 } = {}) {
   const faceapi = await loadFaceEngine();
   const img = await imageFrom(src);
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
-  const faces = await faceapi.detectAllFaces(img, options).withFaceLandmarks().withFaceDescriptors();
-  if (!faces.length) throw new FaceError('no_face', 'No face found. Take the photo again, facing the camera in good light.');
-  if (faces.length > 1) throw new FaceError('many_faces', 'More than one face in the photo. Photograph only this person.');
-  return { descriptor: Array.from(faces[0].descriptor), model: FACE_MODEL, score: faces[0].detection.score };
+  const faces = await detectInPhoto(faceapi, img);
+  if (!faces.length) {
+    const [code, message] = noFaceReason(photoQuality(img));
+    throw new FaceError(code, message);
+  }
+  // A face in the background (a passer-by) is ignored when one face clearly dominates the photo.
+  const sorted = [...faces].sort((a, b) => b.detection.box.width - a.detection.box.width);
+  if (sorted.length > 1 && sorted[1].detection.box.width > sorted[0].detection.box.width * 0.6) {
+    throw new FaceError('many_faces', 'More than one face in the photo. Photograph only this person.');
+  }
+  const face = sorted[0];
+  const share = face.detection.box.width / (img.naturalWidth || img.width || 1);
+  if (share < minFaceShare) {
+    throw new FaceError('face_too_small', 'The face is too small in this photo. Come closer so the face fills most of the frame.');
+  }
+  return { descriptor: Array.from(face.descriptor), model: FACE_MODEL, score: face.detection.score, faceShare: share };
 }
 
 // ---- live camera (liveness check) ---------------------------------------------------------------------

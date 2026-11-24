@@ -119,3 +119,14 @@ export function meanDescriptor(readings) {
   }
   return out.map((v) => v / usable.length);
 }
+
+// ---- explaining the threshold ---------------------------------------------------------------------------
+// The percentage people see is not a probability; it is 100 x (1 - distance), so the office's threshold
+// (a distance) maps to a minimum percentage. Showing both is what makes "67% similar -- refused" make sense:
+// with the strictest setting (0.3) a face must reach 70%, which clear photos of the right person often do
+// not. The library's own guidance for this model is a distance of about 0.6; 0.5 is the recommended setting.
+export const RECOMMENDED_THRESHOLD = 0.5;
+// Below this, the office's setting refuses a large share of genuine matches; the screen says so.
+export const STRICT_THRESHOLD = 0.45;
+export const requiredPercent = (threshold) => similarityPercent(threshold);
+export const isStrict = (threshold) => typeof threshold === 'number' && threshold < STRICT_THRESHOLD;

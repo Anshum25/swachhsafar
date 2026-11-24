@@ -47,7 +47,7 @@ export default function FaceEnrollDialog({ user, onClose }) {
     const url = URL.createObjectURL(file);
     setSlot(i, { url, busy: true });
     try {
-      const { descriptor } = await describeFace(dataUrl);
+      const { descriptor } = await describeFace(dataUrl, { minFaceShare: 0.15 });
       setSlot(i, { url, descriptor });
     } catch (e) {
       setSlot(i, { url, error: e.message });
