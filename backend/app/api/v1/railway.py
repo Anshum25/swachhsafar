@@ -8,9 +8,8 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.errors import Forbidden
 from app.models import Client, RoleId
-from app.providers.railengine import CoachProvider, get_coach_provider
 from app.providers.railradar import TimetableProvider, get_timetable_provider
-from app.schemas.railway import RailwayStationOut, SetupIn, SetupOut, SetupResult, StationTrainsOut, TrainCoachOut
+from app.schemas.railway import RailwayStationOut, SetupIn, SetupOut, SetupResult, StationTrainsOut
 from app.security.principal import Principal, get_principal
 from app.services import railway as svc
 from app.services.clients import client_of_division
@@ -54,16 +53,6 @@ def station_trains(code: str, refresh: bool = False, db: Session = Depends(get_d
     return svc.station_trains(db, provider, code, refresh=refresh and p.is_super_admin)
 
 
-@router.get("/trains/{train_no}/coaches", response_model=list[TrainCoachOut])
-def train_coaches(train_no: str, db: Session = Depends(get_db), p: Principal = Depends(get_principal),
-                  coach_provider: CoachProvider = Depends(get_coach_provider)):
-    """A train's passenger coaches from RailEngine, for the setup wizard. The people who set offices up only:
-    the Super Admin, or an office's Admin."""
-    if not (p.is_super_admin or p.role == RoleId.ADMIN):
-        raise Forbidden("Only the Super Admin or an office's Admin can look up a train's coaches", code="permission_denied")
-    return svc.train_coaches(coach_provider, train_no)
-
-
 @setup_router.get("/{client_id}/setup", response_model=SetupOut)
 def get_setup(client_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     out = svc.get_setup(db, p, client_id)
@@ -72,9 +61,8 @@ def get_setup(client_id: uuid.UUID, db: Session = Depends(get_db), p: Principal 
 
 @setup_router.put("/{client_id}/setup", response_model=SetupResult)
 def put_setup(client_id: uuid.UUID, body: SetupIn, db: Session = Depends(get_db), p: Principal = Depends(get_principal),
-              provider: TimetableProvider = Depends(get_timetable_provider),
-              coach_provider: CoachProvider = Depends(get_coach_provider)):
+              provider: TimetableProvider = Depends(get_timetable_provider)):
     """The office's stations and the trains planned from each, replaced as a whole. Journeys for the next
     days are planned straight away."""
     get_or_404(db, Client, client_id, "Client")
-    return svc.save_setup(db, p, client_id, body, provider, today=today_ist(), coach_provider=coach_provider)
+    return svc.save_setup(db, p, client_id, body, provider, today=today_ist())

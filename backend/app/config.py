@@ -50,11 +50,6 @@ class Settings(BaseSettings):
     railradar_enabled: bool = True
     railradar_base_url: str = "https://railradar.in"
 
-    # RailEngine train coach composition (app/providers/railengine.py): fills a train's coaches when an office
-    # sets it up. Without a key, coaches are typed by hand.
-    rail_engine_api_key: SecretStr | None = None
-    rail_engine_base_url: str = "https://railway-engine.apkscope.workers.dev/v1"
-
     # Reverse geocoding: coordinates -> a street address, stamped on attendance and inspection photos.
     # "disabled" (the default) keeps everything working and simply shows coordinates; nothing leaves the
     # server without a key. The key is a SERVER key: restrict it by the server's IP, not by HTTP referrer.

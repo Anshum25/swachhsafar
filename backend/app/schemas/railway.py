@@ -94,11 +94,3 @@ class SetupResult(BaseModel):
     journeys_created: int
     # Not created because the wallet could not pay for them; tried again on the next daily run.
     journeys_skipped: int = 0
-    # Trains whose coaches were filled from RailEngine, and those still without coaches (add them on the train).
-    coaches_auto: list[str] = []
-    coaches_missing: list[str] = []
-
-
-class TrainCoachOut(BaseModel):
-    code: str
-    classification: str
