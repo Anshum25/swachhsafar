@@ -93,10 +93,29 @@ export function identifyFaces({ faces, profiles, threshold, margin = GROUP_MARGI
     const round = (d) => (d == null ? null : Math.round(d * 1000) / 1000);
     if (!best) {
       return { index: s.index, box: s.box, userId: null, distance: round(s.ranked[0]?.distance ?? null),
-        runnerUp: null, status: 'unknown' };
+        runnerUp: null, runnerUpId: null, status: 'unknown' };
     }
     const clear = runnerUp == null || runnerUp.distance - best.distance >= margin;
+    // runnerUpId lets the screen ask the supervisor "which of these two is it?" for an ambiguous face.
     return { index: s.index, box: s.box, userId: best.userId, distance: round(best.distance),
-      runnerUp: round(runnerUp?.distance ?? null), status: clear ? 'identified' : 'ambiguous' };
+      runnerUp: round(runnerUp?.distance ?? null), runnerUpId: runnerUp?.userId ?? null,
+      status: clear ? 'identified' : 'ambiguous' };
   });
+}
+
+// ---- several readings of one face ---------------------------------------------------------------------
+// The group camera reads every face in a short burst of frames. One frame can catch a blink, a half-turn or
+// motion blur, and its descriptor lands far from the registered ones; the element-wise mean of the readings
+// of one face cancels much of that noise, while staying in the same space the registered descriptors live
+// in. Readings that are missing (the face could not be read in that frame) are skipped.
+export function meanDescriptor(readings) {
+  const usable = (readings ?? []).filter((d) => d && d.length);
+  if (!usable.length) return null;
+  const n = usable[0].length;
+  const out = new Array(n).fill(0);
+  for (const d of usable) {
+    if (d.length !== n) continue;
+    for (let i = 0; i < n; i += 1) out[i] += d[i];
+  }
+  return out.map((v) => v / usable.length);
 }

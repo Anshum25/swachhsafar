@@ -193,7 +193,11 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const recognised = new Map((group?.members ?? []).map((r) => [r.employee_id, r]));
   const autoMembers = members.filter((m) => recognised.has(m.employee_id));
   const groupPhoto = usePlain ? plainPhoto : (group?.ready ? group.photo : null);
-  const autoReady = mode === 'photo' && !usePlain && gps && group?.ready && autoMembers.length > 0 && !policy.loading && gate.allowed;
+  const photoReady = mode === 'photo' && !usePlain && gps && group?.ready && autoMembers.length > 0 && !policy.loading && gate.allowed
+    && !group.needsReview;
+  // Marked straight away only when the camera placed everyone itself; once the supervisor has settled a face
+  // by hand they confirm with a button, so a mis-tap can still be corrected.
+  const autoReady = photoReady && !group.reviewed;
   useEffect(() => {
     if (!autoReady || busy || done) return;
     submit(null, autoMembers);
@@ -225,7 +229,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
           group_photo: true, photo_media_id: mediaId,
           // The distance is evidence only where the device recognised this person and the supervisor
           // agreed. Where the supervisor supplied the name, nothing is claimed about a match.
-          ...(hit ? { face_distance: hit.distance, face_model: FACE_MODEL } : {}),
+          ...(hit && typeof hit.distance === 'number' ? { face_distance: hit.distance, face_model: FACE_MODEL } : {}),
           // A single frame cannot show that this face blinked, so no liveness is claimed for it either.
           ...gate.evidence({ liveness: 'not_required', faceModel: hit ? FACE_MODEL : null }),
         };
@@ -297,6 +301,8 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                     : done ? `Done. ${autoMembers.map((m) => `${m.name}: ${STAGES[m.stage - 1]}`).join(' · ')}`
                       : !gps ? 'Waiting for the location fix…'
                         : !group?.ready ? 'Hold the phone steady; the photo is taken and read automatically.'
+                          : group.needsReview ? 'Confirm the highlighted faces to continue.'
+                            : group.reviewed && autoMembers.length ? `Ready to mark ${autoMembers.length} present.`
                           : 'Nobody due was recognised. Retake the photo.'}
                 </p>
               )}
@@ -356,8 +362,14 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
           )}
           {gate.notice}
           {mode === 'photo' && !usePlain ? (
-            <div className="flex justify-end border-t border-line pt-3">
+            <div className="flex justify-end gap-2 border-t border-line pt-3">
               <button type="button" className="btn-secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
+              {group?.reviewed && !done && (
+                <button type="button" className="btn-primary" disabled={!photoReady || busy}
+                  onClick={() => submit(null, autoMembers)}>
+                  {`Mark ${autoMembers.length} present`}
+                </button>
+              )}
             </div>
           ) : (
             <SubmitBar busy={busy} disabled={!ready || done}

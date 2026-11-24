@@ -2,7 +2,7 @@
 // photo carries that a selfie does not is that the answer is the smallest of N distances, so these tests
 // are mostly about what the function REFUSES to decide.
 import { describe, expect, it } from 'vitest';
-import { GROUP_MARGIN, identifyFaces } from '../../src/face/faceMatch.js';
+import { GROUP_MARGIN, identifyFaces, meanDescriptor } from '../../src/face/faceMatch.js';
 
 const vec = (x, n = 128) => Array.from({ length: n }, () => x);
 const at = (d) => { const v = vec(0); v[0] = d; return v; }; // a descriptor exactly `d` from the origin
@@ -60,6 +60,27 @@ describe('group photo identification', () => {
     const box = { x: 1, y: 2, width: 3, height: 4 };
     expect(run([face(0, box)], [profile('a', 0)])[0].box).toEqual(box);
     expect(run([], [profile('a', 0)])).toEqual([]);
-    expect(run([face(0)], [])).toEqual([{ index: 0, box: null, userId: null, distance: null, runnerUp: null, status: 'unknown' }]);
+    expect(run([face(0)], [])).toEqual([{ index: 0, box: null, userId: null, distance: null, runnerUp: null, runnerUpId: null, status: 'unknown' }]);
+  });
+});
+
+describe('group photo: settling and steadying', () => {
+  it('names the runner-up of an ambiguous face, so the supervisor can be asked which one it is', () => {
+    const [row] = run([face(0)], [profile('a', 0.30), profile('b', 0.34)]);
+    expect(row).toMatchObject({ status: 'ambiguous', userId: 'a', runnerUpId: 'b' });
+  });
+
+  it('averages several readings of one face, skipping the ones that could not be read', () => {
+    expect(meanDescriptor([[0, 2], null, [2, 4]])).toEqual([1, 3]);
+    expect(meanDescriptor([null, undefined])).toBeNull();
+  });
+
+  it('a burst average steadies a face one frame would leave ambiguous', () => {
+    // One noisy frame lands between a and b; the average of three readings sits clearly on a.
+    const readings = [at(0.17), at(0.0), at(0.01)];
+    const one = run([{ descriptor: readings[0] }], [profile('a', 0.0), profile('b', 0.3)]);
+    expect(one[0].status).toBe('ambiguous');
+    const avg = run([{ descriptor: meanDescriptor(readings) }], [profile('a', 0.0), profile('b', 0.3)]);
+    expect(avg[0]).toMatchObject({ status: 'identified', userId: 'a' });
   });
 });

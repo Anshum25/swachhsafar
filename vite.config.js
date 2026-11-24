@@ -32,7 +32,8 @@ const BUILD_SHA = process.env.VITE_BUILD_SHA ?? '';
 
 // Face verification models (MIT, @vladmandic/face-api), copied from the package into public/models/face/ so
 // they are served and precached with the app (offline matching). Not committed: public/models/ is ignored.
-const FACE_MODELS = ['tiny_face_detector_model', 'face_landmark_68_model', 'face_recognition_model'];
+// ssd_mobilenetv1_model: the thorough detector the group photo is read with (src/face/faceEngine.js).
+const FACE_MODELS = ['tiny_face_detector_model', 'ssd_mobilenetv1_model', 'face_landmark_68_model', 'face_recognition_model'];
 function faceModels() {
   const copy = () => {
     const src = 'node_modules/@vladmandic/face-api/model';
