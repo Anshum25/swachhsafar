@@ -1,13 +1,16 @@
 // Point the camera at the crew; it follows everyone's head movement, takes the photo itself when everyone
 // has moved, works out who is in it, and hands back the names. Built for a crew of ten to fifteen people.
 //
-// How the shutter decides: movement. The preview follows every face from frame to frame and asks the crew
-// to turn their heads to one side and back. Each face is judged on its own (groupLiveness.js): a real head
-// turning shows 3-D depth -- the nose moves off the plane of the eyes, brows and mouth (depthCheck.js). A
-// printed photo, or a photo or video of a face on a phone held up to the camera, is flat and never passes.
-// Once every face in view has moved like a real person, and the crew is back facing the camera and steady
-// for a moment, the photo is taken -- one still, at full resolution. If someone never turns, the photo is
-// taken anyway after a while; that face is reported as "did not move", never marked.
+// How the shutter decides: the crew's own movement. Nobody is asked to do anything special; people shift,
+// glance around and turn as they settle. The preview follows every face from frame to frame and judges each
+// on its own (groupLiveness.js): a real head moving shows 3-D depth -- the nose moves off the plane of the
+// eyes, brows and mouth (depthCheck.js). A printed photo, or a photo or video of a face on a phone held up to
+// the camera, is flat and never passes.
+//
+// The photo is NOT taken while people are moving: a face turned away is a face that cannot be recognised.
+// It is taken at the first moment after that when every face in view is looking at the camera and the
+// crew is steady -- one still, at full resolution. If someone never moves, the photo is still taken (on a
+// frame where everyone faces the camera) after a while; that face is reported as "not seen moving".
 //
 // What it reads. The still is read with the thorough detector (SSD MobileNet, faceEngine.describeAll),
 // whole and in tiles so back-row faces are found, each face from its own enlarged close-up.
@@ -24,7 +27,7 @@ import { RefreshIcon, UsersIcon } from '../components/Icons.jsx';
 // Why a face was not marked, in one short line under its picture.
 function whyNot(r, nameOf, threshold) {
   if (r.small) return 'Too small or unclear to read. Come closer.';
-  if (r.status === 'identified' && !r.live) return `Looks like ${nameOf(r.userId)}, but did not turn their head (or is a photo).`;
+  if (r.status === 'identified' && !r.live) return `Looks like ${nameOf(r.userId)}, but was not seen moving (or is a photo).`;
   if (r.status === 'ambiguous') return `Looks like ${nameOf(r.userId)} or ${nameOf(r.runnerUpId)}; too close to tell apart.`;
   if (r.distance == null) return 'Nobody registered to compare with.';
   return `Closest match ${similarityPercent(r.distance)}%; needs ${requiredPercent(threshold)}%.`;
@@ -37,16 +40,24 @@ const CAMERA_ERRORS = {
 };
 
 // Once everyone has moved, the face count has to hold still for this long, over at least this many
-// detections, so the photo is not taken mid-turn or with the phone moving.
-const STEADY_MS = 800;
-const STEADY_FRAMES = 4;
+// detections, so the photo is not taken with the phone moving.
+const STEADY_MS = 600;
+const STEADY_FRAMES = 3;
+// A face is "looking at the camera" when its nose sits within this many inter-eye distances of the middle
+// of its eyes; this many frames in a row of everyone looking is the moment to shoot. A face turned further
+// than this is read far worse (a side view matched 49% where the same person face-on matches well).
+const FRONTAL_YAW = 0.12;
+const FRONTAL_FRAMES = 2;
+// How long the preview waits for the whole crew to be in view before shooting on whoever is there.
+const WAIT_FOR_ALL_MS = 6000;
 // Below this share of the frame height a face is too small to count at all.
 const MIN_FACE_SHARE = 0.02;
 // Below this share the faces are found but too small to recognise reliably: the screen asks to come closer.
 const GOOD_FACE_SHARE = 0.05;
-// How long the crew is given to turn their heads. After this the photo is taken anyway; only the faces that
-// were seen moving are marked, everyone else is reported.
+// How long the crew is given to move. After this the photo is taken anyway -- still on a frame where
+// everyone faces the camera, if one comes within the grace period; only faces seen moving are marked.
 const LIVE_PATIENCE_MS = 15000;
+const FRONTAL_GRACE_MS = 5000;
 // Stills larger than this are scaled down: plenty for recognition, and keeps the phone responsive.
 const MAX_WIDTH = 3000;
 
@@ -60,6 +71,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   const [seen, setSeen] = useState(0);              // faces in the live preview
   const [liveSeen, setLiveSeen] = useState({ live: 0, total: 0 });
   const [tooSmall, setTooSmall] = useState(false);  // faces in view, but too small to recognise well
+  const [looking, setLooking] = useState(false);    // every face in view is looking at the camera
   const [holdLeft, setHoldLeft] = useState(null);   // ms of the steady hold still to go
   const [progress, setProgress] = useState(null);   // { done, total } while reading
   const [photo, setPhoto] = useState(null);
@@ -138,7 +150,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
   const start = useCallback(async (useCamera) => {
     setError(null);
     setPhase('starting');
-    setPhoto(null); setRows([]); setCrops([]); setSeen(0); setProgress(null); setTooSmall(false);
+    setPhoto(null); setRows([]); setCrops([]); setSeen(0); setProgress(null); setTooSmall(false); setLooking(false);
     setLiveSeen({ live: 0, total: 0 });
     const liveness = createGroupLiveness();
     let liveState = liveness.snapshot();
@@ -195,7 +207,9 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
     let steady = 0;
     let since = null;
     let lastCount = -1;
+    let frontalRun = 0;
     const startedAt = Date.now();
+    const want = crew.length;
 
     const look = async () => {
       if (shooting || myRun !== runId.current || !video.current) return;
@@ -219,12 +233,22 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       } else {
         steady += 1;
       }
+      // Everyone in view looking at the camera, for a couple of frames in a row.
+      const frontal = usable.length > 0 && usable.every((f) => Math.abs(f.yaw) <= FRONTAL_YAW);
+      frontalRun = frontal ? frontalRun + 1 : 0;
+      setLooking(frontal);
       // Everyone in view has to have moved like a real person before the photo is taken.
       const allLive = liveState.total > 0 && liveState.live >= Math.min(liveState.total, usable.length);
+      // The whole crew in view, or long enough waited for the rest.
+      const enough = usable.length >= want || t - startedAt >= WAIT_FOR_ALL_MS;
       setHoldLeft(allLive && since != null ? Math.max(0, STEADY_MS - (t - since)) : null);
-      const settled = allLive && usable.length > 0 && steady >= STEADY_FRAMES && since != null && t - since >= STEADY_MS;
-      // Out of patience: take the photo anyway. Faces not seen moving are reported, never marked.
-      const impatient = usable.length > 0 && t - startedAt >= LIVE_PATIENCE_MS;
+      const settled = allLive && enough && frontalRun >= FRONTAL_FRAMES
+        && steady >= STEADY_FRAMES && since != null && t - since >= STEADY_MS;
+      // Out of patience: take the photo anyway, on a frame where everyone faces the camera if one comes
+      // soon. Faces not seen moving are reported, never marked.
+      const late = t - startedAt;
+      const impatient = usable.length > 0 && late >= LIVE_PATIENCE_MS
+        && (frontalRun >= FRONTAL_FRAMES || late >= LIVE_PATIENCE_MS + FRONTAL_GRACE_MS);
       if (settled || impatient) { await shoot(); return; }
       setTimeout(look, 0);
     };
@@ -243,8 +267,9 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       : seen === 0 ? 'Point the camera at the crew'
         : tooSmall ? `${seen} ${seen === 1 ? 'face' : 'faces'} in view — come closer, the faces are too small`
           : liveSeen.live < liveSeen.total
-            ? `Everyone: slowly turn your head to one side and back · ${liveSeen.live}/${liveSeen.total} done`
-            : `Now look at the camera and hold still${holdLeft != null ? ` · ${(holdLeft / 1000).toFixed(1)}s` : ''}`;
+            ? `Checking everyone is present · ${liveSeen.live}/${liveSeen.total}`
+            : !looking ? 'Everyone look at the camera'
+              : `Hold still${holdLeft ? ` · ${(holdLeft / 1000).toFixed(1)}s` : ''}`;
 
   return (
     <div className="space-y-2">
@@ -274,8 +299,8 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
 
       {phase === 'looking' && (
         <p className="text-xs text-muted">
-          Stand 2{'–'}3 metres from the crew, in two rows at most, in good light. Everyone turns their head
-          slowly to one side and back; the photo is taken by itself.
+          Stand 2{'–'}3 metres from the crew, in two rows at most, in good light. The crew can move
+          naturally; the photo is taken by itself the moment everyone is looking at the camera.
         </p>
       )}
 
@@ -309,8 +334,8 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
           )}
           {missed.length > 0 && unplaced.length > 0 && (
             <p className="text-xs text-amber-700">
-              Not yet marked: {unplaced.map((c) => c.name).join(', ')}. Retake with everyone turning their head
-              when asked, or mark them one at a time.
+              Not yet marked: {unplaced.map((c) => c.name).join(', ')}. Retake with everyone in view and looking
+              at the camera, or mark them one at a time.
             </p>
           )}
           <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
