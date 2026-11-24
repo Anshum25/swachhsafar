@@ -55,14 +55,8 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 // Eye aspect ratio (Soukupová & Čech 2016) from the six 68-point landmarks of one eye: low when closed.
 const ear = (p) => (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3]));
 
-// The landmarks the 3-D depth check reads (see depthCheck.js): brow ends, eye corners and mouth corners as
-// the face's frame of reference, and the nose, which stands well out of that frame on a real face.
-export const DEPTH_LANDMARKS = [17, 26, 36, 39, 42, 45, 48, 54, 27, 29, 30, 33];
-
-// Faces in one video frame with the measures the liveness challenge needs: { count, box, ear, yaw, pitch,
-// size, points }. yaw: nose tip offset from the eyes' midpoint, in inter-eye distances (0 = facing the
-// camera; positive = the person turned to their own left). pitch: the same, vertically (smaller = looking
-// up). points: the DEPTH_LANDMARKS, as [x, y] pixel pairs.
+// Faces in one video frame with the measures the liveness challenge needs: { count, box, ear, yaw, size }.
+// yaw: nose tip offset from the eyes' midpoint, in inter-eye distances (0 = facing the camera).
 export async function analyseFrame(video) {
   const faceapi = await loadFaceEngine();
   // 320 rather than 224: the eye corners this reads are what a blink is measured from, and a closed eye
@@ -82,9 +76,7 @@ export async function analyseFrame(video) {
     ear: (ear(leftEye) + ear(rightEye)) / 2,
     eyes: [eyeBox(leftEye), eyeBox(rightEye)],
     yaw: (nose.x - mid.x) / span,
-    pitch: (nose.y - mid.y) / span,
     size: box.width / (video.videoWidth || 1),
-    points: DEPTH_LANDMARKS.map((i) => [pts[i].x, pts[i].y]),
   };
 }
 
@@ -193,27 +185,6 @@ export async function detectFaces(input, { inputSize = PREVIEW_INPUT_SIZE } = {}
       score: d.score,
     }))
     .sort((a, b) => a.box.x - b.box.x);
-}
-
-// Every face in a video frame with what the group liveness check needs (groupLiveness.js): its box, its
-// yaw (as in analyseFrame) and the DEPTH_LANDMARKS. Slower than detectFaces -- landmarks for each face --
-// but the preview needs them to tell a real head from a picture of one.
-export async function analyseFaces(input, { inputSize = PREVIEW_INPUT_SIZE } = {}) {
-  const faceapi = await loadFaceEngine();
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.4 });
-  const found = await faceapi.detectAllFaces(input, options).withFaceLandmarks();
-  return found.map((f) => {
-    const pts = f.landmarks.positions;
-    const eyeL = pts[36]; const eyeR = pts[45]; const nose = pts[30];
-    const span = dist(eyeL, eyeR) || 1;
-    const d = f.detection.box;
-    return {
-      box: { x: Math.round(d.x), y: Math.round(d.y), width: Math.round(d.width), height: Math.round(d.height) },
-      score: f.detection.score,
-      yaw: (nose.x - (eyeL.x + eyeR.x) / 2) / span,
-      points: DEPTH_LANDMARKS.map((i) => [pts[i].x, pts[i].y]),
-    };
-  }).sort((a, b) => a.box.x - b.box.x);
 }
 
 // Intersection over the smaller box: two detections of one face from overlapping tiles overlap almost

@@ -106,9 +106,7 @@ export function SecurityProvider({ children }) {
 // For a capture screen: whether `action` may run now, the notice to show, and the evidence to attach.
 export function useSecurityGate(action) {
   const sec = useSecurity();
-  if (!sec) return { allowed: true, decision: { allowed: true, blockers: [], warnings: [] }, notice: null,
-    // Liveness is still reported without the provider: the group photo route is refused without it.
-    evidence: ({ liveness } = {}) => (liveness === 'passed' ? { security: { liveness } } : {}) };
+  if (!sec) return { allowed: true, decision: { allowed: true, blockers: [], warnings: [] }, notice: null, evidence: () => ({}) };
   const decision = sec.decide(action);
   return {
     allowed: decision.allowed,

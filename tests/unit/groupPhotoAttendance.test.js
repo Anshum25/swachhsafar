@@ -46,7 +46,7 @@ describe('group photo attendance on the device', () => {
     await store.ingestChanges({ ...groupOn(), face_profiles: [profile(IDS.janitor1)] });
 
     // Recognised and confirmed: the distance travels with the record as evidence.
-    const matched = groupCapture({ face_distance: 0.3, face_model: MODEL, security: { liveness: 'passed' } });
+    const matched = groupCapture({ face_distance: 0.3, face_model: MODEL });
     await store.capture(matched);
     const [a] = await store.db.query('SELECT payload FROM sync_outbox WHERE entity_id = ?', [matched.payload.id]);
     expect(JSON.parse(a.payload).op.payload).toMatchObject({ group_photo: true, face_distance: 0.3 });
@@ -60,25 +60,16 @@ describe('group photo attendance on the device', () => {
     expect(sent.face_distance ?? null).toBeNull();
   });
 
-  it('refuses a recognised face that was not seen live (a photo of a photo or a screen)', async () => {
-    const { store } = await seededStore();
-    await store.ingestChanges({ ...groupOn(), face_profiles: [profile(IDS.janitor1)] });
-    await expect(store.capture(groupCapture({ face_distance: 0.3, face_model: MODEL })))
-      .rejects.toMatchObject({ code: 'liveness_required' });
-    await expect(store.capture(groupCapture({ face_distance: 0.3, face_model: MODEL, security: { liveness: 'failed' } })))
-      .rejects.toMatchObject({ code: 'liveness_required' });
-  });
-
   it('still refuses a claimed match that is wrong, or that names a face nobody registered', async () => {
     const { store } = await seededStore();
     await store.ingestChanges({ ...groupOn(), face_profiles: [profile(IDS.janitor1)] });
     // Above the division's threshold: a distance offered as evidence has to hold up.
-    await expect(store.capture(groupCapture({ face_distance: 0.62, face_model: MODEL, security: { liveness: 'passed' } })))
+    await expect(store.capture(groupCapture({ face_distance: 0.62, face_model: MODEL })))
       .rejects.toMatchObject({ code: 'face_mismatch' });
     // A distance against a model this employee was never registered with proves nothing.
-    await expect(store.capture(groupCapture({ face_distance: 0.2, face_model: 'other', security: { liveness: 'passed' } })))
+    await expect(store.capture(groupCapture({ face_distance: 0.2, face_model: 'other' })))
       .rejects.toMatchObject({ code: 'face_not_verified' });
-    await expect(store.capture(groupCapture({ employee_id: IDS.janitor2, face_distance: 0.2, face_model: MODEL, security: { liveness: 'passed' } })))
+    await expect(store.capture(groupCapture({ employee_id: IDS.janitor2, face_distance: 0.2, face_model: MODEL })))
       .rejects.toMatchObject({ code: 'face_not_verified' });
   });
 
