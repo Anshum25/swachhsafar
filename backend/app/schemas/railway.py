@@ -97,6 +97,9 @@ class SetupResult(BaseModel):
     # Trains whose coaches were filled from RailRadar, and those still without coaches (add them on the train).
     coaches_auto: list[str] = []
     coaches_missing: list[str] = []
+    # Train -> the train that takes its rake back (RailRadar's returnTrain): journeys' linked train and return
+    # leg. A train not here has no return train known; its journeys keep the train's duration_days.
+    return_trains: dict[str, str] = {}
 
 
 class TrainCoachOut(BaseModel):

@@ -17,6 +17,7 @@ from app.models import (
     User,
     UserStatus,
 )
+from app.providers.railradar import WEEKDAYS
 from app.schemas.common import PageParams
 from app.schemas.journeys import JourneyCancel, JourneyCreate, JourneyUpdate, StaffAdd, SupervisorAssign
 from app.schemas.trains import CoachIn
@@ -36,6 +37,30 @@ def derive_dates(journey_date: date, duration_days: int) -> tuple[date, date]:
     linked = journey_date + timedelta(days=duration_days)
     end = linked + timedelta(days=max(duration_days - 1, 0))
     return linked, end
+
+
+RETURN_SEARCH_DAYS = 8  # a weekly return train is always found within a week of arriving
+
+
+def return_leg(journey_date: date, train: Train, ret: Train | None) -> tuple[date, date, date] | None:
+    """(outbound_end, linked, end) of a journey whose train goes back as `ret` (RailRadar's return train).
+
+    The train reaches its destination arrival_day_offset days after it leaves. The return leg starts on the
+    first day from then on that `ret` runs -- the arrival day itself only if `ret` leaves after the train
+    arrives -- and ends ret.arrival_day_offset days later. None when either run is not known, so the caller
+    falls back on the train's duration_days (derive_dates)."""
+    if ret is None or train.arrival_day_offset is None or ret.arrival_day_offset is None:
+        return None
+    arrive = journey_date + timedelta(days=train.arrival_day_offset)
+    days = set(ret.run_days.split(",")) if ret.run_days else None
+    for k in range(RETURN_SEARCH_DAYS):
+        day = arrive + timedelta(days=k)
+        if days is not None and WEEKDAYS[day.weekday()] not in days:
+            continue
+        if k == 0 and train.end_time and ret.start_time and ret.start_time <= train.end_time:
+            continue  # leaves before the rake has come in: its next run
+        return arrive, day, day + timedelta(days=ret.arrival_day_offset)
+    return None
 
 
 def journey_state(j: Journey, today: date | None = None) -> JourneyState:
@@ -179,30 +204,43 @@ def _allocate(db: Session, j: Journey, user: User, actor_id: uuid.UUID) -> Staff
 def create_journey(db: Session, p: Principal, body: JourneyCreate) -> Journey:
     p.require("journeys.manage", body.division_id)
     train = _train(db, body.train_id, body.division_id, "Train")
-    if body.linked_train_id is not None:
-        if body.linked_train_id == body.train_id:
+    # No linked train given: the train's return train from RailRadar, when setup found one.
+    linked_train_id = body.linked_train_id
+    if linked_train_id is None and train.return_train_id is not None:
+        candidate = db.get(Train, train.return_train_id)
+        if candidate is not None and candidate.division_id == body.division_id and candidate.is_active:
+            linked_train_id = candidate.id
+    linked_train = None
+    if linked_train_id is not None:
+        if linked_train_id == body.train_id:
             raise BusinessRuleViolation("Linked train must differ from the main train")
-        _train(db, body.linked_train_id, body.division_id, "Linked train")
+        linked_train = _train(db, linked_train_id, body.division_id, "Linked train")
     supervisor = _staff_user(db, body.supervisor_id, body.division_id, {RoleId.SUPERVISOR}, "Supervisor")
     staff = [_staff_user(db, uid, body.division_id, ALLOCATABLE_ROLES, "Staff member") for uid in dict.fromkeys(body.staff_ids)]
     if body.journey_date < today_ist() - timedelta(days=1):
         raise BusinessRuleViolation("Journey date is in the past")
 
     linked, end = derive_dates(body.journey_date, train.duration_days)
+    outbound_end = body.outbound_end_date
+    leg = return_leg(body.journey_date, train, linked_train)
+    if leg is not None and body.linked_journey_date is None and body.end_date is None and outbound_end is None:
+        outbound_end, linked, end = leg  # dates typed in win over the timetable
     if body.linked_journey_date is not None:
         linked = body.linked_journey_date
         end = linked + timedelta(days=max(train.duration_days - 1, 0))
     if body.end_date is not None:
         end = body.end_date
-    _check_dates(body.journey_date, body.outbound_end_date, linked, end)
+    _check_dates(body.journey_date, outbound_end, linked, end)
     coaches = body.coaches or [CoachIn(code=c.code, classification=c.classification) for c in train.coaches]
 
     j = Journey(
-        division_id=body.division_id, train_id=train.id, linked_train_id=body.linked_train_id,
-        journey_date=body.journey_date, outbound_end_date=body.outbound_end_date, linked_journey_date=linked, end_date=end,
+        division_id=body.division_id, train_id=train.id, linked_train_id=linked_train_id,
+        journey_date=body.journey_date, outbound_end_date=outbound_end, linked_journey_date=linked, end_date=end,
         start_time=body.start_time or train.start_time, end_time=body.end_time or train.end_time,
-        return_start_time=body.return_start_time or train.return_start_time,
-        return_end_time=body.return_end_time or train.return_end_time,
+        return_start_time=body.return_start_time or train.return_start_time
+        or (linked_train.start_time if linked_train else None),
+        return_end_time=body.return_end_time or train.return_end_time
+        or (linked_train.end_time if linked_train else None),
         duration_days=train.duration_days, operational_days=train.operational_days, daywise=train.daywise,
         inspection_rounds_per_day=train.inspection_rounds_per_day,
         before_inspection_enabled=train.before_inspection_enabled, after_inspection_enabled=train.after_inspection_enabled,
@@ -371,6 +409,7 @@ def to_out(j: Journey) -> dict:
     return dict(
         id=j.id, division_id=j.division_id, train_id=j.train_id, train_no=j.train.train_no, train_name=j.train.name,
         linked_train_id=j.linked_train_id, linked_train_no=j.linked_train.train_no if j.linked_train else None,
+        linked_train_name=j.linked_train.name if j.linked_train else None,
         journey_date=j.journey_date, outbound_end_date=j.outbound_end_date, linked_journey_date=j.linked_journey_date,
         end_date=j.end_date, start_time=j.start_time, end_time=j.end_time, return_start_time=j.return_start_time,
         return_end_time=j.return_end_time, duration_days=j.duration_days, operational_days=j.operational_days,

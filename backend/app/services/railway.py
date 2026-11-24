@@ -36,11 +36,12 @@ from app.models import (
     Train,
     TrainCoach,
 )
-from app.providers.railradar import RailRadarError, TimetableProvider, WEEKDAYS
+from app.providers.railradar import RailRadarError, TimetableProvider, TrainSchedule, WEEKDAYS
 from app.security.principal import Principal
 from app.services.clients import charge_journey
 from app.services.common import audit, get_or_404
-from app.services.journeys import derive_dates
+from app.services import journeys as journeys_svc
+from app.services.journeys import derive_dates, return_leg
 from app.timeutil import utcnow
 
 PLAN_DAYS = 3
@@ -194,6 +195,7 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
     created_divisions, planned = 0, []
     coaches_auto: list[str] = []
     coaches_missing: list[str] = []
+    return_trains: dict[str, str] = {}
     for code, pick in chosen.items():
         board = boards[code]
         division = db.scalar(select(Division).where(Division.client_id == client.id, Division.station_code == code))
@@ -223,19 +225,27 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
             train.destination_name = info.get("destination_name")
             train.run_days = ",".join(info["run_days"]) if info.get("run_days") else None
             train.auto_journeys, train.is_active = True, True
+            # RailRadar's train-status page, read once per train: its arrival, its return train and its rake.
+            # Setup never fails for want of it -- the train is saved, its coaches named in coaches_missing,
+            # and its journeys keep duration_days.
+            sched = None
+            if train.arrival_day_offset is None or (not choice.coaches and not train.coaches):
+                sched = _schedule(provider, no)
+                if sched is not None:
+                    _apply_run(train, sched)
             if choice.coaches:
                 train.coaches = [TrainCoach(code=c.code, classification=c.classification, position=i)
                                  for i, c in enumerate(choice.coaches, 1)]
             elif not train.coaches:
-                # None typed and none yet: the train's rake from RailRadar's train-status page, when it can be
-                # had. Setup never fails for want of it -- the train is saved, and named in coaches_missing.
-                fetched = _composition(provider, no)
-                if fetched:
+                if sched is not None and sched.coaches:
                     train.coaches = [TrainCoach(code=c.code, classification=c.classification, position=i)
-                                     for i, c in enumerate(fetched, 1)]
+                                     for i, c in enumerate(sched.coaches, 1)]
                     coaches_auto.append(no)
                 else:
                     coaches_missing.append(no)
+            ret = _link_return_train(db, provider, train, sched, today=today)
+            if ret is not None:
+                return_trains[no] = ret.train_no
             planned.append(no)
     # Stations dropped from the setup: keep them, stop planning their trains.
     for division in db.scalars(select(Division).where(Division.client_id == client.id,
@@ -250,14 +260,71 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
     db.commit()
     result = plan_journeys(db, today=today, client_id=client.id)
     return dict(divisions_created=created_divisions, trains_planned=len(planned), journeys_created=result["created"],
-                journeys_skipped=result["skipped"], coaches_auto=coaches_auto, coaches_missing=coaches_missing)
+                journeys_skipped=result["skipped"], coaches_auto=coaches_auto, coaches_missing=coaches_missing,
+                return_trains=return_trains)
 
 
-def _composition(provider: TimetableProvider, train_no: str) -> list:
+def _schedule(provider: TimetableProvider, train_no: str) -> TrainSchedule | None:
     try:
-        return provider.composition(train_no)
+        return provider.schedule(train_no)
     except RailRadarError:
-        return []
+        return None
+
+
+def _apply_run(train: Train, sched: TrainSchedule) -> None:
+    """A train's arrival at its destination, from its train-status page."""
+    if sched.arrival_day_offset is not None and sched.arrival_day_offset <= 15:
+        train.arrival_day_offset = sched.arrival_day_offset
+    if sched.arrival:
+        train.end_time = time.fromisoformat(sched.arrival)
+
+
+def _link_return_train(db: Session, provider: TimetableProvider, train: Train,
+                       sched: TrainSchedule | None, *, today: date) -> Train | None:
+    """The train that takes `train`'s rake back from its destination, saved as a train of the same division
+    (a journey's linked train must be one) and linked as train.return_train_id. Its own page gives its
+    departure, arrival and run days, read once; it is never planned on its own (auto_journeys stays off), and
+    runs on the same coaches. None when RailRadar names no return train and none was linked before."""
+    ret = db.get(Train, train.return_train_id) if train.return_train_id else None
+    ret_no = sched.return_train_no if sched is not None and sched.return_train_no else (ret.train_no if ret else None)
+    if ret_no is None or ret_no == train.train_no:
+        return None
+    if ret is None or ret.train_no != ret_no:
+        ret = db.scalar(select(Train).options(selectinload(Train.coaches))
+                        .where(Train.division_id == train.division_id, Train.train_no == ret_no))
+    if ret is None:
+        ret = Train(division_id=train.division_id, train_no=ret_no, name=f"Train {ret_no}", duration_days=1,
+                    operational_days=1, inspection_rounds_per_day=1, before_inspection_enabled=True,
+                    after_inspection_enabled=True, daywise=False, is_active=True, auto_journeys=False)
+        db.add(ret)
+    if ret.arrival_day_offset is None:
+        back = _schedule(provider, ret_no)
+        if back is not None:
+            ret.name = back.name if back.name and len(back.name) >= 2 else ret.name
+            ret.start_time = time.fromisoformat(back.departure) if back.departure else ret.start_time
+            ret.origin_code, ret.destination_code = back.origin_code, back.destination_code
+            ret.destination_name = back.destination_name
+            ret.run_days = ",".join(back.run_days) if back.run_days else None
+            _apply_run(ret, back)
+    if not ret.coaches and train.coaches:
+        ret.coaches = [TrainCoach(code=c.code, classification=c.classification, position=c.position)
+                       for c in train.coaches]
+    ret.is_active = True
+    db.flush()
+    train.return_train_id = ret.id
+    train.return_start_time, train.return_end_time = ret.start_time, ret.end_time
+    first = _next_run(train, today)
+    leg = return_leg(first, train, ret)
+    if leg is not None and (leg[1] - first).days <= 15:
+        train.duration_days = (leg[1] - first).days  # the usual gap, for journeys typed in by hand
+    return ret
+
+
+def _next_run(train: Train, start: date) -> date:
+    for k in range(7):
+        if runs_on(train, start + timedelta(days=k)):
+            return start + timedelta(days=k)
+    return start
 
 
 def train_coaches(provider: TimetableProvider, train_no: str) -> list[dict]:
@@ -268,6 +335,68 @@ def train_coaches(provider: TimetableProvider, train_no: str) -> list[dict]:
         if exc.kind in ("not_found", "parse"):
             raise NotFound(f"No coach composition for train {train_no}") from exc
         raise ServiceUnavailable(str(exc), code=f"railradar_{exc.kind}") from exc
+
+
+# ---- a journey's return leg (journey B) --------------------------------------------------------------------
+
+
+def suggest_return_leg(db: Session, p: Principal, journey_id: uuid.UUID, body, provider: TimetableProvider,
+                       *, today: date) -> dict:
+    """Journey B of a journey: its return train and when it runs, for the journey screen to show, let the
+    user adjust, and save with PATCH /journeys/{id}. The journey is not changed here.
+
+    The return train is the one asked for (body.linked_train_id, a train of the journey's division), else the
+    train's return train linked at setup, else -- body.lookup -- the one RailRadar's train-status page names,
+    which is then saved as a train of the division and linked to the train, so the next journey of that train
+    (and the daily planner) has it without asking RailRadar again."""
+    j = journeys_svc.get_journey(db, p, journey_id)
+    p.require("journeys.manage", j.division_id)
+    journeys_svc.require_open(j)
+    train = db.get(Train, j.train_id)
+    source, message, ret = "none", None, None
+    if body.linked_train_id is not None:
+        if body.linked_train_id == train.id:
+            raise BusinessRuleViolation("Linked train must differ from the main train")
+        ret = journeys_svc._train(db, body.linked_train_id, j.division_id, "Linked train")
+        source = "picked"
+    elif train.return_train_id is not None:
+        saved = db.get(Train, train.return_train_id)
+        if saved is not None and saved.division_id == j.division_id and saved.is_active:
+            ret, source = saved, "saved"
+    if ret is None and body.linked_train_id is None and body.lookup:
+        try:
+            sched = provider.schedule(train.train_no)
+        except RailRadarError as exc:
+            raise ServiceUnavailable(f"Could not read train {train.train_no} from RailRadar: {exc}",
+                                     code=f"railradar_{exc.kind}") from exc
+        _apply_run(train, sched)
+        if not train.coaches and sched.coaches:
+            train.coaches = [TrainCoach(code=c.code, classification=c.classification, position=i)
+                             for i, c in enumerate(sched.coaches, 1)]
+        ret = _link_return_train(db, provider, train, sched, today=today)
+        if ret is not None:
+            source = "railradar"
+            audit(db, actor_id=p.id, action="train.return_linked", entity=train, division_id=train.division_id,
+                  changes={"return_train_no": ret.train_no, "from": "railradar"})
+        else:
+            message = f"RailRadar names no return train for {train.train_no}. Pick one of the division's trains."
+        db.commit()
+    elif ret is None:
+        message = "No return train is linked to this train yet."
+
+    leg = return_leg(j.journey_date, train, ret)
+    if leg is not None:
+        outbound_end, linked, end = leg
+    else:
+        outbound_end, (linked, end) = j.outbound_end_date, derive_dates(j.journey_date, train.duration_days)
+    return dict(
+        source=source, message=message, linked_train_id=ret.id if ret else None,
+        linked_train_no=ret.train_no if ret else None, linked_train_name=ret.name if ret else None,
+        from_timetable=leg is not None, outbound_end_date=outbound_end, linked_journey_date=linked, end_date=end,
+        end_time=train.end_time or j.end_time,
+        return_start_time=(ret.start_time if ret else None) or j.return_start_time,
+        return_end_time=(ret.end_time if ret else None) or j.return_end_time,
+    )
 
 
 # ---- the daily planner -------------------------------------------------------------------------------------
@@ -293,6 +422,8 @@ def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = Non
     trains = list(db.scalars(stmt))
     if not trains:
         return dict(created=0, skipped=0)
+    returns = {t.id: t for t in db.scalars(select(Train).where(
+        Train.id.in_([t.return_train_id for t in trains if t.return_train_id]), Train.is_active))}
     window = [today + timedelta(days=i) for i in range(days)]
     have = set(db.execute(select(Journey.train_id, Journey.journey_date).where(
         Journey.train_id.in_([t.id for t in trains]), Journey.journey_date.in_(window), Journey.auto_created)).all())
@@ -302,12 +433,19 @@ def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = Non
         for train in trains:
             if (train.id, day) in have or not runs_on(train, day):
                 continue
-            linked, end = derive_dates(day, train.duration_days)
+            # The return train from RailRadar fixes the return leg; without one, the train's duration_days.
+            ret = returns.get(train.return_train_id) if train.return_train_id else None
+            ret = ret if ret is not None and ret.division_id == train.division_id else None
+            leg = return_leg(day, train, ret)
+            outbound_end, (linked, end) = (leg[0], leg[1:]) if leg else (None, derive_dates(day, train.duration_days))
             j = Journey(
-                division_id=train.division_id, train_id=train.id, journey_date=day, linked_journey_date=linked,
+                division_id=train.division_id, train_id=train.id, linked_train_id=ret.id if ret else None,
+                journey_date=day, outbound_end_date=outbound_end, linked_journey_date=linked,
                 end_date=end, start_time=train.start_time, end_time=train.end_time,
-                return_start_time=train.return_start_time, return_end_time=train.return_end_time,
-                duration_days=train.duration_days, operational_days=train.operational_days, daywise=train.daywise,
+                return_start_time=train.return_start_time or (ret.start_time if ret else None),
+                return_end_time=train.return_end_time or (ret.end_time if ret else None),
+                duration_days=(linked - day).days if leg else train.duration_days,
+                operational_days=train.operational_days, daywise=train.daywise,
                 inspection_rounds_per_day=train.inspection_rounds_per_day,
                 before_inspection_enabled=train.before_inspection_enabled,
                 after_inspection_enabled=train.after_inspection_enabled,
