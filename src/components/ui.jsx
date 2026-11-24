@@ -1,5 +1,6 @@
 // Reusable building blocks for the operational screens: page headers, cards, tables, dialogs,
 // form fields and the loading / empty / error / offline / sync states every data view needs.
+import { isBlank } from '../utils/blank.js';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertIcon, ArrowLeftIcon, InfoIcon, MoreIcon, Spinner, XIcon } from './Icons.jsx';
@@ -130,7 +131,7 @@ export function DataState({ res, empty, isEmpty, children }) {
   if (res.loading && !res.data) return <Loading />;
   if (res.error && !res.data) return <ErrorNote error={res.error} onRetry={res.reload} />;
   if (!res.data) return null;
-  const blank = isEmpty ? isEmpty(res.data) : Array.isArray(res.data) ? !res.data.length : !res.data.items?.length;
+  const blank = isEmpty ? isEmpty(res.data) : isBlank(res.data); // an empty list, never a single record
   return (
     <>
       <StaleNote stale={res.stale} cachedAt={res.cachedAt} />
