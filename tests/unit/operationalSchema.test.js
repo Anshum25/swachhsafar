@@ -24,8 +24,8 @@ describe('operational schema', () => {
   it('creates every operational table on a fresh database', async () => {
     const db = await createMemoryDb({ migrate: false });
     const result = await runMigrations(db);
-    expect(result).toEqual({ from: 0, to: 17, applied: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] });
-    expect(LATEST_VERSION).toBe(17);
+    expect(result).toEqual({ from: 0, to: 18, applied: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] });
+    expect(LATEST_VERSION).toBe(18);
     expect(await tables(db)).toEqual(expect.arrayContaining(['users', 'sync_outbox', 'sync_meta', ...OPERATIONAL_TABLES]));
     expect((await db.query('SELECT id, name FROM roles ORDER BY id')).map((r) => r.name)).toEqual(
       ['Super Admin', 'Admin', 'Manager', 'Supervisor/EHK', 'Janitor', 'Contractor'],
@@ -54,7 +54,7 @@ describe('operational schema', () => {
     const me = { user: { id: IDS.supervisor, emp_id: 'EMP7', name: 'Ravi Kumar', email: 'Ravi@Example.com', role_id: 4, division_id: IDS.division, status: 'active' }, divisions: { [IDS.division]: ['attendance.submit'] } };
     await db.run(`INSERT INTO sync_meta (key, value, updated_at) VALUES ('session_me', ?, '2026-11-01T00:00:00Z')`, [JSON.stringify(me)]);
 
-    expect(await runMigrations(db)).toEqual({ from: 2, to: 17, applied: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] });
+    expect(await runMigrations(db)).toEqual({ from: 2, to: 18, applied: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] });
     expect(await db.query('SELECT email, registration_status FROM users')).toEqual([{ email: 'ravi@example.com', registration_status: 'pending' }]);
     expect((await db.query('SELECT id FROM sync_outbox')).map((r) => r.id)).toContain('op-1');
     const store = createLocalStore({ db, files: createMemoryFiles(), logger: null });
@@ -81,7 +81,7 @@ describe('operational schema', () => {
     await first.db.close();
 
     const db = await createMemoryDb({ filename }); // migrations are a no-op on reopen
-    expect(await getSchemaVersion(db)).toBe(17);
+    expect(await getSchemaVersion(db)).toBe(18);
     const store = createLocalStore({ db, files, now: () => NOW, logger: null });
     expect(await store.attendance.get(capture.payload.id)).toMatchObject({ stage: 1, sync_status: 'pending' });
     expect(await db.query("SELECT entity_id FROM sync_outbox WHERE sync_status = 'pending'")).toEqual([{ entity_id: capture.payload.id }]);
@@ -121,25 +121,24 @@ describe('database-level guarantees', () => {
       ['x', IDS.journey, IDS.division, IDS.janitor1, 't', 't'])).rejects.toThrow(/CHECK/);
   });
 
-  it('enforces inspection round and phase order, and slot uniqueness, in SQL', async () => {
+  it('takes inspection rounds and phases in any order, and enforces slot uniqueness, in SQL', async () => {
     const { db } = await seededStore();
     const raw = (round, phase) => ({
       sql: `INSERT INTO inspection_records (id, journey_id, division_id, coach_code, day, round, phase, origin, sync_status, created_at, updated_at)
             VALUES (?, ?, ?, 'B1', 1, ?, ?, 'local', 'pending', 't', 't')`,
       params: [crypto.randomUUID(), IDS.journey, IDS.division, round, phase],
     });
-    await expect(db.transaction([raw(1, 'A')])).rejects.toThrow(/phase_order/);
-    await expect(db.transaction([raw(2, 'B')])).rejects.toThrow(/round_order/);
+    await db.transaction([raw(2, 'A')]);
+    await db.transaction([raw(1, 'A')]);
     await db.transaction([raw(1, 'B')]);
     await expect(db.transaction([raw(1, 'B')])).rejects.toThrow(/UNIQUE/);
-    await db.transaction([raw(1, 'A')]);
-    expect((await db.query('SELECT phase FROM inspection_records ORDER BY phase')).map((r) => r.phase)).toEqual(['A', 'B']);
+    expect((await db.query('SELECT round, phase FROM inspection_records ORDER BY round, phase')).map((r) => `${r.round}${r.phase}`)).toEqual(['1A', '1B', '2A']);
   });
 
   it('rolls back the whole capture when any statement fails, including media and outbox', async () => {
     const { db, files, store } = await seededStore();
-    const capture = inspectionPayload({ round: 2 }); // round 1 missing: the capture must be refused
-    await expect(store.capture(capture)).rejects.toMatchObject({ code: 'round_order' });
+    const capture = inspectionPayload({ day: 3 }); // beyond the journey's days: the capture must be refused
+    await expect(store.capture(capture)).rejects.toMatchObject({ code: 'day_out_of_range' });
     for (const t of ['inspection_records', 'media_files', 'sync_outbox', 'audit_events']) expect(await db.query(`SELECT * FROM ${t}`), t).toEqual([]);
     expect(files.map.size).toBe(0);
   });

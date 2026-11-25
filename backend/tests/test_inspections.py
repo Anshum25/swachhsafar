@@ -14,16 +14,20 @@ def inspect(world, coach="B1", day=1, rnd=1, phase="B", by="sup", journey=None, 
     return world.client.post(API, headers=world.h(by), json=body)
 
 
-def test_round_and_phase_ordering(world):
-    r = inspect(world, phase="A")
-    assert r.status_code == 422 and r.json()["error"]["code"] == "phase_order"
-    assert inspect(world, phase="B").status_code == 201
-    r = inspect(world, rnd=2, phase="B")
-    assert r.status_code == 201, r.text  # round 2 Before only needs round 1 Before
-    assert inspect(world, phase="A").status_code == 201
+def test_any_round_and_phase_in_any_order(world):
+    """Every slot of an open day can be taken in any order: After before Before, round 2 before round 1."""
     assert inspect(world, rnd=2, phase="A").status_code == 201
+    assert inspect(world, rnd=1, phase="A").status_code == 201
+    assert inspect(world, rnd=2, phase="B").status_code == 201
+    assert inspect(world, rnd=1, phase="B").status_code == 201
     r = inspect(world, rnd=3, phase="B")
     assert r.status_code == 422 and r.json()["error"]["code"] == "round_out_of_range"
+
+
+def test_grid_opens_every_slot_of_the_open_day(world):
+    grid = world.client.get(f"{API}/journeys/{world.journey['id']}/status", headers=world.h("sup")).json()
+    day1 = [c for c in grid if c["coach_code"] == "B1" and c["day"] == 1][0]
+    assert day1["day_open"] and {c["status"] for c in day1["cells"]} == {"open"}
 
 
 def test_duplicate_and_unknown_coach(world):
@@ -72,7 +76,7 @@ def test_grid_and_completion(world):
     b1d1 = next(g for g in grid if g["coach_code"] == "B1" and g["day"] == 1)
     assert (b1d1["required"], b1d1["done"], b1d1["day_open"]) == (4, 2, True)
     statuses = {(c["round"], c["phase"]): c["status"] for c in b1d1["cells"]}
-    assert statuses == {(1, "B"): "taken", (1, "A"): "taken", (2, "B"): "open", (2, "A"): "locked"}
+    assert statuses == {(1, "B"): "taken", (1, "A"): "taken", (2, "B"): "open", (2, "A"): "open"}
     d2 = next(g for g in grid if g["coach_code"] == "B1" and g["day"] == 2)
     assert d2["day_open"] is False and {c["status"] for c in d2["cells"]} == {"locked"}
     summary = world.client.get(f"/api/v1/journeys/{world.journey['id']}/summary", headers=world.h("manager")).json()

@@ -157,6 +157,27 @@ def test_staff_mobile_rejected_and_pnr_required(world, fakes):
     assert r.status_code == 422 and r.json()["error"]["code"] == "pnr_required"
 
 
+def test_general_coach_asks_seat_not_pnr(world, fakes):
+    """A general (unreserved) coach has no PNR: the seat number is required, a PNR is ignored, and the PNR
+    check is not required even where the division requires PNRs (reserved coaches still need one)."""
+    train = world.create_train(train_no="12003", coaches=[
+        {"code": "B1", "classification": "AC"}, {"code": "GEN1", "classification": "GEN"}])
+    journey = world.create_journey(train=train)
+
+    def post(coach, pnr, seat):
+        body = dict(id=str(uuid.uuid4()), journey_id=journey["id"], coach_code=coach, journey_day=1, passenger_name="Asha",
+                    mobile="9123456789", pnr=pnr, seat_no=seat, device_timestamp=now_iso(), latitude=23.1, longitude=79.9)
+        return world.client.post(f"{API}/passenger", headers=world.h("sup"), json=body)
+
+    r = post("GEN1", None, None)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "seat_required"
+    r = post("GEN1", "1234567890", "42")
+    assert r.status_code == 201, r.text
+    assert r.json()["pnr"] is None and r.json()["seat_no"] == "42" and r.json()["pnr_status"] == "not_required"
+    r = post("B1", None, "12")
+    assert r.status_code == 422 and r.json()["error"]["code"] == "pnr_required"
+
+
 def test_only_collector_continues(world, fakes):
     valid_pnr(fakes)
     fb = start(world).json()

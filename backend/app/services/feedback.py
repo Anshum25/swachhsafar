@@ -220,7 +220,15 @@ def start_passenger(db: Session, p: Principal, body: PassengerFeedbackStart) -> 
     if not feedback_plan.in_window(j.train, body.journey_day):
         raise BusinessRuleViolation("Train Master does not collect passenger feedback on this journey day",
                                     code="day_outside_window")
-    if policy.passenger_pnr_required and not body.pnr:
+    # General (unreserved) coaches have no ticket with a berth: the seat number is asked instead of a PNR, and
+    # a PNR sent for one is ignored. Reserved coaches keep the division's PNR policy.
+    general = coach.classification == CoachClass.GEN
+    if general:
+        if not (body.seat_no or "").strip():
+            raise BusinessRuleViolation("Seat number is required in a general coach", code="seat_required")
+        body = body.model_copy(update={"pnr": None})
+    pnr_required = policy.passenger_pnr_required and not general
+    if pnr_required and not body.pnr:
         raise BusinessRuleViolation("PNR is required", code="pnr_required")
     if db.scalar(select(User.id).where(User.mobile == body.mobile, User.status != UserStatus.DELETED)):
         raise BusinessRuleViolation("Staff mobile numbers cannot give passenger feedback", code="staff_mobile")
@@ -233,7 +241,7 @@ def start_passenger(db: Session, p: Principal, body: PassengerFeedbackStart) -> 
         direction=day["direction"], train_no=day["train_nos"][0] if len(day["train_nos"]) == 1 else None,
         coach_source="selected",
         feedback_date=captured_on, collected_by_id=p.id, payload_hash=digest, status=PassengerFeedbackStatus.DRAFT,
-        pnr_status=PnrStatus.PENDING if policy.passenger_pnr_required else PnrStatus.NOT_REQUIRED,
+        pnr_status=PnrStatus.PENDING if pnr_required else PnrStatus.NOT_REQUIRED,
         otp_status=OtpStatus.NOT_SENT if policy.passenger_otp_required else OtpStatus.NOT_REQUIRED,
     )
     _maybe_verified(fb)

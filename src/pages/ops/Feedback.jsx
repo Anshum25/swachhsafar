@@ -224,9 +224,11 @@ function FeedbackOverview({ journeyId }) {
   );
 }
 
+// A general (unreserved) coach has no PNR: only its seat number is asked, and it is required. A reserved coach
+// asks the PNR; its seat may be left empty (the berth is then taken from the ticket).
 const DETAILS_RULES = {
-  seat_no: (v) => (v.length > 10 ? 'Seat number is at most 10 characters.' : null),
-  pnr: (v) => (v && !/^\d{10}$/.test(v) ? 'PNR is 10 digits.' : null),
+  seat_no: (v, general) => (general && !v.trim() ? 'Enter the passenger’s seat number.' : v.length > 10 ? 'Seat number is at most 10 characters.' : null),
+  pnr: (v, general) => (!general && v && !/^\d{10}$/.test(v) ? 'PNR is 10 digits.' : null),
   mobile: (v) => (!/^[6-9]\d{9}$/.test(v) ? 'Enter a 10-digit Indian mobile number (starts with 6–9).' : null),
   passenger_name: (v) => (v.trim().length < 2 ? 'Enter the passenger’s name.' : null),
 };
@@ -256,10 +258,11 @@ function PassengerStart({ journeyId, coach, day }) {
   const plan = usePlan(journeyId).data;
   const dayPlan = plan?.days.find((d) => d.journey_day === day);
   const coachDay = plan?.coaches.find((c) => c.code === coach)?.days.find((d) => d.journey_day === day);
+  const general = known?.classification === 'GEN';
 
   async function submit(e) {
     e.preventDefault();
-    const found = Object.fromEntries(Object.entries(DETAILS_RULES).map(([k, rule]) => [k, rule(form[k] ?? '')]).filter(([, v]) => v));
+    const found = Object.fromEntries(Object.entries(DETAILS_RULES).map(([k, rule]) => [k, rule(form[k] ?? '', general)]).filter(([, v]) => v));
     setErrors(found);
     if (Object.keys(found).length || busy) return;
     setBusy(true);
@@ -268,7 +271,7 @@ function PassengerStart({ journeyId, coach, day }) {
       type: 'feedback.passenger.start',
       payload: {
         id, journey_id: journeyId, coach_code: coach, journey_day: day, passenger_name: form.passenger_name.trim(), mobile: form.mobile,
-        pnr: form.pnr || null, seat_no: form.seat_no || null, device_timestamp: deviceTimestamp(), ...gps,
+        pnr: general ? null : form.pnr || null, seat_no: form.seat_no.trim() || null, device_timestamp: deviceTimestamp(), ...gps,
       },
     });
     setBusy(false);
@@ -303,8 +306,12 @@ function PassengerStart({ journeyId, coach, day }) {
           </p>
         )}
         <form onSubmit={submit} noValidate className="space-y-4">
-          <Field icon={SeatIcon} label="Seat No." error={errors.seat_no}><input className="input" maxLength={10} value={form.seat_no} onChange={set('seat_no')} /></Field>
-          <Field icon={TicketIcon} label="PNR" hint="10 digits. Train, date, coach and berth are checked against the ticket; the coach is taken from it." error={errors.pnr}><input className="input tracking-wide" inputMode="numeric" maxLength={10} value={form.pnr} onChange={set('pnr')} /></Field>
+          <Field icon={SeatIcon} label="Seat No." hint={general ? 'General coach: no PNR is asked.' : 'Optional: taken from the ticket when left empty.'} error={errors.seat_no}>
+            <input className="input" maxLength={10} required={general} value={form.seat_no} onChange={set('seat_no')} />
+          </Field>
+          {!general && (
+            <Field icon={TicketIcon} label="PNR" hint="10 digits. Train, date, coach and berth are checked against the ticket; the coach is taken from it." error={errors.pnr}><input className="input tracking-wide" inputMode="numeric" maxLength={10} value={form.pnr} onChange={set('pnr')} /></Field>
+          )}
           <Field icon={PhoneIcon} label="Mobile" hint="Verification code is sent here" error={errors.mobile}><input className="input tracking-wide" type="tel" inputMode="numeric" autoComplete="off" maxLength={10} required value={form.mobile} onChange={set('mobile')} /></Field>
           <Field icon={UserIcon} label="Name" error={errors.passenger_name}><input className="input" autoComplete="off" required value={form.passenger_name} onChange={set('passenger_name')} /></Field>
           <GpsCapture value={gps} onChange={setGps} />
@@ -402,7 +409,7 @@ function PassengerFlow({ id }) {
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-700"><UserIcon className="h-5 w-5" /></span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-[15px] font-bold text-ink">{fb.passenger_name}</p>
-              <p className="truncate text-xs text-muted">Seat {fb.seat_no ?? '—'} · PNR {fb.pnr ?? '—'} · {fb.mobile_masked}</p>
+              <p className="truncate text-xs text-muted">Seat {fb.seat_no ?? '—'}{fb.coach_class === 'GEN' ? '' : ` · PNR ${fb.pnr ?? '—'}`} · {fb.mobile_masked}</p>
             </div>
           </div>
           <p className="mt-3 rounded-xl bg-canvas px-3 py-2 text-xs font-medium text-muted">
