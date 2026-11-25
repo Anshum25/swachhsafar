@@ -324,7 +324,9 @@ export function createFakeNetwork({ users, today }) {
     }
     if (method === 'POST' && path === '/feedback/question-banks') {
       if (!can('questions.manage', body.division_id)) return forbidden;
-      const row = { id: crypto.randomUUID(), is_active: false, updated_at: now, ...body, questions: body.questions.map((q, i) => ({ id: crypto.randomUUID(), position: i + 1, ...q })) };
+      // Like the backend: answer options set the scale to 1..number of options.
+      const scale = body.option_labels ? { scale_min: 1, scale_max: body.option_labels.length } : {};
+      const row = { id: crypto.randomUUID(), is_active: false, updated_at: now, ...body, ...scale, questions: body.questions.map((q, i) => ({ id: crypto.randomUUID(), position: i + 1, ...q })) };
       masters.banks.push(row);
       return { status: 201, body: row };
     }
@@ -333,6 +335,19 @@ export function createFakeNetwork({ users, today }) {
       if (!can('questions.manage', bank.division_id)) return forbidden;
       for (const b of masters.banks) if (b.audience === bank.audience && b.division_id === bank.division_id) b.is_active = b.id === bank.id;
       return { status: 200, body: bank };
+    }
+    if (method === 'POST' && (m = path.match(/^\/feedback\/question-banks\/([^/]+)\/assign$/))) {
+      const src = masters.banks.find((b) => b.id === m[1]);
+      if (body.division_ids.some((d) => !can('questions.manage', d))) return forbidden;
+      const out = body.division_ids.map((d) => {
+        for (const b of masters.banks) if (b.audience === src.audience && b.division_id === d) b.is_active = false;
+        if (src.division_id === d) { src.is_active = true; return src; }
+        const copy = { ...src, id: crypto.randomUUID(), division_id: d, is_active: true, updated_at: now,
+          questions: src.questions.map((q) => ({ ...q, id: crypto.randomUUID() })) };
+        masters.banks.push(copy);
+        return copy;
+      });
+      return { status: 200, body: out };
     }
     if (method === 'PATCH' && (m = path.match(/^\/complaints\/departments\/([^/]+)$/))) return patch(masters.departments, m[1], 'complaints.masters.manage');
     if (method === 'PATCH' && (m = path.match(/^\/complaints\/categories\/([^/]+)$/))) return patch(masters.categories, m[1], 'complaints.masters.manage');
