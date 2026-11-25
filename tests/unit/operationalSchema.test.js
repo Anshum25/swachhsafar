@@ -121,25 +121,24 @@ describe('database-level guarantees', () => {
       ['x', IDS.journey, IDS.division, IDS.janitor1, 't', 't'])).rejects.toThrow(/CHECK/);
   });
 
-  it('enforces inspection round and phase order, and slot uniqueness, in SQL', async () => {
+  it('takes inspection rounds and phases in any order, and enforces slot uniqueness, in SQL', async () => {
     const { db } = await seededStore();
     const raw = (round, phase) => ({
       sql: `INSERT INTO inspection_records (id, journey_id, division_id, coach_code, day, round, phase, origin, sync_status, created_at, updated_at)
             VALUES (?, ?, ?, 'B1', 1, ?, ?, 'local', 'pending', 't', 't')`,
       params: [crypto.randomUUID(), IDS.journey, IDS.division, round, phase],
     });
-    await expect(db.transaction([raw(1, 'A')])).rejects.toThrow(/phase_order/);
-    await expect(db.transaction([raw(2, 'B')])).rejects.toThrow(/round_order/);
+    await db.transaction([raw(2, 'A')]);
+    await db.transaction([raw(1, 'A')]);
     await db.transaction([raw(1, 'B')]);
     await expect(db.transaction([raw(1, 'B')])).rejects.toThrow(/UNIQUE/);
-    await db.transaction([raw(1, 'A')]);
-    expect((await db.query('SELECT phase FROM inspection_records ORDER BY phase')).map((r) => r.phase)).toEqual(['A', 'B']);
+    expect((await db.query('SELECT round, phase FROM inspection_records ORDER BY round, phase')).map((r) => `${r.round}${r.phase}`)).toEqual(['1A', '1B', '2A']);
   });
 
   it('rolls back the whole capture when any statement fails, including media and outbox', async () => {
     const { db, files, store } = await seededStore();
-    const capture = inspectionPayload({ round: 2 }); // round 1 missing: the capture must be refused
-    await expect(store.capture(capture)).rejects.toMatchObject({ code: 'round_order' });
+    const capture = inspectionPayload({ day: 3 }); // beyond the journey's days: the capture must be refused
+    await expect(store.capture(capture)).rejects.toMatchObject({ code: 'day_out_of_range' });
     for (const t of ['inspection_records', 'media_files', 'sync_outbox', 'audit_events']) expect(await db.query(`SELECT * FROM ${t}`), t).toEqual([]);
     expect(files.map.size).toBe(0);
   });

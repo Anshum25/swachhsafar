@@ -10,6 +10,7 @@ from app.schemas.common import Page, PageParams
 from app.schemas.journeys import (
     JourneyCancel,
     JourneyCreate,
+    FeedbackPlanOut,
     JourneyDetail,
     JourneyOut,
     JourneyUpdate,
@@ -19,6 +20,7 @@ from app.schemas.journeys import (
 )
 from app.schemas.reports import JourneySummary
 from app.security.principal import Principal, get_principal
+from app.services import feedback_plan as plan_svc
 from app.services import journeys as svc
 from app.services import reports
 
@@ -70,6 +72,14 @@ def assign_supervisor(journey_id: uuid.UUID, body: SupervisorAssign, db: Session
 def cancel_journey(journey_id: uuid.UUID, body: JourneyCancel, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     svc.cancel_journey(db, p, journey_id, body)
     return _detail(db, p, journey_id)
+
+
+@router.get("/{journey_id}/feedback-plan", response_model=FeedbackPlanOut)
+def feedback_plan(journey_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """The journey's passenger feedback plan from Train Master: each direction with its stops, and every
+    journey day's target with live progress (submitted, verified, in progress, rejected, pending), overall
+    and per coach. Counts come from the feedback records each time."""
+    return plan_svc.plan_out(db, svc.get_journey(db, p, journey_id))
 
 
 @router.get("/{journey_id}/summary", response_model=JourneySummary)

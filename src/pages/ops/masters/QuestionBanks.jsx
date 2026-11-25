@@ -3,7 +3,9 @@
 // retires the previously active bank of the same division (or default scope) and audience.
 import { useState } from 'react';
 import { useResource, useSession } from '../../../app/session.jsx';
-import { Badge, DataState, Dialog, ErrorNote, Field, Panel, RatingFace, RatingScale, Select, SubmitBar, Table, label } from '../../../components/ui.jsx';
+import { divisionLabel } from '../../../app/division.jsx';
+import { canManageMaster } from '../../../services/authorization.js';
+import { Badge, DataState, Dialog, ErrorNote, Field, Panel, Select, SubmitBar, Table, label } from '../../../components/ui.jsx';
 import { PlusIcon } from '../../../components/Icons.jsx';
 import { bankPayload, validateBank } from '../../../utils/masterValidation.js';
 import { ActiveBadge, ConfirmDialog, FilterBar, OfflineWriteNote, matches, useMasterAccess, useSave } from './common.jsx';
@@ -59,41 +61,56 @@ function QuestionEditor({ q, i, count, errors, onChange, onMove, onRemove }) {
   );
 }
 
-// Answer options, worst first. Each gets a face (frown → smile) and is shown grey until the passenger picks it.
-function OptionsEditor({ options, errors, onChange }) {
-  const [preview, setPreview] = useState(undefined);
-  const set = (i, v) => onChange(options.map((o, k) => (k === i ? v : o)));
+// Where a bank applies, chosen in the form: every office (a default bank, Super Admin only) or one station
+// (division) of one office. Only stations this person may manage question banks for are offered.
+function BankScope({ division, me, value, onChange, error }) {
+  const canDefault = canManageMaster(me, 'questionBanks', null);
+  const stations = division.divisions.filter((d) => canManageMaster(me, 'questionBanks', d.id));
+  const offices = division.clients.filter((c) => stations.some((d) => d.client_id === c.id));
+  const officeOf = (id) => stations.find((d) => d.id === id)?.client_id ?? '';
+  const [office, setOffice] = useState(() => officeOf(value) || offices[0]?.id || '');
+  const officeStations = offices.length ? stations.filter((d) => d.client_id === office) : stations;
+  const pickOffice = (cid) => {
+    setOffice(cid);
+    onChange(stations.find((d) => d.client_id === cid)?.id ?? '');
+  };
+  const all = value === null;
   return (
-    <section className="rounded-2xl p-3 ring-1 ring-slate-200">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-semibold">Answer options <span className="font-normal text-slate-500">(worst first)</span></span>
-        <span className="flex gap-3 text-xs">
-          <button type="button" className="btn-link" onClick={() => onChange([...DEFAULT_OPTIONS])}>Use standard 5</button>
-          <button type="button" className="btn-link" disabled={options.length >= 10} onClick={() => onChange([...options, ''])}>Add option</button>
-        </span>
-      </div>
-      <ol className="space-y-2">
-        {options.map((o, i) => (
-          <li key={i} className="flex items-center gap-2">
-            <RatingFace k={i} n={options.length} selected className="h-8 w-8 shrink-0" />
-            <input className="input h-10" value={o} maxLength={30} aria-label={`Answer option ${i + 1}`} onChange={(e) => set(i, e.target.value)} />
-            <button type="button" className="btn-link text-red-600" disabled={options.length <= 2} onClick={() => onChange(options.filter((_, k) => k !== i))}
-              aria-label={`Remove answer option ${i + 1}`}>Remove</button>
-          </li>
-        ))}
-      </ol>
-      {errors.option_labels && <p className="mt-1 text-xs text-red-600">{errors.option_labels}</p>}
-      <p className="mb-1 mt-3 text-xs text-slate-500">Preview — tap a face to see it selected:</p>
-      <RatingScale min={1} max={options.length} options={options.map((o, i) => o.trim() || `Option ${i + 1}`)} value={preview} onChange={setPreview} label="Preview" />
-    </section>
+    <fieldset className="rounded-2xl p-3 ring-1 ring-slate-200">
+      <legend className="px-1 text-sm font-semibold">Applies to</legend>
+      {canDefault && (
+        <div className="mb-2 flex flex-wrap gap-4 text-sm">
+          <label className="flex items-center gap-2"><input type="radio" name="bank-scope" checked={!all} onChange={() => onChange(officeStations[0]?.id ?? stations[0]?.id ?? '')} /> One office and station</label>
+          <label className="flex items-center gap-2"><input type="radio" name="bank-scope" checked={all} onChange={() => onChange(null)} /> All offices (default bank)</label>
+        </div>
+      )}
+      {all ? (
+        <p className="text-xs text-slate-500">Used by every station that has no active bank of its own for this audience.</p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {offices.length > 0 && (
+            <Field label="Office"><Select value={office} onChange={pickOffice} aria-label="Bank office"
+              options={offices.map((c) => ({ value: c.id, label: c.name }))} /></Field>
+          )}
+          <Field label="Station" error={error}><Select value={value ?? ''} onChange={onChange} aria-label="Bank station"
+            options={[{ value: '', label: 'Choose a station' }, ...officeStations.map((d) => ({ value: d.id, label: d.code ? `${d.code} — ${d.name}` : d.name }))]} /></Field>
+        </div>
+      )}
+    </fieldset>
   );
 }
 
-function BankForm({ source, divisionId, onClose, onSaved }) {
-  const { api } = useSession();
+function BankForm({ source, divisionId, division, onClose, onSaved }) {
+  const { api, me } = useSession();
   const [f, setF] = useState(() => fromBank(source));
+  // A new version stays where its bank applies; a new bank starts where the page is looking.
+  const [where, setWhere] = useState(() => {
+    const start = source ? source.division_id ?? null : divisionId ?? null;
+    if (start !== null || canManageMaster(me, 'questionBanks', null)) return start;
+    return division.divisions.find((d) => canManageMaster(me, 'questionBanks', d.id))?.id ?? '';
+  });
   const [errors, setErrors] = useState({});
-  const save = useSave(onSaved);
+  const save = useSave(() => onSaved(where));
   const setQ = (i, q) => setF((x) => ({ ...x, questions: x.questions.map((old, k) => (k === i ? q : old)) }));
   const move = (i, d) => setF((x) => {
     const qs = [...x.questions];
@@ -104,9 +121,13 @@ function BankForm({ source, divisionId, onClose, onSaved }) {
   function submit(e) {
     e.preventDefault();
     const found = validateBank(f);
+    if (where === '') found.where = 'Choose the station this bank is for';
     setErrors(found);
     if (Object.keys(found).length) return;
-    save.run(() => api.post('/feedback/question-banks', bankPayload(f, divisionId)), 'Question bank saved as an inactive version. Activate it to use it for new feedback.');
+    const station = division.divisions.find((d) => d.id === where);
+    const place = where === null ? 'for all offices' : `for ${station ? divisionLabel(division, station) : 'the station'}`;
+    save.run(() => api.post('/feedback/question-banks', bankPayload(f, where)),
+      `Question bank saved as an inactive version ${place}. Activate it to use it for new feedback.`);
   }
 
   const general = errors.questions;
@@ -114,6 +135,7 @@ function BankForm({ source, divisionId, onClose, onSaved }) {
     <form onSubmit={submit} className="space-y-3" noValidate>
       <ErrorNote error={save.error} />
       {Object.keys(errors).length > 0 && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700" role="alert">Please fix the highlighted fields.</p>}
+      <BankScope division={division} me={me} value={where} onChange={setWhere} error={errors.where} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Bank name" error={errors.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field label="Audience" error={errors.audience}><Select value={f.audience} onChange={(v) => setF({ ...f, audience: v })} options={AUDIENCES} /></Field>
@@ -155,11 +177,29 @@ function BankQuestions({ bank }) {
   );
 }
 
-export default function QuestionBanks({ divisionId }) {
-  const { api } = useSession();
+export default function QuestionBanks({ division }) {
+  const { api, me } = useSession();
+  const divisionId = division.divisionId;
   const [scope, setScope] = useState('division');
   const scopeDivision = scope === 'division' ? divisionId : null;
   const access = useMasterAccess('questionBanks', scopeDivision);
+  // A new bank can go to any station this person manages, not only the one in view.
+  const canCreate = access.online && (canManageMaster(me, 'questionBanks', null)
+    || division.divisions.some((d) => canManageMaster(me, 'questionBanks', d.id)));
+  // After saving, show the list the bank went into.
+  const showSaved = (where) => {
+    setForm(null);
+    if (where === null) {
+      if (scope === 'default') res.reload();
+      setScope('default');
+      return;
+    }
+    const station = division.divisions.find((d) => d.id === where);
+    if (where === divisionId && scope === 'division') res.reload();
+    if (station && station.client_id && station.client_id !== division.current?.client_id && division.clients.length) division.setClientId(station.client_id);
+    division.setDivisionId(where);
+    setScope('division');
+  };
   const res = useResource(scope === 'division' && !divisionId ? null : '/feedback/question-banks', scope === 'division' ? { division_id: divisionId } : {});
   const [filter, setFilter] = useState({ q: '', status: '', audience: '' });
   const [view, setView] = useState(null);
@@ -168,7 +208,7 @@ export default function QuestionBanks({ divisionId }) {
   const activate = useSave(() => { setActivating(null); res.reload(); });
 
   return (
-    <Panel title="Feedback question banks" actions={access.canEdit && (
+    <Panel title="Feedback question banks" actions={canCreate && (
       <button type="button" className="btn-secondary" onClick={() => setForm({ source: null })}><PlusIcon /> New bank</button>
     )}>
       <OfflineWriteNote access={access} />
@@ -202,7 +242,7 @@ export default function QuestionBanks({ divisionId }) {
       </DataState>
       <Dialog open={!!view} title={view?.name ?? ''} onClose={() => setView(null)} wide>{view && <BankQuestions bank={view} />}</Dialog>
       <Dialog open={!!form} title={form?.source ? 'New version of question bank' : 'New question bank'} onClose={() => setForm(null)} wide>
-        {form && <BankForm source={form.source} divisionId={scopeDivision} onClose={() => setForm(null)} onSaved={() => { setForm(null); res.reload(); }} />}
+        {form && <BankForm source={form.source} divisionId={scopeDivision} division={division} onClose={() => setForm(null)} onSaved={showSaved} />}
       </Dialog>
       <ConfirmDialog open={!!activating} onClose={() => { setActivating(null); activate.setError(null); }} busy={activate.busy} error={activate.error}
         title="Activate question bank" confirmLabel="Activate"

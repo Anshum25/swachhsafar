@@ -91,16 +91,21 @@ export function createFeedbackRepository(db, { journeys, masters }) {
       if (!coach) throw new LocalRuleError('unknown_coach', 'This coach is not part of the journey.');
       const name = requireText(p.passenger_name, 'Passenger name', 2, 100);
       if (!MOBILE_RE.test(p.mobile ?? '')) throw new LocalRuleError('invalid_mobile', 'Enter a valid 10-digit Indian mobile number.');
-      const pnr = p.pnr || null;
+      // A general (unreserved) coach has no ticket with a berth: its seat number is asked instead of a PNR and a
+      // PNR sent for one is ignored (as on the server). Reserved coaches keep the division's PNR policy.
+      const general = coach.classification === 'GEN';
+      if (general && !String(p.seat_no ?? '').trim()) throw new LocalRuleError('seat_required', 'Seat number is required in a general coach.');
+      const pnr = general ? null : p.pnr || null;
       if (pnr && !PNR_RE.test(pnr)) throw new LocalRuleError('invalid_pnr', 'PNR must be 10 digits.');
-      if (ctx.policy.passenger_pnr_required && !pnr) throw new LocalRuleError('pnr_required', 'PNR is required in this division.');
+      const pnrRequired = ctx.policy.passenger_pnr_required && !general;
+      if (pnrRequired && !pnr) throw new LocalRuleError('pnr_required', 'PNR is required in this division.');
       const bank = await masters.activeBank(journey.division_id, 'passenger');
       const row = {
         id: p.id, journey_id: journey.id, division_id: journey.division_id, bank_id: bank?.id ?? null, coach_code: coach.code,
         coach_class: coach.classification, journey_day: journeyDay, feedback_date: capturedOn, passenger_name: name,
         mobile: p.mobile, mobile_masked: maskMobile(p.mobile), pnr, seat_no: optionalText(p.seat_no, 'Seat', 10),
         status: 'draft',
-        pnr_status: ctx.policy.passenger_pnr_required ? 'pending' : 'not_required',
+        pnr_status: pnrRequired ? 'pending' : 'not_required',
         otp_status: ctx.policy.passenger_otp_required ? 'not_sent' : 'not_required',
         ...gps, device_timestamp: p.device_timestamp, collected_by_id: ctx.actor?.id ?? null,
         origin: 'local', sync_status: 'pending', created_at: ctx.now, updated_at: ctx.now,

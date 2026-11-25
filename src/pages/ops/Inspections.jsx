@@ -57,8 +57,8 @@ function InspectDialog({ target, journey, onClose, onDone }) {
       <div className="space-y-4">
         <p className="-mt-1 text-center text-xs font-medium text-muted">Day {target.day} · Round {target.round} · {journey.train_no}</p>
         <PhotoCapture value={photo} onChange={setPhoto} required />
-        <Field label={<span className="inline-flex items-center gap-1.5 font-semibold text-ink"><MessageIcon className="h-4 w-4 text-ink" />Comments</span>}>
-          <textarea className="input" rows={3} maxLength={2000} placeholder="Enter comments..." value={comments} onChange={(e) => setComments(e.target.value)} />
+        <Field label={<span className="inline-flex items-center gap-1.5 font-semibold text-ink"><MessageIcon className="h-4 w-4 text-ink" />Summary</span>}>
+          <textarea className="input" rows={3} maxLength={2000} placeholder="Summary of the inspection: cleanliness, issues found, work done…" value={comments} onChange={(e) => setComments(e.target.value)} />
         </Field>
         <GpsCapture value={gps} onChange={setGps} />
         {gate.notice}
@@ -69,8 +69,8 @@ function InspectDialog({ target, journey, onClose, onDone }) {
 }
 
 // Coach × day × round × phase grid: one card per coach, a column per day, a B (before) and A (after) cell
-// per round. Round and Before→After order and one record per cell are enforced by the local repository
-// (and its triggers) and by the server; only `open` cells can be captured.
+// per round. Every cell of an open day can be inspected, in any order (photo + summary); each cell once,
+// enforced by the local repository and by the server.
 // Reference matrix: a plain letter for a slot that is done (green) or was missed (red), a solid blue tile for
 // the slot that can be inspected now, amber for one saved on this device, grey for one not open yet.
 const CELL_STYLE = {
@@ -188,7 +188,7 @@ function InspectionDetail({ record, journey, onClose, onChanged }) {
           ['Received (server)', record.server_timestamp ? fmtDateTime(record.server_timestamp) : null],
           ['GPS', record.latitude != null ? `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}${record.gps_accuracy_m != null ? ` ±${Math.round(record.gps_accuracy_m)} m` : ''}` : null],
           ['Inspector', inspector ?? (record.created_by_id ? 'Other user' : null)],
-          ['Comments', record.comments],
+          ['Summary', record.comments],
         ]} />
         <div className="grid gap-3 sm:grid-cols-2">
           {record.photo_media_id && <MediaPreview id={record.photo_media_id} label="Inspection photo" />}
@@ -267,7 +267,7 @@ export default function Inspections({ parts }) {
   if (parts[0]) return <JourneyInspection id={parts[0]} key={parts[0]} />;
   return (
     <>
-      <PageHeader title="Inspection" subtitle="Day, round and before/after photo inspections" />
+      <PageHeader title="Inspection" subtitle="Day-wise photo inspections: any round, before or after, in any order" />
       <JourneyPicker base="/inspections" />
     </>
   );

@@ -32,7 +32,15 @@ from app.models.faces import FaceEnrollment
 from app.models.fingerprints import FingerprintEnrollment
 from app.models.liveness import LivenessChallenge
 from app.models.inventory import InventoryItem, InventoryTransaction, InventoryTxnType, Unit
-from app.models.journeys import Journey, JourneyCoach, JourneyState, JourneyStatus, StaffAllocation
+from app.models.journeys import (
+    Journey,
+    JourneyCoach,
+    JourneyFeedbackTarget,
+    JourneyLeg,
+    JourneyState,
+    JourneyStatus,
+    StaffAllocation,
+)
 from app.models.media import MediaKind, MediaObject, MediaStatus
 from app.models.operations import Attendance, AttendanceStage, Inspection, InspectionPhase, VerificationStatus
 from app.models.org import (
@@ -54,6 +62,6 @@ from app.models.railway import RailwayBoard, RailwayStation
 from app.models.releases import WebBundle, WebChannel
 from app.models.security import AuthSession, CaptchaUse, Device, DeviceStatus, LoginAttempt, LoginOtp, SecurityEvent, UserCredential
 from app.models.sync import SyncOperation
-from app.models.trains import CoachClass, Train, TrainCoach
+from app.models.trains import CoachClass, Train, TrainCoach, TrainStop, TrainSyncRun
 
 __all__ = [name for name in dir() if not name.startswith("_")]

@@ -857,15 +857,15 @@ const V17 = {
   },
 };
 
-// v18: question banks can name their answer choices (backend 0022), shown as faces. JSON list, worst first;
-// NULL = the numbered scale.
+// v18: inspections in any order. Every round and Before/After slot of an open day can be taken in any order
+// (backend services/inspections.py), so the ordering triggers of v5 are dropped; slot uniqueness stays.
 const V18 = {
   version: 18,
-  name: 'question bank answer options',
-  async prepare(db) {
-    const has = (await db.query('PRAGMA table_info(question_banks)')).some((c) => c.name === 'option_labels');
-    return has ? [] : ["ALTER TABLE question_banks ADD COLUMN option_labels TEXT CHECK (option_labels IS NULL OR json_valid(option_labels))"];
-  },
+  name: 'inspections in any order',
+  statements: [
+    'DROP TRIGGER IF EXISTS trg_inspection_round_order',
+    'DROP TRIGGER IF EXISTS trg_inspection_phase_order',
+  ],
 };
 
 export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18];

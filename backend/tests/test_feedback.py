@@ -46,14 +46,12 @@ def test_full_passenger_flow_never_exposes_otp(world, fakes):
     assert (fb["status"], fb["pnr_status"], fb["otp_status"]) == ("draft", "pending", "not_sent")
     assert fb["mobile_masked"] == "91XXXXXX89" and "mobile" not in fb
 
-    r = world.client.post(f"{API}/passenger/{fb['id']}/send-otp", headers=world.h("sup"))
-    assert r.status_code == 422 and r.json()["error"]["code"] == "pnr_pending"
-    r = world.client.post(f"{API}/passenger/{fb['id']}/verify-pnr", headers=world.h("sup"))
-    assert r.json()["pnr_status"] == "valid" and r.json()["status"] == "draft"
-
+    # Mobile first (the passenger workflow's order), then the PNR: an OTP may be sent before the PNR check.
     r = world.client.post(f"{API}/passenger/{fb['id']}/send-otp", headers=world.h("sup"))
     assert r.status_code == 200
     code = fakes[1].last_code
+    r = world.client.post(f"{API}/passenger/{fb['id']}/verify-pnr", headers=world.h("sup"))
+    assert r.json()["pnr_status"] == "valid" and r.json()["status"] == "draft"
     assert code not in r.text and len(code) == 6
     stored = world.db.scalar(select(OtpChallenge).where(OtpChallenge.feedback_id == uuid.UUID(fb["id"])))
     assert code not in stored.code_hash and len(stored.code_hash) == 64
@@ -156,6 +154,27 @@ def test_staff_mobile_rejected_and_pnr_required(world, fakes):
     r = start(world, mobile=world.jan.mobile)
     assert r.status_code == 422 and r.json()["error"]["code"] == "staff_mobile"
     r = start(world, pnr=None)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "pnr_required"
+
+
+def test_general_coach_asks_seat_not_pnr(world, fakes):
+    """A general (unreserved) coach has no PNR: the seat number is required, a PNR is ignored, and the PNR
+    check is not required even where the division requires PNRs (reserved coaches still need one)."""
+    train = world.create_train(train_no="12003", coaches=[
+        {"code": "B1", "classification": "AC"}, {"code": "GEN1", "classification": "GEN"}])
+    journey = world.create_journey(train=train)
+
+    def post(coach, pnr, seat):
+        body = dict(id=str(uuid.uuid4()), journey_id=journey["id"], coach_code=coach, journey_day=1, passenger_name="Asha",
+                    mobile="9123456789", pnr=pnr, seat_no=seat, device_timestamp=now_iso(), latitude=23.1, longitude=79.9)
+        return world.client.post(f"{API}/passenger", headers=world.h("sup"), json=body)
+
+    r = post("GEN1", None, None)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "seat_required"
+    r = post("GEN1", "1234567890", "42")
+    assert r.status_code == 201, r.text
+    assert r.json()["pnr"] is None and r.json()["seat_no"] == "42" and r.json()["pnr_status"] == "not_required"
+    r = post("B1", None, "12")
     assert r.status_code == 422 and r.json()["error"]["code"] == "pnr_required"
 
 

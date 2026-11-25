@@ -12,4 +12,7 @@ npm run test:e2e       # Playwright browser tests (builds + previews automatical
 
 See [docs/PHASE1.md](docs/PHASE1.md) for the architecture, the registration and sync workflow, the tests, and Android testing steps.
 
+Passenger feedback driven by Train Master (targets per day, timetables in both directions, OTP + PNR, reports):
+[docs/TRAIN_MASTER_FEEDBACK.md](docs/TRAIN_MASTER_FEEDBACK.md).
+
 Production deployment (IP + port, nginx, systemd, PostgreSQL, rollback): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Android installation and the physical-device test sheet: [docs/ANDROID_TESTING.md](docs/ANDROID_TESTING.md).

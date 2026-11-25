@@ -135,6 +135,18 @@ class PassengerFeedback(GeoPoint, Timestamps, Base):
     completed_at: Mapped[datetime | None] = mapped_column(TZDateTime())
     collected_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # ---- where the passenger travels (migration 0022) ----
+    # The leg of the journey the feedback day falls on: 1 outbound, 2 return, 3 both, None layover/unknown.
+    direction: Mapped[int | None] = mapped_column(Integer)
+    # The passenger's train: from the verified PNR, else the one train running that day (None if unknown).
+    train_no: Mapped[str | None] = mapped_column(String(15))
+    # "selected" (the coach card staff picked) or "pnr" (corrected to the coach on the passenger's ticket).
+    coach_source: Mapped[str | None] = mapped_column(String(10))
+    # True only when the PNR provider named this coach; False when it could not be checked against a ticket.
+    coach_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    pnr_journey_date: Mapped[date | None] = mapped_column(Date)      # boarding date on the ticket
+    boarding_code: Mapped[str | None] = mapped_column(String(8))     # boarding station on the ticket
+    alighting_code: Mapped[str | None] = mapped_column(String(8))    # reserved up to
 
     ratings: Mapped[list["PassengerFeedbackRating"]] = relationship(cascade="all, delete-orphan")
 

@@ -53,12 +53,9 @@ def create(db: Session, p: Principal, body: InspectionIn, *, sync_op_id: uuid.UU
 
     done = set(db.execute(select(Inspection.round, Inspection.phase).where(
         Inspection.journey_id == j.id, Inspection.coach_code == body.coach_code, Inspection.day == body.day)).tuples())
+    # Every round and phase of an open day can be taken, in any order; each slot only once.
     if (body.round, body.phase) in done:
         raise Conflict("Inspection already recorded for this coach, day, round and phase", code="duplicate_inspection")
-    if body.round > 1 and (body.round - 1, body.phase) not in done:
-        raise BusinessRuleViolation(f"Round {body.round - 1} ({body.phase.value}) must be recorded first", code="round_order")
-    if body.phase == InspectionPhase.AFTER and j.before_inspection_enabled and (body.round, InspectionPhase.BEFORE) not in done:
-        raise BusinessRuleViolation("The Before inspection of this round must be recorded first", code="phase_order")
 
     evidence = security.check_capture(db, p, policy, body, kind="inspection")
     photo_id = media.claim(db, body.photo_media_id, MediaKind.INSPECTION_PHOTO, j.division_id, p.id,
@@ -136,11 +133,8 @@ def journey_grid(db: Session, p: Principal, journey_id: uuid.UUID) -> list[dict]
                     if key in taken:
                         cells.append(dict(round=rnd, phase=ph, status="taken", inspection_id=taken[key]))
                         continue
-                    # Same ordering rules as create(): previous round of this phase, and Before ahead of After.
-                    ready = (rnd == 1 or (coach.code, day, rnd - 1, ph) in taken) and (
-                        ph == InspectionPhase.BEFORE or not j.before_inspection_enabled
-                        or (coach.code, day, rnd, InspectionPhase.BEFORE) in taken)
-                    cells.append(dict(round=rnd, phase=ph, status="open" if open_ and ready else "locked"))
+                    # As create(): every slot of an open day can be taken, in any order.
+                    cells.append(dict(round=rnd, phase=ph, status="open" if open_ else "locked"))
             done = sum(1 for c in cells if c["status"] == "taken")
             out.append(dict(coach_code=coach.code, day=day, day_open=open_, required=len(cells), done=done, cells=cells))
     return out
