@@ -67,7 +67,7 @@ class Attendance(CapturedRecord, Base):
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     # Position in the journey's attendance plan (Journey.attendance_stages), 1 = Source.
     stage: Mapped[int] = mapped_column(Integer, nullable=False)
-    # The station and stage name this record was taken at, as the plan had them (migration 0020). NULL on
+    # The station and stage name this record was taken at, as the plan had them (migration 0021). NULL on
     # records taken before, and on legacy stages, which have no station.
     station_code: Mapped[str | None] = mapped_column(String(8))
     stage_label: Mapped[str | None] = mapped_column(String(140))

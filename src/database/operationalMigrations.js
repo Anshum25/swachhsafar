@@ -821,4 +821,40 @@ const V16 = {
   },
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16];
+// v17: station-wise attendance (backend 0021). A train can name the stations attendance is taken at, and a
+// journey carries its own stage list (journeys.attendance_stages, JSON; NULL = the five original stages), so
+// stages are no longer limited to 1..5. Records keep the station and stage name they were taken at.
+//
+// attendance_records checks `stage BETWEEN 1 AND 5`. As in v15 the CHECK is loosened in the stored CREATE
+// text (every existing row still passes `stage >= 1`) rather than rebuilding a table other rows reference.
+// Existing rows are not touched: they read against the five stages as before.
+const V17_COLUMNS = [
+  ['journeys', 'attendance_stages', "TEXT CHECK (attendance_stages IS NULL OR json_valid(attendance_stages))"],
+  ['trains', 'route_stations', "TEXT CHECK (route_stations IS NULL OR json_valid(route_stations))"],
+  ['trains', 'attendance_station_count', 'INTEGER'],
+  ['trains', 'attendance_station_codes', "TEXT CHECK (attendance_station_codes IS NULL OR json_valid(attendance_station_codes))"],
+  ['attendance_records', 'station_code', 'TEXT'],
+  ['attendance_records', 'stage_label', 'TEXT'],
+];
+const V17 = {
+  version: 17,
+  name: 'station-wise attendance',
+  async prepare(db) {
+    const [{ schema_version: schemaVersion }] = await db.query('PRAGMA schema_version');
+    const add = [];
+    for (const [table, column, type] of V17_COLUMNS) {
+      const has = (await db.query(`PRAGMA table_info(${table})`)).some((c) => c.name === column);
+      if (!has) add.push(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    }
+    return [
+      'PRAGMA writable_schema = ON',
+      `UPDATE sqlite_master SET sql = replace(sql, 'CHECK (stage BETWEEN 1 AND 5)', 'CHECK (stage >= 1)')
+        WHERE type = 'table' AND name = 'attendance_records'`,
+      `PRAGMA schema_version = ${Number(schemaVersion) + 1}`,
+      'PRAGMA writable_schema = OFF',
+      ...add,
+    ];
+  },
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17];

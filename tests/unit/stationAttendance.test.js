@@ -115,9 +115,9 @@ describe('station-wise attendance (offline store)', () => {
     await expect(capture(store, 6)).rejects.toMatchObject({ code: 'invalid_value' });
   });
 
-  it('upgrades a v15 database keeping its attendance records readable', async () => {
+  it('upgrades a v16 database keeping its attendance records readable', async () => {
     const db = await createMemoryDb({ migrate: false });
-    for (const m of MIGRATIONS.filter((x) => x.version <= 15)) {
+    for (const m of MIGRATIONS.filter((x) => x.version <= 16)) {
       const statements = m.prepare ? await m.prepare(db) : m.statements;
       await db.transaction([...statements.map((x) => (typeof x === 'string' ? { sql: x } : x)), { sql: `PRAGMA user_version = ${m.version}` }]);
     }
@@ -127,7 +127,7 @@ describe('station-wise attendance (offline store)', () => {
     await db.run('PRAGMA foreign_keys = OFF');
     await db.run(`INSERT INTO attendance_records (id, journey_id, division_id, employee_id, stage, origin, sync_status, created_at, updated_at)
       VALUES ('old-1', 'j', 'd', 'e', 5, 'server', 'synced', 't', 't')`);
-    expect(await runMigrations(db)).toMatchObject({ from: 15, to: 16, applied: [16] });
+    expect(await runMigrations(db)).toMatchObject({ from: 16, to: 17, applied: [17] });
     expect(await db.query("SELECT stage, station_code, stage_label FROM attendance_records WHERE id = 'old-1'"))
       .toEqual([{ stage: 5, station_code: null, stage_label: null }]);
     await db.run(`INSERT INTO attendance_records (id, journey_id, division_id, employee_id, stage, origin, sync_status, created_at, updated_at)

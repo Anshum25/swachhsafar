@@ -29,7 +29,7 @@ def get_train(db: Session, p: Principal, train_id: uuid.UUID, permission: str = 
 # ---- station-wise attendance ------------------------------------------------------------------------------
 
 # The five stages every journey had before trains could name their attendance stations. Still the plan of a
-# train with no configuration, and how records taken before migration 0020 are read.
+# train with no configuration, and how records taken before migration 0021 are read.
 LEGACY_STAGES: tuple[tuple[str, str], ...] = (
     ("source", "Source"), ("enroute", "Enroute 1"), ("destination", "Destination"), ("enroute", "Enroute 2"),
     ("end", "End"))
@@ -68,7 +68,7 @@ def attendance_plan(train: Train) -> list[dict]:
 
 
 def stages_of(j: Journey) -> list[dict]:
-    """A journey's own attendance stages; journeys created before migration 0020 have the legacy five."""
+    """A journey's own attendance stages; journeys created before migration 0021 have the legacy five."""
     return j.attendance_stages or legacy_stages()
 
 
