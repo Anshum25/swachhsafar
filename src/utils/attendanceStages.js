@@ -41,6 +41,7 @@ export const stageLabel = (stages, stage, saved) => saved || stageInfo(stages, s
 
 // The caption under a stage icon: a station's name, or the legacy short caption.
 export function stageCaption(s) {
+  if (s.kind === 'stage') return String(s.stage);
   if (s.station_code) return s.kind === 'source' ? 'Source' : s.kind === 'end' ? 'End' : (s.station_name || s.station_code);
   return LEGACY_SHORT[s.kind] ?? s.label;
 }
@@ -57,11 +58,16 @@ export function inRouteOrder(route, codes) {
   return [...new Set(codes)].filter((c) => order.has(c)).sort((a, b) => order.get(a) - order.get(b));
 }
 
-// Station-wise attendance validation for the Train Master form; null = valid.
+// The most attendances a train can ask for (backend MAX_ATTENDANCE_STATIONS).
+export const MAX_ATTENDANCE = 50;
+
+// Train Master attendance validation; null = valid. An empty count means the standard five stages.
 export function attendanceConfigError({ enabled, count, codes, route }) {
-  if (!enabled) return null;
+  if (count === '' || count == null) return enabled ? 'Enter the number of attendances first.' : null;
   const n = Number(count);
-  if (!Number.isInteger(n) || n < 1) return 'Required attendance stations must be a positive whole number.';
+  if (!Number.isInteger(n) || n < 1) return 'The number of attendances must be a positive whole number.';
+  if (n > MAX_ATTENDANCE) return `At most ${MAX_ATTENDANCE} attendances.`;
+  if (!enabled) return null;
   const available = selectableStations(route).length;
   if (!available) return "Load the train's route to choose stations.";
   if (n > available) return `The route has only ${available} stations between its source and end.`;

@@ -192,3 +192,23 @@ def test_route_refresh_failure_is_reported(world, sched):
     sched.fail = True
     r = world.client.post(f"{API}/trains/{world.train['id']}/route", headers=world.h("manager"))
     assert r.status_code == 422 and r.json()["error"]["code"] == "route_unavailable"
+
+
+def test_a_count_without_stations_gives_that_many_numbered_stages(world):
+    r = _configure(world, 6, None)   # no route needed
+    assert r.status_code == 200, r.text
+    assert (r.json()["attendance_station_count"], r.json()["attendance_station_codes"]) == (6, None)
+    stages = _journey(world)["attendance_stages"]
+    assert [s["label"] for s in stages] == [f"Stage {i}" for i in range(1, 7)]
+    assert all(s["station_code"] is None for s in stages)
+    for stage in range(1, 7):
+        r, _ = _punch(world, "jan", stage)
+        assert r.status_code == 201, r.text
+    assert _punch(world, "jan", 7)[0].json()["error"]["code"] == "stage_out_of_range"
+
+
+def test_switching_from_stations_to_a_plain_count(world, sched):
+    _load_route(world)
+    _configure(world, 2, ["ND", "BRC"])
+    assert _configure(world, 3, []).status_code == 200
+    assert [s["label"] for s in _journey(world)["attendance_stages"]] == ["Stage 1", "Stage 2", "Stage 3"]

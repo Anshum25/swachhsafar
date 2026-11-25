@@ -45,6 +45,7 @@ describe('attendance stages (pure)', () => {
     expect(stagesOf({ attendance_stages: JSON.stringify(plan(['ND'])) })).toHaveLength(3);
     expect(LEGACY_STAGES.map(stageCaption)).toEqual(['Source', 'Enroute', 'DEST', 'Enroute', 'END']);
     expect(plan(['ND']).map(stageCaption)).toEqual(['Source', 'Nadiad Jn', 'End']);
+    expect([1, 2, 3].map((i) => stageCaption({ stage: i, kind: 'stage', label: `Stage ${i}` }))).toEqual(['1', '2', '3']);
   });
 
   it('offers only stations between source and end, and keeps route order', () => {
@@ -65,7 +66,12 @@ describe('attendance stages (pure)', () => {
     expect(v(-1, [])).toMatch(/positive whole number/);
     expect(v(6, [])).toMatch(/only 5 stations/);
     expect(v(2, [], [])).toMatch(/Load the train's route/);
-    expect(attendanceConfigError({ enabled: false, count: 0, codes: [], route: [] })).toBeNull();
+    // Without station-wise attendance only the count is checked; empty = the standard five stages.
+    expect(attendanceConfigError({ enabled: false, count: 6, codes: [], route: [] })).toBeNull();
+    expect(attendanceConfigError({ enabled: false, count: '', codes: [], route: [] })).toBeNull();
+    expect(attendanceConfigError({ enabled: false, count: 0, codes: [], route: [] })).toMatch(/positive whole number/);
+    expect(attendanceConfigError({ enabled: false, count: 51, codes: [], route: [] })).toMatch(/At most 50/);
+    expect(attendanceConfigError({ enabled: true, count: '', codes: [], route: ROUTE })).toMatch(/number of attendances first/);
   });
 });
 

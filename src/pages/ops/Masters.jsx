@@ -4,7 +4,7 @@ import { DivisionPicker, divisionLabel, useDivision } from '../../app/division.j
 import { useSave } from './masters/common.jsx';
 import { coachText, parseCoaches } from '../../utils/coaches.js';
 import CoachBreakdown from '../../components/CoachBreakdown.jsx';
-import { attendanceConfigError, inRouteOrder, selectableStations } from '../../utils/attendanceStages.js';
+import { MAX_ATTENDANCE, attendanceConfigError, inRouteOrder, selectableStations } from '../../utils/attendanceStages.js';
 import QuestionBanks from './masters/QuestionBanks.jsx';
 import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
@@ -30,7 +30,8 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
   const [error, setError] = useState(null);
   const stations = selectableStations(route);
   const count = Number(value.count);
-  const full = Number.isInteger(count) && count > 0 && value.codes.length >= count;
+  const countOk = value.count !== '' && Number.isInteger(count) && count > 0;
+  const full = countOk && value.codes.length >= count;
   const problem = attendanceConfigError({ ...value, route });
 
   async function loadRoute() {
@@ -50,18 +51,20 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
   return (
     <fieldset className="space-y-3 rounded-2xl p-3 ring-1 ring-line">
       <legend className="px-1 text-sm font-semibold text-ink">Attendance Configuration</legend>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={value.enabled} disabled={!train}
+      <Field label="Number of attendances"
+        hint={value.enabled ? 'Stations between source and end. Source and End are stages of their own.'
+          : value.count === '' ? 'Leave empty for the standard five stages.' : `Staff mark attendance ${value.count} times: Stage 1 to Stage ${value.count}.`}>
+        <input type="number" min={1} max={MAX_ATTENDANCE} step={1} inputMode="numeric" className="input sm:max-w-40" placeholder="5 (standard)"
+          value={value.count} onChange={(e) => onChange({ ...value, count: e.target.value === '' ? '' : Number(e.target.value) })} />
+      </Field>
+      <label className={`flex items-center gap-2 text-sm ${countOk && train ? '' : 'opacity-50'}`}>
+        <input type="checkbox" checked={value.enabled} disabled={!train || (!countOk && !value.enabled)}
           onChange={(e) => onChange({ ...value, enabled: e.target.checked })} />
         Configure station-wise attendance
       </label>
       {!train && <p className="text-xs text-muted">Create the train first; its route is then read so stations can be chosen.</p>}
       {value.enabled && (
         <>
-          <Field label="Required attendance stations" hint="Intermediate stations only. Source and End are always stages of their own.">
-            <input type="number" min={1} step={1} max={stations.length || undefined} inputMode="numeric" className="input sm:max-w-40"
-              value={value.count} onChange={(e) => onChange({ ...value, count: e.target.value === '' ? '' : Number(e.target.value) })} />
-          </Field>
           <ErrorNote error={error} />
           {!stations.length ? (
             <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -95,9 +98,9 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
               </ul>
             </div>
           )}
-          {problem && <p className="text-xs font-medium text-amber-700" role="status">{problem}</p>}
         </>
       )}
+      {problem && <p className="text-xs font-medium text-amber-700" role="status">{problem}</p>}
     </fieldset>
   );
 }
@@ -118,7 +121,8 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
   const configured = !!train?.attendance_station_count;
   const [route, setRoute] = useState(train?.route_stations ?? []);
   const [att, setAtt] = useState({
-    enabled: configured, count: train?.attendance_station_count ?? 5, codes: train?.attendance_station_codes ?? [],
+    enabled: !!train?.attendance_station_codes?.length, count: train?.attendance_station_count ?? '',
+    codes: train?.attendance_station_codes ?? [],
   });
   const attError = attendanceConfigError({ ...att, route });
 
@@ -128,9 +132,11 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
     const { train_no, coaches, ...rest } = f;
     const fields = { ...rest, ...Object.fromEntries(TIMES.map(([k]) => [k, rest[k] || null])) };
     // Sent only when station-wise attendance is on, or was on and is being turned off.
-    const attendance = att.enabled
-      ? { attendance_station_count: Number(att.count), attendance_station_codes: inRouteOrder(route, att.codes) }
-      : configured ? { attendance_station_count: null, attendance_station_codes: null } : {};
+    // A count with stations: Source, those stations, End. A count alone: that many numbered stages. Neither:
+    // the standard five (sent only to clear a count the train had).
+    const attendance = att.count === ''
+      ? (configured ? { attendance_station_count: null, attendance_station_codes: null } : {})
+      : { attendance_station_count: Number(att.count), attendance_station_codes: att.enabled ? inRouteOrder(route, att.codes) : null };
     save.run(async () => {
       if (train) {
         await api.patch(`/trains/${train.id}`, { ...fields, ...attendance });
@@ -194,7 +200,8 @@ function Trains({ divisionId }) {
             { key: 'train_no', label: 'Train', render: (t) => <><span className="font-semibold">{t.train_no}</span><span className="block text-xs text-slate-500">{t.name}</span></> },
             { key: 'coaches', label: 'Coaches', render: (t) => <span className="text-xs">{coachText(t.coaches)}</span> },
             { key: 'rounds', label: 'Rounds/day', render: (t) => t.inspection_rounds_per_day },
-            { key: 'attendance', label: 'Attendance', render: (t) => (t.attendance_station_count ? `${t.attendance_station_count} stations` : '5 stages') },
+            { key: 'attendance', label: 'Attendance', render: (t) => (!t.attendance_station_count ? '5 stages'
+              : t.attendance_station_codes?.length ? `${t.attendance_station_count} stations` : `${t.attendance_station_count} stages`) },
             { key: 'is_active', label: 'Status', render: (t) => <Badge tone={t.is_active ? 'green' : 'slate'}>{t.is_active ? 'Active' : 'Inactive'}</Badge> },
           ]} />
           );
