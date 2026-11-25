@@ -296,6 +296,8 @@ export async function analyseFaces(input, { inputSize = PREVIEW_INPUT_SIZE } = {
       score: f.detection.score,
       yaw: (nose.x - (eyeL.x + eyeR.x) / 2) / span,
       points: DEPTH_LANDMARKS.map((i) => [pts[i].x, pts[i].y]),
+      // Where each eye is, for eyeOpenness: a group photo watches every face for a blink.
+      eyes: [eyeBox(pts.slice(36, 42)), eyeBox(pts.slice(42, 48))],
     };
   }).sort((a, b) => a.box.x - b.box.x);
 }

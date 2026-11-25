@@ -179,8 +179,6 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const mayAttest = journey.supervisor_id === user?.id || canIn('attendance.review', journey.division_id);
   const mode = policy.data?.attendance_group_photo === true && mayAttest ? 'photo' : 'each';
   const [group, setGroup] = useState(null);           // what the camera recognised
-  const [plainPhoto, setPlainPhoto] = useState(null); // fallback: an ordinary photo, staff named by hand
-  const [usePlain, setUsePlain] = useState(false);
   const [profiles, setProfiles] = useState([]);
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const chosen = members.filter((m) => picked[m.employee_id]);
@@ -199,21 +197,18 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   }, [mode, memberIds, store]);
 
   // Fully automatic with the face camera: once the photo is read and there is a location fix, everyone
-  // recognised is marked at THEIR OWN next stage -- nothing to choose, nothing to press. The ordinary-photo
-  // fallback (no recognition) still needs the supervisor to tick who is in it.
+  // recognised is marked at THEIR OWN next stage -- nothing to choose, nothing to press. There is no
+  // ordinary-photo fallback with staff named by hand: only faces the camera recognises are marked.
   const recognised = new Map((group?.members ?? []).map((r) => [r.employee_id, r]));
   const autoMembers = members.filter((m) => recognised.has(m.employee_id));
-  const groupPhoto = usePlain ? plainPhoto : (group?.ready ? group.photo : null);
-  const autoReady = mode === 'photo' && !usePlain && gps && group?.ready && autoMembers.length > 0 && !policy.loading && gate.allowed;
+  const autoReady = mode === 'photo' && gps && group?.ready && autoMembers.length > 0 && !policy.loading && gate.allowed;
   useEffect(() => {
     if (!autoReady || busy || done) return;
     submit(null, autoMembers);
     // `submit` closes over this render's values, which are the ones `autoReady` was computed from.
   }, [autoReady]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ready = mode === 'photo'
-    ? gps && groupPhoto && chosen.length > 0 && !policy.loading && gate.allowed
-    : gps && chosen.length && !policy.loading && gate.allowed
+  const ready = mode === 'each' && gps && chosen.length && !policy.loading && gate.allowed
       && (!cameraOn || chosen.every((m) => live[m.employee_id] === 'passed'))
       && (!(photoRequired || cameraOn) || chosen.every((m) => photos[m.employee_id]))
       && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
@@ -230,20 +225,18 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
       let extra;
       let media = [];
       if (mode === 'photo') {
-        const hit = !usePlain ? recognised.get(m.employee_id) : null;
+        const hit = recognised.get(m.employee_id);
         const mediaId = crypto.randomUUID();
         extra = {
           group_photo: true, photo_media_id: mediaId,
-          // The distance is evidence only where the device recognised this person and the supervisor
-          // agreed. Where the supervisor supplied the name, nothing is claimed about a match.
+          // How closely the face matched this person's registered face.
           ...(hit && typeof hit.distance === 'number' ? { face_distance: hit.distance, face_model: FACE_MODEL } : {}),
-          // Someone in the crew was seen moving in 3-D in the live preview before the photo was taken
-          // (GroupPhotoCapture); with nobody moving, nobody is in `recognised`.
+          // Someone in the crew was seen blinking or moving in 3-D in the live preview before the photo
+          // was taken (GroupPhotoCapture); with nobody doing either, nobody is in `recognised`.
           ...gate.evidence({ liveness: hit?.liveness ?? 'not_required', faceModel: hit ? FACE_MODEL : null }),
         };
-        // Each record keeps this person's own face cut out of the group photo; a person named by hand
-        // keeps the whole photograph.
-        media = [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: hit?.crop ?? groupPhoto }];
+        // Each record keeps this person's own face cut out of the group photo.
+        media = [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: hit?.crop ?? group?.photo }];
       } else {
         const photo = photos[m.employee_id];
         const mediaId = photo ? crypto.randomUUID() : null;
@@ -284,7 +277,6 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
 
   const toggle = (id, on) => setPicked((p) => ({ ...p, [id]: on }));
   const selectAll = () => setPicked(Object.fromEntries(members.map((m) => [m.employee_id, true])));
-  const sourceOf = (id) => (!usePlain && recognised.has(id) ? 'Recognised' : 'Named by hand');
 
   return (
     <Dialog open title="Group attendance" onClose={onClose} wide>
@@ -294,47 +286,15 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
           <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
           {mode === 'photo' ? (
             <>
-              {usePlain ? (
-                <PhotoCapture value={plainPhoto} onChange={setPlainPhoto} required stamp={stampLines({ ...gps, address })} />
-              ) : (
-                <GroupPhotoCapture key={profiles.length} candidates={candidates} profiles={profiles}
-                  threshold={threshold} onChange={setGroup} />
-              )}
-              <button type="button" className="btn-link text-xs"
-                onClick={() => { setUsePlain((u) => !u); setPicked({}); setPlainPhoto(null); setGroup(null); }}>
-                {usePlain ? 'Use the face recognition camera' : 'Take an ordinary photo and select staff by hand'}
-              </button>
-              {!usePlain && (
-                <p className="text-sm font-medium text-muted" aria-live="polite">
-                  {busy ? `Marking ${autoMembers.length} present…`
-                    : done ? `Done. ${autoMembers.map((m) => `${m.name}: ${m.info.label}`).join(' · ')}`
-                      : !gps ? 'Waiting for the location fix…'
-                        : !group?.ready ? 'Hold the phone steady; the photo is taken and read automatically.'
-                          : 'Nobody due was recognised. See the reason under each face, then retake.'}
-                </p>
-              )}
-              {usePlain && groupPhoto && (
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <p className="text-xs font-medium uppercase text-slate-500">Confirm who is in the photo ({chosen.length}/{members.length})</p>
-                    <button type="button" className="btn-link text-xs" onClick={selectAll}>Select all</button>
-                  </div>
-                  <ul className="divide-y divide-line rounded-2xl ring-1 ring-slate-200" aria-label="Group attendance review">
-                    {members.map((m) => (
-                      <li key={m.employee_id}>
-                        <label className="flex items-center gap-3 p-3 text-sm">
-                          <input type="checkbox" className="h-5 w-5" checked={!!picked[m.employee_id]} onChange={(e) => toggle(m.employee_id, e.target.checked)} />
-                          <span className="min-w-0 flex-1 truncate"><span className="font-medium">{m.name}</span><span className="text-slate-500"> · {m.emp_id}</span></span>
-                          <StagePill member={m} />
-                          <span className={`hidden w-36 shrink-0 text-right text-[11px] font-semibold sm:inline ${picked[m.employee_id] ? 'text-success' : 'text-slate-400'}`}>
-                            {picked[m.employee_id] ? `Ready · ${sourceOf(m.employee_id)}` : 'Not marked'}
-                          </span>
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              <GroupPhotoCapture key={profiles.length} candidates={candidates} profiles={profiles}
+                threshold={threshold} onChange={setGroup} />
+              <p className="text-sm font-medium text-muted" aria-live="polite">
+                {busy ? `Marking ${autoMembers.length} present…`
+                  : done ? `Done. ${autoMembers.map((m) => `${m.name}: ${m.info.label}`).join(' · ')}`
+                    : !gps ? 'Waiting for the location fix…'
+                      : !group?.ready ? 'Hold the phone steady; the photo is taken and read automatically.'
+                        : 'Nobody due was recognised. See the reason under each face, then retake.'}
+              </p>
             </>
           ) : (
             <>
@@ -379,7 +339,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
             </>
           )}
           {gate.notice}
-          {mode === 'photo' && !usePlain ? (
+          {mode === 'photo' ? (
             <div className="flex justify-end border-t border-line pt-3">
               <button type="button" className="btn-secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
             </div>

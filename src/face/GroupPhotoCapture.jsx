@@ -1,35 +1,39 @@
-// Point the camera at the crew; it watches for movement, takes the photo itself once one person in the crew
-// has moved, works out who is in it, and hands back the names. Built for a crew of ten to fifteen people.
+// Point the camera at the crew; it watches every face for a blink or a head movement, takes the photo itself
+// once one person in the crew has blinked or moved, works out who is in it, and hands back the names. Built
+// for a crew of ten to fifteen people.
 //
-// How the shutter decides: the crew's own movement. Nobody is asked to do anything special; people shift,
-// glance around and turn as they settle. The preview follows every face from frame to frame
-// (groupLiveness.js): a real head moving shows 3-D depth -- the nose moves off the plane of the eyes, brows
-// and mouth (depthCheck.js). A printed photo, or a photo or video of a face on a phone held up to the camera,
-// is flat and never passes. ONE face seen moving is enough: it shows the camera is looking at a live crew,
-// and everyone recognised in the photo is marked. (Weaker than asking every face to move: a picture held up
-// beside a live person would be read too. The supervisor taking the photo is answerable for it.)
+// How the shutter decides: the crew's own blinks and movement. Nobody is asked to do anything special; people
+// blink every few seconds, shift, glance around and turn as they settle. The preview follows every face from
+// frame to frame. A blink is read from the pixels of each face's eyes on a fast timer, as in solo attendance
+// (faceEngine.eyeOpenness, liveness.js); a real head moving shows 3-D depth -- the nose moves off the plane of
+// the eyes, brows and mouth (groupLiveness.js, depthCheck.js). A printed photo, or a photo of a face on a
+// phone held up to the camera, neither blinks nor shows depth. ONE face seen blinking or moving is enough: it
+// shows the camera is looking at a live crew, and everyone recognised in the photo is marked. (Weaker than
+// asking every face: a picture held up beside a live person would be read too. The supervisor taking the
+// photo is answerable for it.)
 //
 // The photo is NOT taken while people are moving: a face turned away is a face that cannot be recognised.
 // It is taken at the first moment after that when every face in view is looking at the camera and the
 // crew is steady -- one still, at full resolution. If nobody moves, the photo is still taken (on a frame
-// where everyone faces the camera) after a while, and nobody is marked.
+// where everyone faces the camera) after a while, and nobody is marked if nobody blinked or moved either.
 //
 // What it reads. The still is read with the thorough detector (SSD MobileNet, faceEngine.describeAll),
 // whole and in tiles so back-row faces are found, each face from its own enlarged close-up.
 //
-// Recognition never guesses (faceMatch.identifyFaces): once someone was seen moving, everyone recognised
+// Recognition never guesses (faceMatch.identifyFaces): once someone blinked or moved, everyone recognised
 // clearly is marked present at once, with nothing to press. A face whose closest match does not clearly beat
 // the runner-up, or that matched nobody, is never marked; the screen says why under its picture.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GROUP_INPUT_SIZE, analyseFaces, cropFace, describeAll, loadFaceEngine } from './faceEngine.js';
+import { GROUP_INPUT_SIZE, analyseFaces, cropFace, describeAll, eyeOpenness, loadFaceEngine } from './faceEngine.js';
 import { createGroupLiveness, liveTrackFor } from './groupLiveness.js';
+import { createLiveness } from './liveness.js';
 import { RECOMMENDED_THRESHOLD, identifyFaces, isStrict, requiredPercent, similarityPercent } from './faceMatch.js';
 import { RefreshIcon, UsersIcon } from '../components/Icons.jsx';
 
 // Why a face was not marked, in one short line under its picture.
 function whyNot(r, nameOf, threshold) {
   if (r.small) return 'Too small or unclear to read. Come closer.';
-  if (r.status === 'identified' && !r.live) return `Looks like ${nameOf(r.userId)}, but nobody was seen moving (or it is a photo).`;
+  if (r.status === 'identified' && !r.live) return `Looks like ${nameOf(r.userId)}, but nobody was seen blinking or moving (or it is a photo).`;
   if (r.status === 'ambiguous') return `Looks like ${nameOf(r.userId)} or ${nameOf(r.runnerUpId)}; too close to tell apart.`;
   if (r.distance == null) return 'Nobody registered to compare with.';
   return `Closest match ${similarityPercent(r.distance)}%; needs ${requiredPercent(threshold)}%.`;
@@ -62,6 +66,15 @@ const LIVE_PATIENCE_MS = 15000;
 const FRONTAL_GRACE_MS = 5000;
 // Stills larger than this are scaled down: plenty for recognition, and keeps the phone responsive.
 const MAX_WIDTH = 3000;
+// The eyes are read from the pixels on their own timer, much faster than the detector runs: a blink lasts
+// about two tenths of a second. Only faces at least this tall (video pixels) are watched for a blink:
+// smaller eyes are a few pixels across, too few to tell open from shut.
+const EYE_SAMPLE_MS = 50;
+const BLINK_FACE_PX = 70;
+const blinkDetector = () => createLiveness({
+  challenges: ['blink'],
+  options: { timeoutMs: 600_000, minFaceSize: 0, turnYaw: 0.35, frontYaw: 0.30, blinkDip: 0.13, jitterDips: 1.8, blinkRecover: 0.65, baselineFrames: 2 },
+});
 
 export default function GroupPhotoCapture({ candidates, profiles, threshold, onChange }) {
   const video = useRef(null);
@@ -134,8 +147,8 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
         setError('No faces could be read from the photo. Hold the phone steady with everyone facing the camera.');
         return;
       }
-      // One face seen moving makes the crew live; every face then counts as seen live.
-      const crewLive = liveCtx.tracks.some((t) => t.live);
+      // One face seen blinking or moving makes the crew live; every face then counts as seen live.
+      const crewLive = liveCtx.blinked || liveCtx.tracks.some((t) => t.live);
       const found = identifyFaces({ faces, profiles, threshold })
         .map((r) => ({ ...r, small: faces[r.index].small,
           moved: !!liveTrackFor(liveCtx.tracks, faces[r.index].box, { sx: liveCtx.sx, sy: liveCtx.sy }),
@@ -159,6 +172,10 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
     setLiveSeen({ live: 0, total: 0 });
     const liveness = createGroupLiveness();
     let liveState = liveness.snapshot();
+    // Blinks: one detector per tracked face, fed by the fast eye sampler below.
+    const blinkers = new Map();
+    let watched = [];      // [{ id, eyes, yaw, size }] from the latest detection
+    let blinked = false;
     stop();
     const myRun = (runId.current += 1);
     try {
@@ -206,7 +223,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       still?.close?.();
       setPhoto(canvas.toDataURL('image/jpeg', 0.9));
       release();                  // the preview has done its job; free the camera before the slow pass
-      await read(canvas, myRun, { tracks: liveState.tracks, sx: canvas.width / vw, sy: canvas.height / vh });
+      await read(canvas, myRun, { tracks: liveState.tracks, blinked, sx: canvas.width / vw, sy: canvas.height / vh });
     };
 
     let steady = 0;
@@ -222,8 +239,14 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       if (shooting || myRun !== runId.current || !video.current) return;
       const height = video.current.videoHeight || 720;
       liveState = liveness.feed(found);
-      // Anyone seen moving so far counts, even if they have since turned away or stepped behind someone.
-      const movedSoFar = liveState.tracks.filter((t) => t.live).length;
+      // The faces big enough to watch for a blink, under their track ids (a track's box is the face's own box).
+      const frameW = video.current.videoWidth || 1;
+      watched = found.filter((f) => f.eyes && f.box.height >= BLINK_FACE_PX).map((f) => ({
+        id: liveState.tracks.find((t) => t.box === f.box)?.id, eyes: f.eyes, yaw: f.yaw, size: f.box.width / frameW,
+      })).filter((w) => w.id != null);
+      // Anyone seen blinking or moving so far counts, even if they have since turned away or stepped behind
+      // someone.
+      const movedSoFar = liveState.tracks.filter((t) => t.live).length + (blinked ? 1 : 0);
       setLiveSeen({ live: movedSoFar, total: liveState.total });
       // Only faces big enough to recognise are counted, so the shutter never fires on a crowd in the
       // distance that the slow pass would fail to identify anyway.
@@ -244,7 +267,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       const frontal = usable.length > 0 && usable.every((f) => Math.abs(f.yaw) <= FRONTAL_YAW);
       frontalRun = frontal ? frontalRun + 1 : 0;
       setLooking(frontal);
-      // One person in view has to have moved like a real person before the photo is taken.
+      // One person in view has to have blinked or moved like a real person before the photo is taken.
       const someoneLive = movedSoFar >= 1;
       // The whole crew in view, or long enough waited for the rest.
       const enough = usable.length >= want || t - startedAt >= WAIT_FOR_ALL_MS;
@@ -259,7 +282,22 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       if (settled || impatient) { await shoot(); return; }
       setTimeout(look, 0);
     };
+    // Fast: read every watched face's eyes and look for a blink. No model runs here, so it keeps its own pace.
+    const sample = () => {
+      if (shooting || myRun !== runId.current || !video.current) return;
+      if (!blinked) {
+        for (const w of watched) {
+          const openness = eyeOpenness(video.current, w.eyes);
+          if (openness == null) continue;
+          if (!blinkers.has(w.id)) blinkers.set(w.id, blinkDetector());
+          const r = blinkers.get(w.id).feed({ count: 1, size: w.size, yaw: w.yaw, ear: openness });
+          if (r.status === 'passed') { blinked = true; break; }
+        }
+      }
+      setTimeout(sample, EYE_SAMPLE_MS);
+    };
     look();
+    sample();
   }, [read, release, stop]);
 
   // Opens by itself: the camera is the whole screen, so there is nothing to press first.
@@ -274,7 +312,7 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       : seen === 0 ? 'Point the camera at the crew'
         : tooSmall ? `${seen} ${seen === 1 ? 'face' : 'faces'} in view — come closer, the faces are too small`
           : liveSeen.live === 0
-            ? 'Waiting for someone to move'
+            ? 'Waiting for someone to blink or move'
             : !looking ? 'Everyone look at the camera'
               : `Hold still${holdLeft ? ` · ${(holdLeft / 1000).toFixed(1)}s` : ''}`;
 
@@ -306,8 +344,8 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
 
       {phase === 'looking' && (
         <p className="text-xs text-muted">
-          Stand 2{'–'}3 metres from the crew, in two rows at most, in good light. Once anyone moves, the
-          photo is taken by itself the moment everyone is looking at the camera.
+          Stand 2{'–'}3 metres from the crew, in two rows at most, in good light. Once anyone blinks or
+          moves, the photo is taken by itself the moment everyone is looking at the camera.
         </p>
       )}
 
