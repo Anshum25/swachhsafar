@@ -1,14 +1,14 @@
 """Stored PNR answers: pnr_lookups keeps the last answer a PNR provider (RailRadar, else RapidAPI) gave for a
 PNR until it expires, so the same PNR is not fetched again (app/services/pnr_cache.py).
 
-Revision ID: 0023
-Revises: 0022
+Revision ID: 0024
+Revises: 0023
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0023"
-down_revision = "0022"
+revision = "0024"
+down_revision = "0023"
 branch_labels = None
 depends_on = None
 
