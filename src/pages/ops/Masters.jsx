@@ -102,6 +102,9 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
   );
 }
 
+// Optional train times; journeys copy them (and follow later edits unless given their own).
+const TIMES = [['start_time', 'Start time'], ['end_time', 'End time'], ['return_start_time', 'Return start time'], ['return_end_time', 'Return end time']];
+
 function TrainForm({ train, divisionId, onClose, onSaved }) {
   const { api } = useSession();
   const save = useSave(onSaved);
@@ -109,6 +112,7 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
     train_no: train?.train_no ?? '', name: train?.name ?? '', duration_days: train?.duration_days ?? 1, operational_days: train?.operational_days ?? 2,
     inspection_rounds_per_day: train?.inspection_rounds_per_day ?? 1, before_inspection_enabled: train?.before_inspection_enabled ?? false,
     after_inspection_enabled: train?.after_inspection_enabled ?? true, daywise: train?.daywise ?? false, coaches: train ? coachText(train.coaches) : '',
+    ...Object.fromEntries(TIMES.map(([k]) => [k, train?.[k]?.slice(0, 5) ?? ''])),
   });
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
   const configured = !!train?.attendance_station_count;
@@ -121,7 +125,8 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
   function submit(e) {
     e.preventDefault();
     if (attError) return;
-    const { train_no, coaches, ...fields } = f;
+    const { train_no, coaches, ...rest } = f;
+    const fields = { ...rest, ...Object.fromEntries(TIMES.map(([k]) => [k, rest[k] || null])) };
     // Sent only when station-wise attendance is on, or was on and is being turned off.
     const attendance = att.enabled
       ? { attendance_station_count: Number(att.count), attendance_station_codes: inRouteOrder(route, att.codes) }
@@ -145,6 +150,9 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
         <Field label="Duration (days)"><input type="number" min={0} max={15} className="input" value={f.duration_days} onChange={set('duration_days')} /></Field>
         <Field label="Operational days"><input type="number" min={1} max={30} className="input" value={f.operational_days} onChange={set('operational_days')} /></Field>
         <Field label="Inspection rounds / day"><input type="number" min={1} max={20} className="input" value={f.inspection_rounds_per_day} onChange={set('inspection_rounds_per_day')} /></Field>
+        {TIMES.map(([k, label]) => (
+          <Field key={k} label={label}><input type="time" className="input" value={f[k]} onChange={set(k)} /></Field>
+        ))}
       </div>
       <div className="flex flex-wrap gap-4 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.before_inspection_enabled} onChange={set('before_inspection_enabled')} /> Before inspection</label>
@@ -166,19 +174,31 @@ function Trains({ divisionId }) {
   const manage = canIn('trains.manage', divisionId);
   const res = useResource('/trains', { division_id: divisionId, page_size: 200 });
   const [edit, setEdit] = useState(null);
+  const [q, setQ] = useState('');
   const done = () => { setEdit(null); res.reload(); };
+  const needle = q.trim().toLowerCase();
+  const match = (t) => !needle || t.train_no?.toLowerCase().includes(needle) || t.name?.toLowerCase().includes(needle);
   return (
-    <Panel title="Trains & coaches" actions={manage && <button type="button" className="btn-secondary" onClick={() => setEdit('new')}><PlusIcon /> Add train</button>}>
+    <Panel title="Trains & coaches" actions={
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="search" className="input h-10 w-full sm:w-56" placeholder="Search train no. / name" aria-label="Search trains"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+        {manage && <button type="button" className="btn-secondary" onClick={() => setEdit('new')}><PlusIcon /> Add train</button>}
+      </div>
+    }>
       <DataState res={res} empty="No trains configured for this division.">
-        {(page) => (
-          <Table rows={page.items} onRowClick={manage ? setEdit : undefined} columns={[
+        {(page) => {
+          const rows = page.items.filter(match);
+          return !rows.length ? <p className="text-sm text-muted">No train matches “{q.trim()}”.</p> : (
+          <Table rows={rows} onRowClick={manage ? setEdit : undefined} columns={[
             { key: 'train_no', label: 'Train', render: (t) => <><span className="font-semibold">{t.train_no}</span><span className="block text-xs text-slate-500">{t.name}</span></> },
             { key: 'coaches', label: 'Coaches', render: (t) => <span className="text-xs">{coachText(t.coaches)}</span> },
             { key: 'rounds', label: 'Rounds/day', render: (t) => t.inspection_rounds_per_day },
             { key: 'attendance', label: 'Attendance', render: (t) => (t.attendance_station_count ? `${t.attendance_station_count} stations` : '5 stages') },
             { key: 'is_active', label: 'Status', render: (t) => <Badge tone={t.is_active ? 'green' : 'slate'}>{t.is_active ? 'Active' : 'Inactive'}</Badge> },
           ]} />
-        )}
+          );
+        }}
       </DataState>
       <Dialog open={!!edit} title={edit === 'new' ? 'Add train' : 'Edit train'} onClose={() => setEdit(null)} wide>
         {edit && <TrainForm train={edit === 'new' ? null : edit} divisionId={divisionId} onClose={() => setEdit(null)} onSaved={done} />}
