@@ -88,6 +88,37 @@ def activate_bank(db: Session, p: Principal, bank_id: uuid.UUID) -> QuestionBank
     return bank
 
 
+def assign_bank(db: Session, p: Principal, bank_id: uuid.UUID, division_ids: list[uuid.UUID]) -> list[QuestionBank]:
+    """Use a bank at the given stations: each gets its own copy (same questions and options), made active
+    there, retiring that station's previously active bank of the same audience. Ratings already given stay
+    on the bank they were answered on."""
+    src = get_or_404(db, QuestionBank, bank_id, "Question bank")
+    if src.division_id is not None and not p.can_access_division(src.division_id):
+        raise Forbidden("Outside your authorized divisions", code="division_forbidden")
+    out = []
+    for did in dict.fromkeys(division_ids):
+        p.require("questions.manage", did)
+        db.execute(update(QuestionBank).where(QuestionBank.division_id == did, QuestionBank.audience == src.audience)
+                   .values(is_active=False))
+        if src.division_id == did:
+            src.is_active = True
+            out.append(src)
+            continue
+        copy = QuestionBank(division_id=did, audience=src.audience, name=src.name, scale_min=src.scale_min, scale_max=src.scale_max,
+                            option_labels=src.option_labels, is_active=False, questions=[
+                                Question(position=q.position, text_en=q.text_en, text_hi=q.text_hi, applies_ac=q.applies_ac,
+                                         applies_non_ac=q.applies_non_ac, applies_gen=q.applies_gen, required=q.required,
+                                         psi_weight=q.psi_weight) for q in src.questions])
+        db.add(copy)
+        db.flush()
+        copy.is_active = True
+        db.flush()
+        audit(db, actor_id=p.id, action="question_bank.assign", entity=copy, division_id=did, changes={"from_bank": str(src.id)})
+        out.append(copy)
+    db.commit()
+    return out
+
+
 def list_banks(db: Session, p: Principal, division_id: uuid.UUID | None) -> list[QuestionBank]:
     stmt = select(QuestionBank).options(selectinload(QuestionBank.questions)).order_by(QuestionBank.created_at.desc())
     if division_id is None:

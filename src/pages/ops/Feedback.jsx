@@ -477,8 +477,8 @@ function PassengerFlow({ id }) {
                 <h2 className="text-[15px] font-bold text-ink">Passenger Feedback{!bank.option_labels?.length && <span className="font-medium text-muted"> · rate {bank.scale_min}–{bank.scale_max}</span>}</h2>
                 {questions.data.map((q) => (
                   <div key={q.id} className="card py-3.5">
-                    <p className="mb-1 text-sm font-semibold text-ink">{q.position}. {q.text_en}{q.required && <span className="text-red-600"> *</span>}</p>
-                    {q.text_hi && <p className="mb-2 text-xs text-muted">{q.text_hi}</p>}
+                    {q.text_hi && <p className="mb-1 text-[15px] text-ink">{q.position}) {q.text_hi}</p>}
+                    <p className="mb-3 text-[15px] text-ink">{q.position}) {q.text_en}{q.required && <span className="text-red-600"> *</span>}</p>
                     <RatingScale min={bank.scale_min} max={bank.scale_max} options={bank.option_labels} value={ratings[q.id]} label={`Rating for question ${q.position}`}
                       onChange={(v) => setRatings((r) => ({ ...r, [q.id]: v }))} />
                   </div>
@@ -557,7 +557,8 @@ function RailwayForm() {
           <div className="space-y-3">
             {(questions.data ?? []).map((q) => (
               <div key={q.id}>
-                <p className="mb-1.5 text-sm font-medium">{q.position}. {q.text_en}</p>
+                {q.text_hi && <p className="mb-1 text-sm">{q.position}) {q.text_hi}</p>}
+                <p className="mb-2 text-sm">{q.position}) {q.text_en}</p>
                 {bank && <RatingScale min={bank.scale_min} max={bank.scale_max} options={bank.option_labels} value={ratings[q.id]} label={`Rating for question ${q.position}`}
                   onChange={(v) => setRatings((r) => ({ ...r, [q.id]: v }))} />}
               </div>

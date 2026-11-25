@@ -256,3 +256,24 @@ def test_void_by_reviewer(world, fakes):
     r = world.client.post(f"{API}/passenger/{fb['id']}/void", headers=world.h("manager"), json={"reason": "fraudulent entry"})
     assert r.json()["status"] == "void"
     assert world.db.get(PassengerFeedback, uuid.UUID(fb["id"])).void_reason == "fraudulent entry"
+
+
+def test_assign_bank_to_stations(world):
+    """Assign puts a copy of a bank (questions and answer options) at each chosen station and makes it active there."""
+    r = world.client.post(f"{API}/question-banks", headers=world.h("sa"), json=dict(
+        audience="passenger", name="Standard passenger", option_labels=["Poor", "Average", "Good", "Very Good", "Excellent"],
+        questions=[dict(text_en="Toilet cleaning", text_hi="शौचालय")]))
+    assert r.status_code == 201, r.text
+    bank = r.json()
+    assert (bank["scale_min"], bank["scale_max"]) == (1, 5)
+    assert world.client.post(f"{API}/question-banks/{bank['id']}/assign", headers=world.h("admin"),
+                             json={"division_ids": [str(world.b.id)]}).status_code == 403
+    r = world.client.post(f"{API}/question-banks/{bank['id']}/assign", headers=world.h("sa"),
+                          json={"division_ids": [str(world.a.id), str(world.b.id)]})
+    assert r.status_code == 200, r.text
+    assert sorted(x["division_id"] for x in r.json()) == sorted([str(world.a.id), str(world.b.id)])
+    for div in (world.a, world.b):
+        banks = world.client.get(f"{API}/question-banks?division_id={div.id}", headers=world.h("sa")).json()
+        active = [x for x in banks if x["is_active"] and x["audience"] == "passenger"]
+        assert len(active) == 1 and active[0]["option_labels"][4] == "Excellent"
+        assert active[0]["questions"][0]["text_hi"] == "शौचालय"

@@ -54,6 +54,10 @@ class QuestionBankCreate(StrictModel):
         return self
 
 
+class BankAssignIn(StrictModel):
+    division_ids: list[uuid.UUID] = Field(min_length=1, max_length=200, description="Stations that should use this bank")
+
+
 class QuestionOut(ReadModel):
     id: uuid.UUID
     position: int
