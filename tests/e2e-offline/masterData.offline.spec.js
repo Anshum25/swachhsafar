@@ -136,12 +136,11 @@ test('master data: online administration, offline reads, read-only users', async
   dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('textbox', { name: 'Bank name' })).toHaveValue('passenger bank (revised)');
   await expect(dialog.getByTestId('question-row')).toHaveCount(3);
-  // Where the bank applies is chosen in the form; a new version starts at its bank's station.
-  await expect(dialog.getByRole('group', { name: 'Applies to' })).toBeVisible();
-  await expect(dialog.getByRole('combobox', { name: 'Bank station' })).not.toHaveValue('');
+  // The form has only the answer options and questions; stations are chosen with Assign.
+  await expect(dialog.getByRole('textbox', { name: 'Answer option 5' })).toHaveValue('Excellent');
   await dialog.getByRole('button', { name: 'Remove question 3' }).click();
   await dialog.getByRole('button', { name: 'Save new version' }).click();
-  await toast(page, 'saved as an inactive version');
+  await toast(page, 'Question bank saved');
   const revised = page.getByRole('row', { name: /passenger bank \(revised\)/ });
   await expect(revised).toContainText('Inactive');
   await revised.getByRole('button', { name: 'Activate' }).click();

@@ -8,6 +8,7 @@ from app.models import PassengerFeedbackStatus
 from app.providers.external import PnrProvider, SmsProvider, get_pnr_provider, get_sms_provider
 from app.schemas.common import Page, PageParams
 from app.schemas.feedback import (
+    BankAssignIn,
     OtpSent,
     OtpVerify,
     PassengerFeedbackComplete,
@@ -42,6 +43,12 @@ def list_banks(division_id: uuid.UUID | None = None, db: Session = Depends(get_d
 @router.post("/question-banks/{bank_id}/activate", response_model=QuestionBankOut)
 def activate_bank(bank_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return svc.activate_bank(db, p, bank_id)
+
+
+@router.post("/question-banks/{bank_id}/assign", response_model=list[QuestionBankOut])
+def assign_bank(bank_id: uuid.UUID, body: BankAssignIn, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Make this bank the active one at each listed station (a copy per station)."""
+    return svc.assign_bank(db, p, bank_id, body.division_ids)
 
 
 @router.get("/questions", response_model=list[QuestionOut])
