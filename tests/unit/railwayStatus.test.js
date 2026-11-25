@@ -42,8 +42,8 @@ describe('railway feedback verification status', () => {
     );
     const before = await db.query('SELECT id, sync_status, owner_user_id, payload FROM sync_outbox');
     expect(before).toHaveLength(1);
-    expect(await runMigrations(db)).toMatchObject({ from: 7, to: 16, applied: [8, 9, 10, 11, 12, 13, 14, 15, 16] });
-    expect(await getSchemaVersion(db)).toBe(16);
+    expect(await runMigrations(db)).toMatchObject({ from: 7, to: 17, applied: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17] });
+    expect(await getSchemaVersion(db)).toBe(17);
     expect(await db.query('SELECT id, sync_status, owner_user_id, payload FROM sync_outbox')).toEqual(before);
     expect(await statusOf(db, railwayId)).toEqual({ verification_status: null, verified_at: null, sync_status: 'pending' });
     await expect(db.run("UPDATE railway_feedback SET verification_status = 'approved'")).rejects.toThrow(/CHECK/);

@@ -61,7 +61,7 @@ class Train(UUIDPk, Timestamps, Base):
     # The train that makes the return trip, kept as a train of the same division (journeys link it).
     return_train_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("trains.id", ondelete="SET NULL"))
     return_train: Mapped["Train | None"] = relationship(remote_side="Train.id", foreign_keys=[return_train_id])
-    # ---- station-wise attendance (migration 0020) ----
+    # ---- station-wise attendance (migration 0021) ----
     # The stations the train halts at, in running order, as RailRadar's schedule gives them:
     # [{"code": "ADI", "name": "Ahmedabad Jn"}, ...]. None = not read yet.
     route_stations: Mapped[list | None] = mapped_column(JSON)

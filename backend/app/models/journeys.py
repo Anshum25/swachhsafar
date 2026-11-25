@@ -69,7 +69,7 @@ class Journey(UUIDPk, Timestamps, Base):
     inspection_rounds_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
     before_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     after_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    # Attendance stages snapshot (migration 0020): [{stage, kind, label, station_code, station_name}], from the
+    # Attendance stages snapshot (migration 0021): [{stage, kind, label, station_code, station_name}], from the
     # train's attendance configuration. Follows the train while the journey has no attendance; fixed after
     # that, so a record's stage always means what it meant when it was taken. None = the five legacy stages.
     attendance_stages: Mapped[list | None] = mapped_column(JSON)
