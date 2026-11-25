@@ -28,6 +28,7 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.coach_codes import rake_class
 from app.config import get_settings
 
 BASE_URL = "https://railradar.in"
@@ -85,13 +86,10 @@ class TimetableProvider(Protocol):
 # RailRadar's train-status page (https://railradar.in/train-status/{number}) embeds the train's rake as
 # `"coachPosition":"ENG-SLRD-GEN-GEN-S7-...-S1-H1-A2-A1-B5-...-B1-M1-GEN-GEN-LPR"` in the same Next.js payload as
 # the station pages -- the method the user's pnrfetch tool used, read from the page's HTML rather than a
-# headless browser. Passenger coaches only: engine, guard/luggage vans (SLR, SLRD, LPR), generator (EOG),
-# pantry and parcel vans are not inspected for cleanliness.
+# headless browser. Passenger coaches only, classed by app/coach_codes.py: engine, power car (LPR), generator
+# (EOG), pantry, luggage and parcel vans are not inspected for cleanliness; SLR / SLRD carry general seating.
 
 TRAIN_NO_RE = re.compile(r"^[0-9]{3,6}$")
-_AC = re.compile(r"^(H|HA|A|B|M|C|E|EA|EV|K)\d*$")       # 1A, 2A, 3A, 3E, CC, EC, executive ... (H1, A2, B5, M1, C3, E1)
-_NON_AC = re.compile(r"^(S|D|J|F)\d+$|^SS\d*$")  # sleeper, second sitting, first class
-_GEN = re.compile(r"^(GEN|GN|GS|UR)\d*$")  # general (unreserved)
 _COACH_POSITION = re.compile(r'"coachPosition"\s*:\s*"([A-Z0-9 /-]{1,400})"')
 
 
@@ -110,13 +108,8 @@ def coaches_from_position(position: str) -> list[Coach]:
         code = re.sub(r"[^A-Z0-9]", "", part)[:10]
         if not code:
             continue
-        if _AC.match(code):
-            classification = "AC"
-        elif _NON_AC.match(code):
-            classification = "NON_AC"
-        elif _GEN.match(code):
-            classification = "GEN"
-        else:
+        classification = rake_class(code)  # app/coach_codes.py
+        if classification is None:
             continue  # engine, vans, pantry, generator, or nothing recognisable
         n = seen.get(code, 0) + 1
         seen[code] = n

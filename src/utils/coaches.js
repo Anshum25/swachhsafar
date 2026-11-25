@@ -3,14 +3,20 @@
 export const COACH_CLASSES = [{ value: 'AC', label: 'AC' }, { value: 'NON_AC', label: 'Non-AC' }, { value: 'GEN', label: 'General' }];
 export const classLabel = (cls) => (cls === 'AC' ? 'AC' : cls === 'GEN' ? 'General' : 'Non-AC');
 
-// A coach's class from its code, as Indian Railways marks coaches (backend app/providers/railradar.py):
-// H1, HA1, A2, B5, M1, C3, E1 ... are AC; S7, D1, J1 ... are Non-AC; GEN, GEN2, GN, GS, UR1 are General.
-// null for a code that says nothing (BHJ, PC ...): the person says which class it is.
-const AC_CODE = /^(H|HA|A|B|M|C|E|EA|EV|K)\d*$/;
-const NON_AC_CODE = /^(S|D|J|F)\d+$|^SS\d*$/;
-const GENERAL_CODE = /^(GEN|GN|GS|UR)\d*$/;
+// A coach's class from its code, as Indian Railways marks coaches (the same rules as backend app/coach_codes.py,
+// Railway Board Commercial Circular 07 of 2021):
+//   AC      H, HA, HB, A, AB, B, M, G (Garib Rath 3A), C, E, J (Garib Rath CC), K / EA (Anubhuti), EV
+//   Non-AC  S, D, SS, F, FC, DV, VS
+//   General GEN, GS, GN, UR, UNR, and SLR, SLRD, SR, SRD, LRD, PWD, LDS (general seating, Divyangjan, ladies)
+// null for a code that says nothing (BHJ ...) or a coach that is not inspected (ENG, PC, EOG, vans ...): the
+// person says which class it is.
+const OTHER_CODE = /^(ENG|LOCO|PC|EOG|PWR|LPR|LUG|LV|PV|VP|VPU|HCP|TM|LR)\d*$/;
+const GENERAL_CODE = /^(GEN|GS|GN|UR|UNR|SLR|SLRD|SR|SRD|LRD|PWD|LDS)\d*$/;
+const AC_CODE = /^(H|HA|HB|A|AB|B|M|G|C|E|J|K|EA|EV)\d*$/;
+const NON_AC_CODE = /^(S|D|SS|F|FC|DV|VS)\d*$/;
 export function inferClass(code) {
-  const c = String(code ?? '').trim().toUpperCase();
+  const c = String(code ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!c || OTHER_CODE.test(c)) return null;
   if (GENERAL_CODE.test(c)) return 'GEN';
   if (AC_CODE.test(c)) return 'AC';
   if (NON_AC_CODE.test(c)) return 'NON_AC';
@@ -38,14 +44,19 @@ export const coachText = (coaches) => coaches.map((c) => `${c.code}${classTag(c)
 
 // Coach classes by code prefix, as Indian Railways marks them. Longest prefix first (HA before H, GEN before G...).
 const CLASSES = [
-  ['HA', 'First AC + AC 2-Tier'], ['H', 'First AC (1A)'], ['A', 'AC 2-Tier (2A)'], ['B', 'AC 3-Tier (3A)'],
-  ['M', 'AC 3-Tier Economy (3E)'], ['EV', 'Vistadome AC'], ['EA', 'Anubhuti (EA)'], ['E', 'Executive Chair Car (EC)'],
-  ['C', 'AC Chair Car (CC)'], ['K', 'AC Chair Car'],
+  ['H', 'First AC (1A)'], ['HA', 'First AC + AC 2-Tier'], ['HB', 'First AC + AC 3-Tier'], ['A', 'AC 2-Tier (2A)'],
+  ['AB', 'AC 2-Tier + AC 3-Tier'], ['B', 'AC 3-Tier (3A)'], ['M', 'AC 3-Tier Economy (3E)'],
+  ['G', 'Garib Rath AC 3-Tier'], ['C', 'AC Chair Car (CC)'], ['E', 'Executive Chair Car (EC)'],
+  ['J', 'Garib Rath Chair Car'], ['K', 'Anubhuti (EA)'], ['EA', 'Anubhuti (EA)'], ['EV', 'AC Vistadome (EV)'],
+  ['S', 'Sleeper Class (SL)'], ['D', 'Second Sitting (2S)'], ['SS', 'Second Sitting (2S)'], ['F', 'First Class (FC)'],
+  ['FC', 'First Class (FC)'], ['DV', 'Non-AC Vistadome'], ['VS', 'Non-AC Vistadome'],
   ['GEN', 'General Unreserved (GS)'], ['GN', 'General Unreserved (GS)'], ['GS', 'General Unreserved (GS)'],
-  ['UR', 'General Unreserved (GS)'], ['SS', 'Second Sitting (2S)'], ['S', 'Sleeper Class (SL)'],
-  ['D', 'Second Sitting (2S)'], ['J', 'Second Sitting (2S)'], ['F', 'First Class (FC)'],
+  ['UR', 'General Unreserved (GS)'], ['UNR', 'General Unreserved (GS)'],
+  ['SLR', 'Seating, Luggage & Guard (SLR)'], ['SLRD', 'SLR with Divyangjan (SLRD)'],
+  ['SR', 'General + Train Manager (SR)'], ['SRD', 'General + Train Manager + Divyangjan (SRD)'],
+  ['LRD', 'Luggage + Train Manager + Divyangjan (LRD)'], ['PWD', 'Divyangjan compartment'], ['LDS', 'Ladies compartment'],
 ];
-const GENERAL = new Set(['GEN', 'GN', 'GS', 'UR']);
+const GENERAL = new Set(['GEN', 'GN', 'GS', 'UR', 'UNR']);
 
 function classOf(code) {
   const m = /^([A-Z]+)(\d*)$/.exec(code);

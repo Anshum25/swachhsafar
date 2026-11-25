@@ -159,7 +159,7 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.after_inspection_enabled} onChange={set('after_inspection_enabled')} /> After inspection</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.daywise} onChange={set('daywise')} /> Day-wise</label>
       </div>
-      <Field label="Coaches" hint="Comma separated, e.g. B1, B2, S1, GEN. The class comes from the code (B, A, H, M = AC; S = Non-AC; GEN = General); write AC, NON-AC or GEN after a code to set it yourself.">
+      <Field label="Coaches" hint="Comma separated, e.g. B1, B2, S1, GEN. The class comes from the code (H, A, B, M, G, C, E, J, K, EV … = AC; S, D, F, DV … = Non-AC; GEN, GS, UR, UNR, SLR … = General); write AC, NON-AC or GEN after a code to set it yourself.">
         <textarea className="input h-20 py-3" required value={f.coaches} onChange={set('coaches')} />
       </Field>
       <CoachBreakdown coaches={parseCoaches(f.coaches)} />

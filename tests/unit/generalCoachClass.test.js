@@ -88,3 +88,32 @@ describe('coach classes on screen', () => {
     expect(b.gen.groups).toEqual([{ codes: 'GEN', label: 'General Unreserved (GS)', count: 2 }]);
   });
 });
+
+describe('every Indian Railways coach code (Commercial Circular 07 of 2021)', () => {
+  it('knows AC, Non-AC and General coaches, and leaves service coaches to the person', () => {
+    const want = {
+      H1: 'AC', HA1: 'AC', HB1: 'AC', A2: 'AC', AB1: 'AC', B5: 'AC', M3: 'AC', G7: 'AC', C2: 'AC', E1: 'AC', J3: 'AC',
+      K1: 'AC', EA1: 'AC', EV: 'AC', EV1: 'AC',
+      S9: 'NON_AC', D4: 'NON_AC', SS1: 'NON_AC', F1: 'NON_AC', FC: 'NON_AC', DV1: 'NON_AC', VS: 'NON_AC',
+      GEN: 'GEN', GEN3: 'GEN', GS: 'GEN', GN1: 'GEN', UR2: 'GEN', UNR: 'GEN', SLR: 'GEN', SLRD: 'GEN', SR: 'GEN',
+      SRD: 'GEN', LRD: 'GEN', PWD: 'GEN', LDS: 'GEN',
+      ENG: null, LOCO: null, PC: null, EOG: null, PWR: null, LPR: null, LUG: null, LV: null, PV: null, VP: null,
+      VPU: null, HCP: null, TM: null, LR: null, BHJ: null,
+    };
+    for (const [code, cls] of Object.entries(want)) expect(inferClass(code), code).toBe(cls);
+  });
+
+  it('phone v16 gives coaches saved before the class their code now says', async () => {
+    const db = await createMemoryDb({ migrate: false });
+    for (const m of MIGRATIONS.filter((x) => x.version <= 15)) {
+      const statements = m.prepare ? await m.prepare(db) : m.statements;
+      await db.transaction([...statements.map((x) => (typeof x === 'string' ? { sql: x } : x)), { sql: `PRAGMA user_version = ${m.version}` }]);
+    }
+    await db.run('PRAGMA foreign_keys = OFF');
+    for (const [code, cls, pos] of [['J1', 'NON_AC', 1], ['G1', 'NON_AC', 2], ['SLRD', 'NON_AC', 3], ['DV1', 'AC', 4], ['BHJ', 'AC', 5]]) {
+      await db.run('INSERT INTO journey_coaches (journey_id, code, classification, position) VALUES (?, ?, ?, ?)', ['j1', code, cls, pos]);
+    }
+    expect(await runMigrations(db)).toMatchObject({ from: 15, to: 16, applied: [16] });
+    expect(await classes(db, 'journey_coaches')).toEqual({ J1: 'AC', G1: 'AC', SLRD: 'GEN', DV1: 'NON_AC', BHJ: 'AC' });
+  });
+});
