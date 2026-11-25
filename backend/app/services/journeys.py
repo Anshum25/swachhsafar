@@ -21,6 +21,7 @@ from app.schemas.common import PageParams
 from app.schemas.journeys import JourneyCancel, JourneyCreate, JourneyUpdate, StaffAdd, SupervisorAssign
 from app.schemas.trains import CoachIn
 from app.security.principal import Principal
+from app.services import feedback_plan
 from app.services.clients import charge_journey, refund_journey
 from app.services.common import audit, commit_or_conflict, diff, paginate
 from app.timeutil import to_ist_date, today_ist, utcnow
@@ -219,6 +220,7 @@ def create_journey(db: Session, p: Principal, body: JourneyCreate) -> Journey:
     # the whole create rolls back, so a journey never exists without its charge and a charge never exists
     # without its journey. Cancelling before departure returns the credits (cancel_journey below).
     charged = charge_journey(db, j.division_id, j.id)
+    feedback_plan.refresh(db, j)  # its legs and the Train Master feedback targets for every journey day
     audit(db, actor_id=p.id, action="journey.create", entity=j, division_id=j.division_id,
           changes={**body.model_dump(mode="json"), "linked_journey_date": str(linked), "end_date": str(end),
                    "credits_charged": charged})
@@ -255,6 +257,9 @@ def update_journey(db: Session, p: Principal, journey_id: uuid.UUID, body: Journ
         j.coaches.extend(_coach_rows(body.coaches))
     for k, v in updates.items():
         setattr(j, k, v)
+    db.flush()
+    db.refresh(j, ["train", "linked_train"])
+    feedback_plan.refresh(db, j)  # re-dated or re-linked: days still ahead follow, days begun keep their target
     audit(db, actor_id=p.id, action="journey.update", entity=j, division_id=j.division_id, changes=changes)
     db.commit()
     db.refresh(j)
@@ -347,7 +352,7 @@ def list_journeys(db: Session, p: Principal, params: PageParams, *, state: Journ
     scope = and_(Journey.division_id.in_(divisions), _involved(p))
     if all_divs:
         scope = or_(Journey.division_id.in_(all_divs), scope)
-    stmt = select(Journey).options(selectinload(Journey.coaches)).where(scope)
+    stmt = select(Journey).options(selectinload(Journey.coaches), selectinload(Journey.legs)).where(scope)
     if state:
         stmt = stmt.where(state_clause(state, today_ist()))
     if train_id:
@@ -385,4 +390,5 @@ def to_out(j: Journey) -> dict:
         created_by_id=j.created_by_id, auto_created=j.auto_created, charged=j.charged,
         state=journey_state(j), cancel_reason=j.cancel_reason, cancelled_at=j.cancelled_at, version=j.version,
         coaches=j.coaches, attendance_stages=_trains.stages_of(j), updated_at=j.updated_at,
+        feedback_enabled=j.train.feedback_enabled, feedback_daily_target=j.train.feedback_daily_target, legs=j.legs,
     )

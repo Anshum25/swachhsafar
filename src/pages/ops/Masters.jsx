@@ -17,7 +17,10 @@ import RolePermissions from './masters/RolePermissions.jsx';
 import UserProfile from './masters/UserProfile.jsx';
 import { MastersMobileNav } from './masters/MastersNav.jsx';
 import { usesDivisionFilter, visibleSections } from './masters/sections.js';
-import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, SubmitBar, Table } from '../../components/ui.jsx';
+import { Badge, DataState, Dialog, ErrorNote, Field, PageHeader, Panel, Segmented, SubmitBar, Table } from '../../components/ui.jsx';
+import {
+  BulkRefreshButton, FEEDBACK_DEFAULTS, FeedbackSettings, ScheduleBadge, TrainTimetable, feedbackFields, routeText,
+} from './masters/TrainTimetable.jsx';
 import { PlusIcon } from '../../components/Icons.jsx';
 
 // Train Master > Attendance Configuration: how many intermediate stations attendance is taken at, and which
@@ -111,6 +114,7 @@ const TIMES = [['start_time', 'Start time'], ['end_time', 'End time'], ['return_
 function TrainForm({ train, divisionId, onClose, onSaved }) {
   const { api } = useSession();
   const save = useSave(onSaved);
+  const [fb, setFb] = useState(() => FEEDBACK_DEFAULTS(train));
   const [f, setF] = useState({
     train_no: train?.train_no ?? '', name: train?.name ?? '', duration_days: train?.duration_days ?? 1, operational_days: train?.operational_days ?? 2,
     inspection_rounds_per_day: train?.inspection_rounds_per_day ?? 1, before_inspection_enabled: train?.before_inspection_enabled ?? false,
@@ -130,7 +134,9 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
     e.preventDefault();
     if (attError) return;
     const { train_no, coaches, ...rest } = f;
-    const fields = { ...rest, ...Object.fromEntries(TIMES.map(([k]) => [k, rest[k] || null])) };
+    // Feedback settings are sent only when this device knows them (a train listed offline may lack them).
+    const known = !train || 'feedback_enabled' in train;
+    const fields = { ...rest, ...Object.fromEntries(TIMES.map(([k]) => [k, rest[k] || null])), ...(known ? feedbackFields(fb) : {}) };
     // Sent only when station-wise attendance is on, or was on and is being turned off.
     // A count with stations: Source, those stations, End. A count alone: that many numbered stages. Neither:
     // the standard five (sent only to clear a count the train had).
@@ -170,8 +176,30 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
       </Field>
       <CoachBreakdown coaches={parseCoaches(f.coaches)} />
       <AttendanceConfig train={train} value={att} onChange={setAtt} route={route} onRoute={setRoute} />
+      {(!train || 'feedback_enabled' in train) && <FeedbackSettings f={fb} setF={setFb} operationalDays={f.operational_days} />}
       <SubmitBar busy={save.busy} disabled={!!attError} label={train ? 'Save Train' : 'Create train'} onCancel={onClose} />
     </form>
+  );
+}
+
+// The edit dialog: settings, or the timetable read from RailRadar for both directions.
+function TrainDialog({ train, divisionId, manage, onClose, onSaved }) {
+  const [view, setView] = useState('settings');
+  if (!train) return <TrainForm train={null} divisionId={divisionId} onClose={onClose} onSaved={onSaved} />;
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <span className="font-semibold text-ink">{routeText(train)}</span>
+        {train.return_train_no && <span>· returns as {train.return_train_no}</span>}
+        {train.arrival_days != null && <span>· {train.arrival_days + 1}-day run</span>}
+        <ScheduleBadge train={train} />
+      </div>
+      <Segmented label="Train view" value={view} onChange={setView}
+        options={[{ value: 'settings', label: 'Settings' }, { value: 'timetable', label: 'Timetable (both directions)' }]} />
+      {view === 'settings'
+        ? (manage ? <TrainForm train={train} divisionId={divisionId} onClose={onClose} onSaved={onSaved} /> : <p className="text-sm text-muted">You can view this train but not change it.</p>)
+        : <TrainTimetable train={train} canManage={manage} />}
+    </div>
   );
 }
 
@@ -189,6 +217,7 @@ function Trains({ divisionId }) {
       <div className="flex flex-wrap items-center gap-2">
         <input type="search" className="input h-10 w-full sm:w-56" placeholder="Search train no. / name" aria-label="Search trains"
           value={q} onChange={(e) => setQ(e.target.value)} />
+        {manage && <BulkRefreshButton divisionId={divisionId} onDone={res.reload} />}
         {manage && <button type="button" className="btn-secondary" onClick={() => setEdit('new')}><PlusIcon /> Add train</button>}
       </div>
     }>
@@ -196,19 +225,22 @@ function Trains({ divisionId }) {
         {(page) => {
           const rows = page.items.filter(match);
           return !rows.length ? <p className="text-sm text-muted">No train matches “{q.trim()}”.</p> : (
-          <Table rows={rows} onRowClick={manage ? setEdit : undefined} columns={[
+          <Table rows={rows} onRowClick={setEdit} columns={[
             { key: 'train_no', label: 'Train', render: (t) => <><span className="font-semibold">{t.train_no}</span><span className="block text-xs text-slate-500">{t.name}</span></> },
+            { key: 'route', label: 'Route', render: (t) => <span className="text-xs">{routeText(t)}{t.return_train_no ? <span className="block text-slate-500">↩ {t.return_train_no}</span> : null}</span> },
             { key: 'coaches', label: 'Coaches', render: (t) => <span className="text-xs">{coachText(t.coaches)}</span> },
             { key: 'rounds', label: 'Rounds/day', render: (t) => t.inspection_rounds_per_day },
             { key: 'attendance', label: 'Attendance', render: (t) => (!t.attendance_station_count ? '5 stages'
               : t.attendance_station_codes?.length ? `${t.attendance_station_count} stations` : `${t.attendance_station_count} stages`) },
+            { key: 'feedback', label: 'Feedback / day', render: (t) => ('feedback_enabled' in t ? (t.feedback_enabled ? (t.feedback_daily_target ?? '—') : <Badge tone="slate">Off</Badge>) : '—') },
+            { key: 'timetable', label: 'Timetable', render: (t) => ('schedule_status' in t ? <ScheduleBadge train={t} /> : '—') },
             { key: 'is_active', label: 'Status', render: (t) => <Badge tone={t.is_active ? 'green' : 'slate'}>{t.is_active ? 'Active' : 'Inactive'}</Badge> },
           ]} />
           );
         }}
       </DataState>
-      <Dialog open={!!edit} title={edit === 'new' ? 'Add train' : 'Edit train'} onClose={() => setEdit(null)} wide>
-        {edit && <TrainForm train={edit === 'new' ? null : edit} divisionId={divisionId} onClose={() => setEdit(null)} onSaved={done} />}
+      <Dialog open={!!edit} title={edit === 'new' ? 'Add train' : `Train ${edit?.train_no ?? ''}`} onClose={() => setEdit(null)} wide>
+        {edit && <TrainDialog train={edit === 'new' ? null : edit} divisionId={divisionId} manage={manage} onClose={() => setEdit(null)} onSaved={done} />}
       </Dialog>
     </Panel>
   );

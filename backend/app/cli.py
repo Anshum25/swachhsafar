@@ -249,7 +249,35 @@ def main(argv: list[str] | None = None) -> int:
     pj = sub.add_parser("plan-journeys", help="plan and pay for journeys of set-up trains, a few days ahead "
                                               "(daily: deploy/systemd/swachhsafar-plan-journeys.timer)")
     pj.add_argument("--date", help="act as if today were this India date (YYYY-MM-DD); default today")
+    st = sub.add_parser("sync-timetables",
+                        help="read Train Master timetables (both directions) from RailRadar: trains never read, "
+                             "stale, or failed and due for a retry (deploy/systemd/swachhsafar-sync-timetables.timer)")
+    st.add_argument("--all", action="store_true", help="every active train, due or not")
+    st.add_argument("--retry-failed", action="store_true", help="only trains whose last read failed")
+    st.add_argument("--division-code", help="only this division's trains")
+    st.add_argument("--limit", type=int, default=60, help="at most this many trains in one run (default 60)")
     args = parser.parse_args(argv)
+
+    if args.cmd == "sync-timetables":
+        from app.providers.railradar import get_timetable_provider
+        from app.services import timetable
+
+        with write_intent(), get_sessionmaker()() as db:
+            divisions = None
+            if args.division_code:
+                division = db.scalar(select(Division).where(Division.code == args.division_code.upper()))
+                if division is None:
+                    print("division not found", file=sys.stderr)
+                    return 1
+                divisions = [division.id]
+            trains = timetable.due_trains(db, division_ids=divisions, include_fresh=args.all,
+                                          failed_only=args.retry_failed, limit=max(args.limit, 1))
+            tally = timetable.sync_many(db, get_timetable_provider(), trains,
+                                        trigger="retry" if args.retry_failed else "scheduled")
+        print(f"{len(trains)} train(s): {tally['updated']} updated, {tally['unchanged']} unchanged, "
+              f"{tally['failed']} failed, {tally['rejected']} rejected; {tally['journeys_updated']} journey(s) "
+              f"re-planned" + (f"; stopped early: RailRadar answered {tally['stopped']}" if tally["stopped"] else ""))
+        return 0 if not tally["stopped"] else 3
 
     if args.cmd == "plan-journeys":
         from datetime import date as _date

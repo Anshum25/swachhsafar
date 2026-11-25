@@ -76,8 +76,53 @@ const PASSENGER_STEPS = ['Personal Details', 'Passenger Feedback', 'Comments'];
 
 const journeyDays = (j) => Math.max(1, j?.operational_days ?? j?.duration_days ?? 1);
 
+const DIR_SHORT = { 1: 'Out', 2: 'Return', 3: 'Out + return' };
+const DAY_TONE = { complete: 'green', in_progress: 'brand', upcoming: 'slate', incomplete: 'amber', short: 'red', no_target: 'slate' };
+const journeyLabel = (x) => `${x.train_no} · ${x.train_name} · ${fmtDate(x.journey_date)}${x.end_date && x.end_date !== x.journey_date ? ` – ${fmtDate(x.end_date)}` : ''}`;
+
+// The journey's directions, each with its own train: "Out 12951 MMCT→NDLS · Return 12952 NDLS→MMCT".
+export function LegsLine({ legs }) {
+  if (!legs?.length) return null;
+  return (
+    <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted" data-testid="journey-legs">
+      {legs.map((l) => (
+        <span key={l.direction}>{l.direction === 1 ? 'Out' : 'Return'} <b className="text-ink">{l.train_no}</b> {l.origin_code ?? '?'}→{l.destination_code ?? '?'} · Day {l.first_day}{l.last_day !== l.first_day ? `–${l.last_day}` : ''}</span>
+      ))}
+    </p>
+  );
+}
+
+// Train Master targets per journey day (GET /journeys/{id}/feedback-plan): completed / target, direction, status.
+function DayTargets({ plan }) {
+  if (!plan?.days?.length) return null;
+  const t = plan.totals;
+  return (
+    <section className="card mb-3 py-3" aria-label="Feedback targets by journey day">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-xs">
+        <p className="font-semibold text-ink">{plan.targets_active ? `Target ${plan.daily_target} a day` : 'No feedback target for this train'}</p>
+        {t.required > 0 && <p className="text-muted">Completed <b className="text-ink">{t.submitted}</b> of {t.required} · pending <b className="text-ink">{t.pending}</b> · {t.completion ?? 0}%</p>}
+      </div>
+      <div className="grid gap-1.5 overflow-x-auto" style={{ gridTemplateColumns: `repeat(${plan.days.length}, minmax(4.5rem, 1fr))` }}>
+        {plan.days.map((d) => (
+          <div key={d.journey_day} className={`rounded-xl px-2 py-1.5 text-center ring-1 ${d.is_today ? 'ring-feedback/60 bg-feedback/5' : 'ring-line'}`}>
+            <p className="text-[11px] font-semibold text-ink">Day {d.journey_day}</p>
+            <p className="text-[10px] text-muted">{fmtDate(d.day_date)} · {d.direction == null ? 'Layover' : DIR_SHORT[d.direction]}</p>
+            <p className="mt-0.5 text-[13px] font-bold tabular-nums text-ink">{d.required ? `${d.submitted}/${d.required}` : d.submitted}</p>
+            {d.required > 0 && <Badge tone={DAY_TONE[d.status]}>{label(d.status)}</Badge>}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function usePlan(journeyId) {
+  return useResource(journeyId ? `/journeys/${journeyId}/feedback-plan` : null);
+}
+
 // Feedback overview (reference): one card per coach of the journey, a pink thumbs-up per journey day with the
 // number of passenger feedbacks already taken there. A day opens the passenger form for that coach and day.
+// Above the cards, Train Master's target for each day with its progress; a coach target shows as n/target.
 function FeedbackOverview({ journeyId }) {
   const journeys = useActiveJourneys();
   const list = journeys.data?.items ?? [];
@@ -88,6 +133,7 @@ function FeedbackOverview({ journeyId }) {
   const journey = fromList ?? one.data;
   const res = useResource(id ? '/feedback/passenger' : null, { journey_id: id, page_size: 200 });
   const summary = useResource(id ? `/journeys/${id}/summary` : null);
+  const plan = usePlan(id).data;
 
   if (journeys.loading && !journeys.data && !journeyId) return <Loading />;
   if (!id) return journeys.error ? <ErrorNote error={journeys.error} onRetry={journeys.reload} /> : <Empty title="No active journeys are assigned to you." />;
@@ -101,7 +147,11 @@ function FeedbackOverview({ journeyId }) {
     const k = `${f.coach_code}|${f.journey_day}`;
     count.set(k, (count.get(k) ?? 0) + 1);
   }
-  const open = (coach, day) => navigate(`/feedback/new/${journey.id}/${encodeURIComponent(coach)}/${day}`);
+  const coachTarget = new Map();
+  for (const c of plan?.coaches ?? []) for (const d of c.days) if (d.required) coachTarget.set(`${c.code}|${d.journey_day}`, d.required);
+  const windowed = (d) => !plan || (d >= plan.feedback_from_day && d <= (plan.feedback_to_day ?? 30));
+  const disabled = plan ? !plan.feedback_enabled : journey.feedback_enabled === false;
+  const open = (coach, day) => !disabled && windowed(day) && navigate(`/feedback/new/${journey.id}/${encodeURIComponent(coach)}/${day}`);
   const recent = (res.data?.items ?? []).filter((f) => f.status !== 'completed' && f.status !== 'void').slice(0, 6);
 
   return (
@@ -109,13 +159,19 @@ function FeedbackOverview({ journeyId }) {
       {list.length > 1 && (
         <div className="mb-3">
           <Field label="Journey"><Select value={id} onChange={setPicked}
-            options={list.map((x) => ({ value: x.id, label: `${x.train_no} · ${x.train_name}` }))} /></Field>
+            options={list.map((x) => ({ value: x.id, label: journeyLabel(x) }))} /></Field>
         </div>
       )}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[13px]">
-        <p className="flex min-w-0 items-center gap-2 font-semibold text-brand-900"><TrainSolidIcon className="h-4.5 w-4.5 shrink-0 text-brand-700" /><span className="truncate">{journey.train_name} · {journey.train_no}</span></p>
+        <div className="min-w-0">
+          <p className="flex min-w-0 items-center gap-2 font-semibold text-brand-900"><TrainSolidIcon className="h-4.5 w-4.5 shrink-0 text-brand-700" /><span className="truncate">{journey.train_name} · {journey.train_no}</span></p>
+          <p className="text-xs text-muted">{fmtDate(journey.journey_date)}{journey.end_date !== journey.journey_date ? ` – ${fmtDate(journey.end_date)}` : ''} · {days} journey day{days === 1 ? '' : 's'}</p>
+          <LegsLine legs={plan?.legs ?? journey.legs} />
+        </div>
         {summary.data && <p className="text-xs font-medium text-muted">Passenger: <b className="text-ink">{summary.data.passenger_feedback_completed}</b> &nbsp;|&nbsp; Railway: <b className="text-ink">{summary.data.railway_feedback}</b></p>}
       </div>
+      {disabled && <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200" role="status">Passenger feedback is turned off for this train in Train Master.</p>}
+      <DayTargets plan={plan} />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
         {journey.coaches.map((c) => (
           <section key={c.code} className="card flex items-center gap-2 py-3 pl-3 pr-1.5" aria-label={`Coach ${c.code}`}>
@@ -127,13 +183,16 @@ function FeedbackOverview({ journeyId }) {
               <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${days}, minmax(3.25rem, 1fr))` }}>
                 {Array.from({ length: days }, (_, i) => i + 1).map((d) => {
                   const n = count.get(`${c.code}|${d}`) ?? 0;
+                  const target = coachTarget.get(`${c.code}|${d}`);
+                  const off = disabled || !windowed(d);
                   return (
-                    <button key={d} type="button" onClick={() => open(c.code, d)} aria-label={`Coach ${c.code} day ${d}, ${n} feedback`}
-                      className="flex flex-col items-center gap-1 rounded-xl py-1 transition duration-150 hover:bg-feedback/5 active:scale-90">
+                    <button key={d} type="button" onClick={() => open(c.code, d)} disabled={off}
+                      aria-label={`Coach ${c.code} day ${d}, ${n} feedback${target ? ` of ${target}` : ''}${off ? ', not collected' : ''}`}
+                      className="flex flex-col items-center gap-1 rounded-xl py-1 transition duration-150 hover:bg-feedback/5 active:scale-90 disabled:opacity-35 disabled:active:scale-100">
                       <span className={`text-[12px] font-semibold ${d === today ? 'text-feedback' : 'text-ink'}`}>Day {d}</span>
-                      <span className="relative grid h-[30px] w-[30px] place-items-center rounded-full bg-gradient-to-br from-[#ff6b9d] to-feedback text-white shadow-[0_3px_8px_rgba(243,67,131,0.35)]">
+                      <span className={`relative grid h-[30px] w-[30px] place-items-center rounded-full text-white shadow-[0_3px_8px_rgba(243,67,131,0.35)] ${target && n >= target ? 'bg-gradient-to-br from-emerald-400 to-success' : 'bg-gradient-to-br from-[#ff6b9d] to-feedback'}`}>
                         <ThumbUpSolidIcon className="h-4 w-4" />
-                        {n > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-feedback ring-1 ring-feedback/40">{n}</span>}
+                        {(n > 0 || target) && <span className="absolute -right-2 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[10px] font-bold text-feedback ring-1 ring-feedback/40">{target ? `${n}/${target}` : n}</span>}
                       </span>
                     </button>
                   );
@@ -194,6 +253,9 @@ function PassengerStart({ journeyId, coach, day }) {
   const set = (k) => (e) => { const v = e.target.value; setForm((f) => ({ ...f, [k]: v })); setErrors((x) => ({ ...x, [k]: null })); };
   const j = journey.data;
   const known = j?.coaches.find((c) => c.code === coach);
+  const plan = usePlan(journeyId).data;
+  const dayPlan = plan?.days.find((d) => d.journey_day === day);
+  const coachDay = plan?.coaches.find((c) => c.code === coach)?.days.find((d) => d.journey_day === day);
 
   async function submit(e) {
     e.preventDefault();
@@ -228,6 +290,12 @@ function PassengerStart({ journeyId, coach, day }) {
             {j.train_no} · {j.train_name} · Coach <b className="text-ink">{coach}</b>{known ? ` (${classLabel(known.classification)})` : ''} · Day <b className="text-ink">{day}</b>
           </p>
         )}
+        {dayPlan && dayPlan.required > 0 && (
+          <p className="-mt-2 mb-4 text-center text-xs text-muted" data-testid="day-target">
+            Day {day} ({dayPlan.direction == null ? 'layover' : DIR_SHORT[dayPlan.direction].toLowerCase()}): <b className="text-ink">{dayPlan.submitted}</b> of {dayPlan.required} completed, {dayPlan.pending} to go
+            {coachDay?.required ? ` · coach ${coach}: ${coachDay.submitted} of ${coachDay.required}` : ''}
+          </p>
+        )}
         {j && !known && <ErrorNote error={{ message: `Coach ${coach} is not on this journey.` }} />}
         {savedOffline && (
           <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200" role="status">
@@ -236,7 +304,7 @@ function PassengerStart({ journeyId, coach, day }) {
         )}
         <form onSubmit={submit} noValidate className="space-y-4">
           <Field icon={SeatIcon} label="Seat No." error={errors.seat_no}><input className="input" maxLength={10} value={form.seat_no} onChange={set('seat_no')} /></Field>
-          <Field icon={TicketIcon} label="PNR" hint="10 digits, if the division verifies PNR" error={errors.pnr}><input className="input tracking-wide" inputMode="numeric" maxLength={10} value={form.pnr} onChange={set('pnr')} /></Field>
+          <Field icon={TicketIcon} label="PNR" hint="10 digits. Train, date, coach and berth are checked against the ticket; the coach is taken from it." error={errors.pnr}><input className="input tracking-wide" inputMode="numeric" maxLength={10} value={form.pnr} onChange={set('pnr')} /></Field>
           <Field icon={PhoneIcon} label="Mobile" hint="Verification code is sent here" error={errors.mobile}><input className="input tracking-wide" type="tel" inputMode="numeric" autoComplete="off" maxLength={10} required value={form.mobile} onChange={set('mobile')} /></Field>
           <Field icon={UserIcon} label="Name" error={errors.passenger_name}><input className="input" autoComplete="off" required value={form.passenger_name} onChange={set('passenger_name')} /></Field>
           <GpsCapture value={gps} onChange={setGps} />
@@ -248,6 +316,32 @@ function PassengerStart({ journeyId, coach, day }) {
         </form>
       </div>
     </>
+  );
+}
+
+const CHECK_TONE = { ok: 'green', moved: 'brand', unknown: 'slate', mismatch: 'red' };
+const CHECK_TEXT = { ok: 'matches', moved: 'taken from ticket', unknown: 'not given by the PNR service', mismatch: 'does not match' };
+
+// What the PNR service returned, as kept on the record (no passenger names are returned or stored).
+function PnrDetails({ fb }) {
+  const d = fb.pnr_details;
+  const route = [d.boarding ?? d.from, d.upto ?? d.to].filter(Boolean).join(' → ');
+  return (
+    <Panel title="Ticket (PNR)">
+      <DetailList items={[
+        ['Train', d.train_number ? `${d.train_number}${d.train_name ? ` · ${d.train_name}` : ''}` : null],
+        ['Journey date', d.journey_date ? fmtDate(d.journey_date) : null],
+        ['Boarding → up to', route || null],
+        ['Class', d.class],
+        ['Chart', d.chart_status],
+        ['Coach', fb.pnr_status === 'valid' ? <>{fb.coach_code} {fb.coach_source === 'pnr' && <Badge tone="brand">Identified from ticket</Badge>}{!fb.coach_verified && <Badge tone="amber">Not confirmed by ticket</Badge>}</> : (d.coach_ids?.join(', ') || null)],
+        ['Berth', d.berth],
+        ['Passengers', d.passengers?.length ? d.passengers.map((x) => `${x.serial}: ${x.status ?? '?'}${x.coach ? ` ${x.coach}` : ''}${x.berth ? `/${x.berth}` : ''}`).join(' · ') : null],
+      ]} />
+      {d.checks && Object.keys(d.checks).length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">{Object.entries(d.checks).map(([k, v]) => <Badge key={k} tone={CHECK_TONE[v]}>{label(k)}: {CHECK_TEXT[v] ?? v}</Badge>)}</div>
+      )}
+    </Panel>
   );
 }
 
@@ -312,7 +406,8 @@ function PassengerFlow({ id }) {
             </div>
           </div>
           <p className="mt-3 rounded-xl bg-canvas px-3 py-2 text-xs font-medium text-muted">
-            {j ? `${j.train_no} · ${fmtDate(j.journey_date)} · ` : ''}Coach <b className="text-ink">{fb.coach_code}</b> ({classLabel(fb.coach_class)}) · Day <b className="text-ink">{fb.journey_day}</b>
+            {fb.train_no ?? j?.train_no ? `${fb.train_no ?? j.train_no} · ` : ''}{j ? `${fmtDate(j.journey_date)} · ` : ''}Coach <b className="text-ink">{fb.coach_code}</b> ({classLabel(fb.coach_class)}) · Day <b className="text-ink">{fb.journey_day}</b>
+            {fb.direction ? ` · ${DIR_SHORT[fb.direction]}` : ''}
           </p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             <Badge tone={STATE_TONE[fb.status]}>{label(fb.status)}</Badge>
@@ -332,14 +427,8 @@ function PassengerFlow({ id }) {
         {!collector && fb.status !== 'completed' && fb.status !== 'void' && (
           <p className="text-sm text-muted">Only the staff member who collected this feedback can verify and complete it.</p>
         )}
-        {collector && onServer && fb.status === 'draft' && fb.pnr_status === 'pending' && (
-          <Panel title="Verify PNR">
-            <p className="mb-3 text-sm text-muted">PNR {fb.pnr ?? '—'} will be checked against this journey.</p>
-            <OnlineButton className="btn-primary w-full" disabled={!!busy} onClick={() => step('pnr', () => ops.passengerFeedback.verifyPnr(id))}>{busy === 'pnr' && <Spinner />} Verify PNR</OnlineButton>
-          </Panel>
-        )}
-        {collector && onServer && fb.status === 'draft' && fb.pnr_status !== 'pending' && ['not_sent', 'sent'].includes(fb.otp_status) && (
-          <Panel title="Verification code">
+        {collector && onServer && fb.status === 'draft' && ['not_sent', 'sent'].includes(fb.otp_status) && (
+          <Panel title="1 · Verify mobile number">
             <p className="mb-3 text-sm text-muted">A one-time code is sent by SMS to the passenger’s mobile {fb.mobile_masked}.</p>
             <OnlineButton className={fb.otp_status === 'sent' ? 'btn-secondary h-11 w-full' : 'btn-primary w-full'} disabled={!!busy}
               onClick={async () => { const out = await step('send', () => ops.passengerFeedback.sendOtp(id)); if (out) { setOtpInfo(out); notify('info', `OTP sent to ${out.mobile_masked}.`); } }}>
@@ -352,8 +441,17 @@ function PassengerFlow({ id }) {
               </form>
             )}
             {otpInfo && <p className="mt-2 text-xs text-muted">{otpInfo.sends_remaining} resends left · expires {fmtDateTime(otpInfo.expires_at)}</p>}
+            {fb.pnr_status === 'pending' && <p className="mt-2 text-xs text-muted">The PNR is checked next, once the mobile number is verified.</p>}
           </Panel>
         )}
+        {collector && onServer && fb.status === 'draft' && fb.pnr_status === 'pending' && !['not_sent', 'sent'].includes(fb.otp_status) && (
+          <Panel title={fb.otp_status === 'verified' ? '2 · Verify PNR' : 'Verify PNR'}>
+            {fb.otp_status === 'verified' && <p className="mb-2 flex items-center gap-2 text-sm text-success"><CheckBoldIcon className="h-4 w-4" /> Mobile {fb.mobile_masked} verified</p>}
+            <p className="mb-3 text-sm text-muted">PNR {fb.pnr ?? '—'} is checked with the railway PNR service: its train, date, stations and coach must fit this journey. The coach is taken from the ticket when it names one of this journey’s coaches.</p>
+            <OnlineButton className="btn-primary w-full" disabled={!!busy} onClick={() => step('pnr', () => ops.passengerFeedback.verifyPnr(id))}>{busy === 'pnr' && <Spinner />} Verify PNR</OnlineButton>
+          </Panel>
+        )}
+        {fb.pnr_details?.found && <PnrDetails fb={fb} />}
         {fb.status === 'draft' && (fb.pnr_status === 'invalid' || fb.otp_status === 'locked') && (
           <ErrorNote error={{ message: fb.pnr_status === 'invalid' ? 'PNR is not valid for this journey. This feedback cannot be counted.' : 'Too many wrong OTP attempts. OTP verification is locked.' }} />
         )}
