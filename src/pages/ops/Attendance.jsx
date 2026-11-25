@@ -166,7 +166,11 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [done, setDone] = useState(false);
   const [faces, setFaces] = useState({});
   const faceOn = policy.data?.attendance_face_verification === true;
-  const liveOn = faceOn && policy.data?.face_liveness_required === true;
+  // The same live camera as one person's attendance (CaptureDialog): with face verification or liveness on,
+  // each person's photo is taken by the app from the live camera after a blink (and a head turn where
+  // face_liveness_required), never picked from the gallery.
+  const cameraOn = faceOn || policy.data?.face_liveness_required === true;
+  const liveOn = policy.data?.face_liveness_required === true;
   const [live, setLive] = useState({});
   const gate = useSecurityGate('attendance');
   const threshold = policy.data?.face_match_threshold ?? 0.5;
@@ -181,6 +185,8 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [profiles, setProfiles] = useState([]);
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const chosen = members.filter((m) => picked[m.employee_id]);
+  // One live camera at a time: the first person ticked without a photo yet; the next opens when it is done.
+  const nextLive = chosen.find((m) => !photos[m.employee_id])?.employee_id;
   // Faces are loaded for EVERY allocated staff member, finished or not: someone who has completed every stage
   // stages still turns up in the crew photo, and must be recognised (and shown as completed) rather than
   // left as an unknown face or mistaken for a colleague.
@@ -209,8 +215,8 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const ready = mode === 'photo'
     ? gps && groupPhoto && chosen.length > 0 && !policy.loading && gate.allowed
     : gps && chosen.length && !policy.loading && gate.allowed
-      && (!liveOn || chosen.every((m) => live[m.employee_id] === 'passed'))
-      && (!(photoRequired || faceOn) || chosen.every((m) => photos[m.employee_id]))
+      && (!cameraOn || chosen.every((m) => live[m.employee_id] === 'passed'))
+      && (!(photoRequired || cameraOn) || chosen.every((m) => photos[m.employee_id]))
       && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
 
   async function submit(e, list = chosen) {
@@ -244,7 +250,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         const mediaId = photo ? crypto.randomUUID() : null;
         extra = {
           photo_media_id: mediaId, ...(faceOn ? faceFields(faces[m.employee_id] ?? {}) : {}),
-          ...gate.evidence({ liveness: liveOn ? live[m.employee_id] ?? 'failed' : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
+          ...gate.evidence({ liveness: cameraOn ? live[m.employee_id] ?? 'failed' : 'not_required', faceModel: faceOn ? FACE_MODEL : null }),
         };
         media = photo ? [{ id: mediaId, division_id: journey.division_id, kind: 'attendance_photo', dataUrl: photo }] : [];
       }
@@ -347,12 +353,23 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                     </label>
                     {picked[m.employee_id] && (
                       <div className="mt-2 space-y-2">
-                        {liveOn && !photos[m.employee_id] ? (
-                          <LiveFaceCapture name={m.name} onDone={(r) => { setLive((l) => ({ ...l, [m.employee_id]: r.liveness })); setPhotos((p) => ({ ...p, [m.employee_id]: r.photo })); }} />
-                        ) : (
-                          <PhotoCapture value={photos[m.employee_id]} required={photoRequired || faceOn}
+                        {!cameraOn ? (
+                          <PhotoCapture value={photos[m.employee_id]} required={photoRequired}
                             stamp={stampLines({ ...gps, address })}
-                            onChange={(v) => { setLive((l) => ({ ...l, [m.employee_id]: liveOn ? null : l[m.employee_id] })); setPhotos((p) => ({ ...p, [m.employee_id]: liveOn ? null : v })); }} />
+                            onChange={(v) => setPhotos((p) => ({ ...p, [m.employee_id]: v }))} />
+                        ) : photos[m.employee_id] ? (
+                          <div className="relative overflow-hidden rounded-2xl ring-1 ring-line">
+                            <img src={photos[m.employee_id]} alt={`${m.name} live check photo`} className="max-h-60 w-full object-cover" />
+                            <button type="button" className="btn-secondary absolute bottom-2 right-2"
+                              onClick={() => { setLive((l) => ({ ...l, [m.employee_id]: null })); setPhotos((p) => ({ ...p, [m.employee_id]: null })); }}>
+                              Retake
+                            </button>
+                          </div>
+                        ) : m.employee_id !== nextLive ? (
+                          <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-muted">The live camera opens here after the person above.</p>
+                        ) : (
+                          <LiveFaceCapture key={m.employee_id} name={m.name} mode={liveOn ? 'challenge' : 'presence'}
+                            onDone={(r) => { setLive((l) => ({ ...l, [m.employee_id]: r.liveness })); setPhotos((p) => ({ ...p, [m.employee_id]: r.photo })); }} />
                         )}
                         <MemberFaceCheck photo={photos[m.employee_id]} member={m} enabled={faceOn} threshold={threshold} onResult={onFace} />
                       </div>
