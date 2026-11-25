@@ -273,7 +273,7 @@ export default function Masters({ parts = [] }) {
       {section === 'setup' && <OfficeSetupSection />}
       {section === 'roles' && <RolePermissions divisionId={division.divisionId} divisionName={division.current?.name}
         clientId={division.current?.client_id} clientName={division.client?.name} divisionKind={division.current?.kind} />}
-      {section === 'questions' && <QuestionBanks divisionId={division.divisionId} />}
+      {section === 'questions' && <QuestionBanks division={division} />}
       {section === 'categories' && <Categories divisionId={division.divisionId} />}
       {section === 'departments' && <Departments divisionId={division.divisionId} />}
       {section === 'items' && <InventoryItems divisionId={division.divisionId} />}
