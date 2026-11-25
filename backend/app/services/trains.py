@@ -50,9 +50,13 @@ def _route(train: Train) -> list[dict]:
 
 def attendance_plan(train: Train) -> list[dict]:
     """The attendance stages of a journey of this train: Source, the configured stations in route order, End.
-    A train with no configuration keeps the five legacy stages."""
-    if not is_configured(train):
+    With a count but no stations, that many numbered stages (Stage 1 .. Stage N). A train with neither keeps
+    the five legacy stages."""
+    if not train.attendance_station_count:
         return legacy_stages()
+    if not is_configured(train):
+        return [dict(stage=i, kind="stage", label=f"Stage {i}", station_code=None, station_name=None)
+                for i in range(1, train.attendance_station_count + 1)]
     route = _route(train)
     names = {r["code"]: r.get("name") or r["code"] for r in route}
     first = route[0]["code"] if route else train.origin_code
@@ -169,8 +173,9 @@ def update_train(db: Session, p: Principal, train_id: uuid.UUID, body: TrainUpda
             updates["attendance_station_count"] = updates["attendance_station_codes"] = None
         else:
             updates["attendance_station_count"] = count
-            updates["attendance_station_codes"] = check_attendance_config(
-                train, count, updates.get("attendance_station_codes", train.attendance_station_codes) or [])
+            codes = updates.get("attendance_station_codes", train.attendance_station_codes)
+            # No stations: `count` numbered stages. Stations: exactly `count` of them, on the route.
+            updates["attendance_station_codes"] = check_attendance_config(train, count, codes) if codes else None
         replans = (updates["attendance_station_count"], updates["attendance_station_codes"]) != (
             train.attendance_station_count, train.attendance_station_codes)
     audit(db, actor_id=p.id, action="train.update", entity=train, division_id=train.division_id, changes=diff(train, updates))
