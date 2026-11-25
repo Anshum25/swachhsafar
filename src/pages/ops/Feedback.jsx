@@ -6,7 +6,7 @@ import MediaPreview from '../../components/MediaPreview.jsx';
 import ReviewPanel from '../../components/ReviewPanel.jsx';
 import { GpsCapture, VoiceRecorder, outcomeToast, savedLocally } from '../../components/Capture.jsx';
 import {
-  ActionMenu, Badge, ConfirmDialog, DataState, DetailList, Dialog, Empty, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader, Pager, Panel, RatingScale, STATE_TONE, Segmented, Select, Stepper, SubmitBar, SyncBadge, SyncState, Table, Tabs, fmtDate, fmtDateTime, label,
+  ActionMenu, Badge, ConfirmDialog, DataState, DetailList, Dialog, Empty, ErrorNote, Field, FilterBar, Loading, OfflineActionsNote, OnlineButton, PageHeader, Pager, Panel, RatingScale, STATE_TONE, ratingText, Segmented, Select, Stepper, SubmitBar, SyncBadge, SyncState, Table, Tabs, fmtDate, fmtDateTime, label,
 } from '../../components/ui.jsx';
 import {
   ArrowLeftIcon, CheckBoldIcon, ChevronRightIcon, PhoneIcon, ScanIcon, SeatIcon, Spinner, ThumbUpSolidIcon, TicketIcon, TrainSolidIcon, UserIcon,
@@ -43,7 +43,7 @@ function RatingsView({ ratings, bank }) {
       {ratings.map((r) => (
         <li key={r.question_id} className="flex justify-between gap-3 py-1.5">
           <span>{question(r.question_id) ? `${question(r.question_id).position}. ${question(r.question_id).text_en}` : 'Question not on this device'}</span>
-          <span className="font-semibold tabular-nums">{r.value}{bank ? ` / ${bank.scale_max}` : ''}</span>
+          <span className="font-semibold">{ratingText(r.value, bank)}</span>
         </li>
       ))}
     </ul>
@@ -369,12 +369,12 @@ function PassengerFlow({ id }) {
           }}>
             {stage !== 'comments' ? (
               <div className="animate-rise-in space-y-3">
-                <h2 className="text-[15px] font-bold text-ink">Passenger Feedback <span className="font-medium text-muted">· rate {bank.scale_min}–{bank.scale_max}</span></h2>
+                <h2 className="text-[15px] font-bold text-ink">Passenger Feedback{!bank.option_labels?.length && <span className="font-medium text-muted"> · rate {bank.scale_min}–{bank.scale_max}</span>}</h2>
                 {questions.data.map((q) => (
                   <div key={q.id} className="card py-3.5">
                     <p className="mb-1 text-sm font-semibold text-ink">{q.position}. {q.text_en}{q.required && <span className="text-red-600"> *</span>}</p>
                     {q.text_hi && <p className="mb-2 text-xs text-muted">{q.text_hi}</p>}
-                    <RatingScale min={bank.scale_min} max={bank.scale_max} value={ratings[q.id]} label={`Rating for question ${q.position}`}
+                    <RatingScale min={bank.scale_min} max={bank.scale_max} options={bank.option_labels} value={ratings[q.id]} label={`Rating for question ${q.position}`}
                       onChange={(v) => setRatings((r) => ({ ...r, [q.id]: v }))} />
                   </div>
                 ))}
@@ -453,7 +453,7 @@ function RailwayForm() {
             {(questions.data ?? []).map((q) => (
               <div key={q.id}>
                 <p className="mb-1.5 text-sm font-medium">{q.position}. {q.text_en}</p>
-                {bank && <RatingScale min={bank.scale_min} max={bank.scale_max} value={ratings[q.id]} label={`Rating for question ${q.position}`}
+                {bank && <RatingScale min={bank.scale_min} max={bank.scale_max} options={bank.option_labels} value={ratings[q.id]} label={`Rating for question ${q.position}`}
                   onChange={(v) => setRatings((r) => ({ ...r, [q.id]: v }))} />}
               </div>
             ))}

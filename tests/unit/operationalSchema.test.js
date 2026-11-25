@@ -24,8 +24,8 @@ describe('operational schema', () => {
   it('creates every operational table on a fresh database', async () => {
     const db = await createMemoryDb({ migrate: false });
     const result = await runMigrations(db);
-    expect(result).toEqual({ from: 0, to: 17, applied: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] });
-    expect(LATEST_VERSION).toBe(17);
+    expect(result).toEqual({ from: 0, to: 18, applied: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] });
+    expect(LATEST_VERSION).toBe(18);
     expect(await tables(db)).toEqual(expect.arrayContaining(['users', 'sync_outbox', 'sync_meta', ...OPERATIONAL_TABLES]));
     expect((await db.query('SELECT id, name FROM roles ORDER BY id')).map((r) => r.name)).toEqual(
       ['Super Admin', 'Admin', 'Manager', 'Supervisor/EHK', 'Janitor', 'Contractor'],
@@ -54,7 +54,7 @@ describe('operational schema', () => {
     const me = { user: { id: IDS.supervisor, emp_id: 'EMP7', name: 'Ravi Kumar', email: 'Ravi@Example.com', role_id: 4, division_id: IDS.division, status: 'active' }, divisions: { [IDS.division]: ['attendance.submit'] } };
     await db.run(`INSERT INTO sync_meta (key, value, updated_at) VALUES ('session_me', ?, '2026-11-01T00:00:00Z')`, [JSON.stringify(me)]);
 
-    expect(await runMigrations(db)).toEqual({ from: 2, to: 17, applied: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] });
+    expect(await runMigrations(db)).toEqual({ from: 2, to: 18, applied: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] });
     expect(await db.query('SELECT email, registration_status FROM users')).toEqual([{ email: 'ravi@example.com', registration_status: 'pending' }]);
     expect((await db.query('SELECT id FROM sync_outbox')).map((r) => r.id)).toContain('op-1');
     const store = createLocalStore({ db, files: createMemoryFiles(), logger: null });
@@ -81,7 +81,7 @@ describe('operational schema', () => {
     await first.db.close();
 
     const db = await createMemoryDb({ filename }); // migrations are a no-op on reopen
-    expect(await getSchemaVersion(db)).toBe(17);
+    expect(await getSchemaVersion(db)).toBe(18);
     const store = createLocalStore({ db, files, now: () => NOW, logger: null });
     expect(await store.attendance.get(capture.payload.id)).toMatchObject({ stage: 1, sync_status: 'pending' });
     expect(await db.query("SELECT entity_id FROM sync_outbox WHERE sync_status = 'pending'")).toEqual([{ entity_id: capture.payload.id }]);

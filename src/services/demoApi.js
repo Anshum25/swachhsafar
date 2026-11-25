@@ -83,7 +83,7 @@ function inspectionGrid(j) {
 }
 
 const BANK = {
-  id: 'qb1', division_id: D, audience: 'passenger', name: 'Passenger satisfaction', scale_min: 1, scale_max: 5, is_active: true, updated_at: ts(400),
+  id: 'qb1', division_id: D, audience: 'passenger', name: 'Passenger satisfaction', scale_min: 1, scale_max: 5, option_labels: ['Poor', 'Average', 'Good', 'Very Good', 'Excellent'], is_active: true, updated_at: ts(400),
   questions: ['Cleanliness of coach and toilets', 'Availability of water in toilets', 'Behaviour of housekeeping staff', 'Overall satisfaction'].map((t, i) => ({
     id: `q${i + 1}`, position: i + 1, text_en: t, text_hi: null, applies_ac: true, applies_non_ac: true, required: true, psi_weight: 25,
   })),

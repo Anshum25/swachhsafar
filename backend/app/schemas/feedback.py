@@ -30,12 +30,25 @@ class QuestionBankCreate(StrictModel):
     division_id: uuid.UUID | None = Field(default=None, description="NULL = default bank (Super Admin only)")
     audience: Audience
     name: str = Field(min_length=3, max_length=100)
-    scale_min: int = Field(ge=0, le=10)
-    scale_max: int = Field(ge=1, le=10)
+    scale_min: int | None = Field(default=None, ge=0, le=10)
+    scale_max: int | None = Field(default=None, ge=1, le=10)
+    option_labels: list[str] | None = Field(default=None, min_length=2, max_length=10,
+                                            description="Answer choices, worst first; replaces the numbered scale")
     questions: list[QuestionIn] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
     def _scale(self):
+        if self.option_labels is not None:
+            labels = [x.strip() for x in self.option_labels]
+            if any(not 1 <= len(x) <= 30 for x in labels):
+                raise ValueError("each answer option must be 1-30 characters")
+            if len({x.lower() for x in labels}) != len(labels):
+                raise ValueError("answer options must be different")
+            self.option_labels = labels
+            self.scale_min, self.scale_max = 1, len(labels)
+            return self
+        if self.scale_min is None or self.scale_max is None:
+            raise ValueError("give answer options, or scale_min and scale_max")
         if self.scale_min >= self.scale_max:
             raise ValueError("scale_min must be less than scale_max")
         return self
@@ -60,6 +73,7 @@ class QuestionBankOut(ReadModel):
     name: str
     scale_min: int
     scale_max: int
+    option_labels: list[str] | None = None
     is_active: bool
     questions: list[QuestionOut]
     updated_at: datetime

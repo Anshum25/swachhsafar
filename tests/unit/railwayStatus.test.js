@@ -27,8 +27,10 @@ describe('railway feedback verification status', () => {
   it('migration v8 upgrades a v7 database without touching existing records or queued operations', async () => {
     const db = await createMemoryDb({ migrate: false });
     for (const m of MIGRATIONS.filter((x) => x.version <= 7)) await db.transaction([...m.statements.map((sql) => ({ sql })), { sql: `PRAGMA user_version = ${m.version}` }]);
-    // Today's store writes feedback_questions.applies_gen (v15); give the v7 database that column so it can ingest.
+    // Today's store writes feedback_questions.applies_gen (v15) and question_banks.option_labels (v18); give the
+    // v7 database those columns so it can ingest. v18 sees option_labels already there and skips it.
     await db.run('ALTER TABLE feedback_questions ADD COLUMN applies_gen INTEGER NOT NULL DEFAULT 1');
+    await db.run('ALTER TABLE question_banks ADD COLUMN option_labels TEXT');
     const store = createLocalStore({ db, files: createMemoryFiles(), now: () => NOW, logger: null });
     expect((await store.ingestChanges(changesFixture())).ok).toBe(true);
     // Data as the v7 app wrote it: a queued operation, and a pending railway record (v7 columns only).
@@ -42,8 +44,8 @@ describe('railway feedback verification status', () => {
     );
     const before = await db.query('SELECT id, sync_status, owner_user_id, payload FROM sync_outbox');
     expect(before).toHaveLength(1);
-    expect(await runMigrations(db)).toMatchObject({ from: 7, to: 17, applied: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17] });
-    expect(await getSchemaVersion(db)).toBe(17);
+    expect(await runMigrations(db)).toMatchObject({ from: 7, to: 18, applied: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] });
+    expect(await getSchemaVersion(db)).toBe(18);
     expect(await db.query('SELECT id, sync_status, owner_user_id, payload FROM sync_outbox')).toEqual(before);
     expect(await statusOf(db, railwayId)).toEqual({ verification_status: null, verified_at: null, sync_status: 'pending' });
     await expect(db.run("UPDATE railway_feedback SET verification_status = 'approved'")).rejects.toThrow(/CHECK/);

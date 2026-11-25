@@ -3,7 +3,7 @@
 // retires the previously active bank of the same division (or default scope) and audience.
 import { useState } from 'react';
 import { useResource, useSession } from '../../../app/session.jsx';
-import { Badge, DataState, Dialog, ErrorNote, Field, Panel, Select, SubmitBar, Table, label } from '../../../components/ui.jsx';
+import { Badge, DataState, Dialog, ErrorNote, Field, Panel, RatingFace, RatingScale, Select, SubmitBar, Table, label } from '../../../components/ui.jsx';
 import { PlusIcon } from '../../../components/Icons.jsx';
 import { bankPayload, validateBank } from '../../../utils/masterValidation.js';
 import { ActiveBadge, ConfirmDialog, FilterBar, OfflineWriteNote, matches, useMasterAccess, useSave } from './common.jsx';
@@ -11,10 +11,19 @@ import { ActiveBadge, ConfirmDialog, FilterBar, OfflineWriteNote, matches, useMa
 const AUDIENCES = [{ value: 'passenger', label: 'Passenger' }, { value: 'railway', label: 'Railway official' }];
 const blankQuestion = () => ({ text_en: '', text_hi: '', applies_ac: true, applies_non_ac: true, applies_gen: true, required: true, psi_weight: '' });
 
+export const DEFAULT_OPTIONS = ['Poor', 'Average', 'Good', 'Very Good', 'Excellent'];
+
+// Answer labels of an existing bank; a numbered 1–5 bank gets the standard labels, other numbered ones their numbers.
+function optionsOf(bank) {
+  if (bank.option_labels?.length) return [...bank.option_labels];
+  if (bank.scale_min === 1 && bank.scale_max === 5) return [...DEFAULT_OPTIONS];
+  return Array.from({ length: bank.scale_max - bank.scale_min + 1 }, (_, i) => String(bank.scale_min + i));
+}
+
 function fromBank(bank) {
-  if (!bank) return { name: '', audience: 'passenger', scale_min: 1, scale_max: 5, questions: [blankQuestion()] };
+  if (!bank) return { name: '', audience: 'passenger', option_labels: [...DEFAULT_OPTIONS], questions: [blankQuestion()] };
   return {
-    name: `${bank.name} (revised)`.slice(0, 100), audience: bank.audience, scale_min: bank.scale_min, scale_max: bank.scale_max,
+    name: `${bank.name} (revised)`.slice(0, 100), audience: bank.audience, option_labels: optionsOf(bank),
     questions: bank.questions.map((q) => ({ ...q, text_hi: q.text_hi ?? '', psi_weight: q.psi_weight ?? '' })),
   };
 }
@@ -50,6 +59,36 @@ function QuestionEditor({ q, i, count, errors, onChange, onMove, onRemove }) {
   );
 }
 
+// Answer options, worst first. Each gets a face (frown → smile) and is shown grey until the passenger picks it.
+function OptionsEditor({ options, errors, onChange }) {
+  const [preview, setPreview] = useState(undefined);
+  const set = (i, v) => onChange(options.map((o, k) => (k === i ? v : o)));
+  return (
+    <section className="rounded-2xl p-3 ring-1 ring-slate-200">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-semibold">Answer options <span className="font-normal text-slate-500">(worst first)</span></span>
+        <span className="flex gap-3 text-xs">
+          <button type="button" className="btn-link" onClick={() => onChange([...DEFAULT_OPTIONS])}>Use standard 5</button>
+          <button type="button" className="btn-link" disabled={options.length >= 10} onClick={() => onChange([...options, ''])}>Add option</button>
+        </span>
+      </div>
+      <ol className="space-y-2">
+        {options.map((o, i) => (
+          <li key={i} className="flex items-center gap-2">
+            <RatingFace k={i} n={options.length} selected className="h-8 w-8 shrink-0" />
+            <input className="input h-10" value={o} maxLength={30} aria-label={`Answer option ${i + 1}`} onChange={(e) => set(i, e.target.value)} />
+            <button type="button" className="btn-link text-red-600" disabled={options.length <= 2} onClick={() => onChange(options.filter((_, k) => k !== i))}
+              aria-label={`Remove answer option ${i + 1}`}>Remove</button>
+          </li>
+        ))}
+      </ol>
+      {errors.option_labels && <p className="mt-1 text-xs text-red-600">{errors.option_labels}</p>}
+      <p className="mb-1 mt-3 text-xs text-slate-500">Preview — tap a face to see it selected:</p>
+      <RatingScale min={1} max={options.length} options={options.map((o, i) => o.trim() || `Option ${i + 1}`)} value={preview} onChange={setPreview} label="Preview" />
+    </section>
+  );
+}
+
 function BankForm({ source, divisionId, onClose, onSaved }) {
   const { api } = useSession();
   const [f, setF] = useState(() => fromBank(source));
@@ -78,10 +117,9 @@ function BankForm({ source, divisionId, onClose, onSaved }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Bank name" error={errors.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field label="Audience" error={errors.audience}><Select value={f.audience} onChange={(v) => setF({ ...f, audience: v })} options={AUDIENCES} /></Field>
-        <Field label="Lowest rating" error={errors.scale_min}><input type="number" className="input" value={f.scale_min} onChange={(e) => setF({ ...f, scale_min: Number(e.target.value) })} /></Field>
-        <Field label="Highest rating" error={errors.scale_max}><input type="number" className="input" value={f.scale_max} onChange={(e) => setF({ ...f, scale_max: Number(e.target.value) })} /></Field>
       </div>
-      <p className="text-xs text-slate-500">Each question is answered on the rating scale above. Questions are shown in this order.</p>
+      <OptionsEditor options={f.option_labels} errors={errors} onChange={(option_labels) => setF((x) => ({ ...x, option_labels }))} />
+      <p className="text-xs text-slate-500">Every question is answered by picking one of these options. Questions are shown in this order.</p>
       {general && <p className="text-xs text-red-600">{general}</p>}
       <ol className="space-y-2">
         {f.questions.map((q, i) => (
@@ -103,7 +141,7 @@ function BankQuestions({ bank }) {
       <div className="mb-3 flex flex-wrap gap-2">
         <ActiveBadge active={bank.is_active} />
         <Badge>{label(bank.audience)}</Badge>
-        <Badge>Rating {bank.scale_min}–{bank.scale_max}</Badge>
+        <Badge>{bank.option_labels?.length ? bank.option_labels.join(' · ') : `Rating ${bank.scale_min}–${bank.scale_max}`}</Badge>
         <Badge>{bank.division_id ? 'Division bank' : 'Default bank (all divisions)'}</Badge>
       </div>
       <Table rows={bank.questions} columns={[
@@ -149,7 +187,7 @@ export default function QuestionBanks({ divisionId }) {
             <Table rows={shown} onRowClick={setView} columns={[
               { key: 'name', label: 'Bank', render: (b) => <span className="font-medium">{b.name}</span> },
               { key: 'audience', label: 'Audience', render: (b) => label(b.audience) },
-              { key: 'scale', label: 'Scale', render: (b) => `${b.scale_min}–${b.scale_max}` },
+              { key: 'scale', label: 'Answers', render: (b) => (b.option_labels?.length ? `${b.option_labels.length} options` : `${b.scale_min}–${b.scale_max}`) },
               { key: 'questions', label: 'Questions', render: (b) => b.questions.length },
               { key: 'is_active', label: 'Status', render: (b) => <ActiveBadge active={b.is_active} /> },
               { key: 'actions', label: '', render: (b) => access.canEdit && (
