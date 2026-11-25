@@ -131,3 +131,84 @@ def test_month_boundary_end_to_end(client, world):
     j = world.create_journey(train=long_train, journey_date=start)
     assert (j["linked_journey_date"], j["end_date"]) == ("%d-01-02" % (start.year + 1), "%d-01-04" % (start.year + 1))
     assert j["state"] == "scheduled"
+
+
+def _journey(client, world, jid):
+    return client.get(f"{API}/journeys/{jid}", headers=world.h("manager")).json()
+
+
+def test_train_coach_and_settings_edits_reach_untouched_journeys(client, world):
+    from tests.test_inspections import inspect
+
+    untouched = world.create_journey(journey_date=today_ist() + timedelta(days=2))
+    assert inspect(world).status_code == 201  # world.journey now has an inspection on B1
+    cancelled = world.create_journey(journey_date=today_ist() + timedelta(days=4))
+    assert client.post(f"{API}/journeys/{cancelled['id']}/cancel", headers=world.h("manager"),
+                       json={"reason": "test", "version": cancelled["version"]}).status_code == 200
+
+    tid = world.train["id"]
+    new = [{"code": "B1", "classification": "AC"}, {"code": "B2", "classification": "AC"}, {"code": "S1", "classification": "NON_AC"}]
+    assert client.put(f"{API}/trains/{tid}/coaches", headers=world.h("manager"), json={"coaches": new}).status_code == 200
+    r = client.patch(f"{API}/trains/{tid}", headers=world.h("manager"),
+                     json={"inspection_rounds_per_day": 3, "before_inspection_enabled": False})
+    assert r.status_code == 200, r.text
+
+    u = _journey(client, world, untouched["id"])
+    assert [c["code"] for c in u["coaches"]] == ["B1", "B2", "S1"]
+    assert u["inspection_rounds_per_day"] == 3 and u["before_inspection_enabled"] is False
+
+    inspected = _journey(client, world, world.journey["id"])  # keeps what it ran with
+    assert [c["code"] for c in inspected["coaches"]] == ["B1", "S1"]
+    assert inspected["inspection_rounds_per_day"] == 2 and inspected["before_inspection_enabled"] is True
+
+    c = _journey(client, world, cancelled["id"])
+    assert [x["code"] for x in c["coaches"]] == ["B1", "S1"] and c["inspection_rounds_per_day"] == 2
+
+
+def test_train_length_edit_redates_untouched_journeys(client, world):
+    from tests.test_inspections import inspect
+
+    start = today_ist() + timedelta(days=2)
+    derived = world.create_journey(journey_date=start)                       # dates from duration_days (1)
+    by_hand = world.create_journey(journey_date=start + timedelta(days=1),
+                                   end_date=str(start + timedelta(days=6)))  # end date set by hand
+    assert inspect(world).status_code == 201                                 # world.journey has an inspection
+
+    r = client.patch(f"{API}/trains/{world.train['id']}", headers=world.h("manager"),
+                     json={"duration_days": 2, "operational_days": 4})
+    assert r.status_code == 200, r.text
+
+    d = _journey(client, world, derived["id"])
+    assert (d["duration_days"], d["operational_days"]) == (2, 4)
+    assert d["linked_journey_date"] == str(start + timedelta(days=2)) and d["end_date"] == str(start + timedelta(days=3))
+
+    h = _journey(client, world, by_hand["id"])
+    assert (h["duration_days"], h["operational_days"]) == (2, 4)
+    assert h["end_date"] == str(start + timedelta(days=6))                   # hand-set dates kept
+
+    i = _journey(client, world, world.journey["id"])
+    assert (i["duration_days"], i["operational_days"]) == (1, 2) and i["end_date"] == world.journey["end_date"]
+
+
+def test_train_length_edit_never_ends_a_running_journey(client, world):
+    running = world.create_journey(journey_date=today_ist() - timedelta(days=1))  # 1-day train: ends today
+    r = client.patch(f"{API}/trains/{world.train['id']}", headers=world.h("manager"), json={"duration_days": 0})
+    assert r.status_code == 200, r.text
+    j = _journey(client, world, running["id"])
+    assert j["duration_days"] == 1 and j["end_date"] == running["end_date"]
+
+
+def test_train_time_edit_follows_unless_journey_has_its_own(client, world):
+    tid = world.train["id"]
+    assert client.patch(f"{API}/trains/{tid}", headers=world.h("manager"),
+                        json={"start_time": "06:00", "end_time": "14:00"}).status_code == 200
+    follows = world.create_journey(journey_date=today_ist() + timedelta(days=2))
+    own = world.create_journey(journey_date=today_ist() + timedelta(days=3), start_time="07:15")
+
+    r = client.patch(f"{API}/trains/{tid}", headers=world.h("manager"), json={"start_time": "06:30", "end_time": "15:00"})
+    assert r.status_code == 200, r.text
+
+    f = _journey(client, world, follows["id"])
+    assert f["start_time"].startswith("06:30") and f["end_time"].startswith("15:00")
+    o = _journey(client, world, own["id"])
+    assert o["start_time"].startswith("07:15") and o["end_time"].startswith("15:00")  # own start kept
