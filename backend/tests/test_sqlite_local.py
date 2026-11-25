@@ -45,7 +45,10 @@ def test_migrations_fresh_repeated_and_concurrent(tmp_path):
 
     db_file = tmp_path / "concurrent.db"
     procs = [_upgrade(db_file) for _ in range(3)]  # three initialisations racing on a new file
-    outs = [p.communicate(timeout=180)[0] for p in procs]
+    # Read all three outputs at once: read one after another, the winner can fill its pipe (small on Windows)
+    # and block on writing its log while it holds the database lock the others are waiting for.
+    with ThreadPoolExecutor(len(procs)) as pool:
+        outs = list(pool.map(lambda p: p.communicate(timeout=180)[0], procs))
     assert [p.returncode for p in procs] == [0, 0, 0], outs
     again = _upgrade(db_file)
     assert again.wait(timeout=180) == 0

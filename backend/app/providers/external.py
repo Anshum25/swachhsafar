@@ -3,7 +3,7 @@
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from functools import lru_cache
 from typing import Protocol
@@ -61,6 +61,12 @@ class PnrResult:
     chart_status: str | None = None
     train_cancelled: bool = False
     passengers: tuple[PnrPassenger, ...] = ()
+    source: str | None = None                   # which provider answered: "railradar", "rapidapi"
+
+    @property
+    def chart_prepared(self) -> bool:
+        s = (self.chart_status or "").lower()
+        return "prepared" in s and "not" not in s
 
     @property
     def alighting_code(self) -> str | None:
@@ -155,6 +161,37 @@ def parse_rapidapi_pnr(body: dict) -> PnrResult:
         train_cancelled=data.get("trainCancelledFlag") is True, passengers=tuple(passengers))
 
 
+def pnr_result_to_dict(r: PnrResult) -> dict:
+    """A PnrResult as JSON (the pnr_lookups cache). Round-trips with pnr_result_from_dict."""
+    return {
+        "found": r.found, "train_number": r.train_number, "train_name": r.train_name,
+        "coach_ids": sorted(r.coach_ids), "status_text": r.status_text,
+        "journey_date": r.journey_date.isoformat() if r.journey_date else None,
+        "boarding_code": r.boarding_code, "from_code": r.from_code, "to_code": r.to_code, "upto_code": r.upto_code,
+        "journey_class": r.journey_class, "chart_status": r.chart_status, "train_cancelled": r.train_cancelled,
+        "passengers": [dict(serial=x.serial, status=x.status, coach=x.coach, berth_no=x.berth_no,
+                            berth_code=x.berth_code, status_text=x.status_text) for x in r.passengers],
+        "source": r.source,
+    }
+
+
+def pnr_result_from_dict(d: dict) -> PnrResult:
+    d = d or {}
+    return PnrResult(
+        found=bool(d.get("found")), train_number=d.get("train_number"), train_name=d.get("train_name"),
+        coach_ids=frozenset(d.get("coach_ids") or ()), status_text=d.get("status_text"),
+        journey_date=date.fromisoformat(d["journey_date"]) if d.get("journey_date") else None,
+        boarding_code=d.get("boarding_code"), from_code=d.get("from_code"), to_code=d.get("to_code"),
+        upto_code=d.get("upto_code"), journey_class=d.get("journey_class"), chart_status=d.get("chart_status"),
+        train_cancelled=bool(d.get("train_cancelled")),
+        passengers=tuple(PnrPassenger(serial=x.get("serial") or i + 1, status=x.get("status"), coach=x.get("coach"),
+                                      berth_no=x.get("berth_no"), berth_code=x.get("berth_code"),
+                                      status_text=x.get("status_text"))
+                         for i, x in enumerate(d.get("passengers") or []) if isinstance(x, dict)),
+        source=d.get("source"),
+    )
+
+
 class PnrProvider(Protocol):
     def lookup(self, pnr: str) -> PnrResult: ...
 
@@ -204,6 +241,8 @@ class RapidApiPnrProvider:
     a 429 is not retried (the quota is spent; retrying only spends it faster). Logs name the failure, never
     the PNR or anything about the passenger."""
 
+    name = "rapidapi"
+
     def __init__(self, url: str, host: str, key: str, timeout: float, *, retries: int = 1, backoff: float = 0.8,
                  sleep=time.sleep) -> None:
         self._url, self._host, self._key, self._timeout = url.rstrip("/") + "/", host, key, timeout
@@ -244,6 +283,27 @@ class RapidApiPnrProvider:
             log.warning("PNR provider returned a body that is not JSON")
             raise ProviderUnavailable("PNR provider returned invalid JSON") from exc
         return parse_rapidapi_pnr(body if isinstance(body, dict) else {})
+
+
+class FallbackPnrProvider:
+    """Asks `primary` (RailRadar) first; only when it cannot answer -- ProviderUnavailable: down, blocked, rate
+    limited, format changed -- is `fallback` (RapidAPI) asked. A definite answer from the primary, "PNR not
+    found" included, is final. The result records which provider answered (PnrResult.source)."""
+
+    def __init__(self, primary: PnrProvider, fallback: PnrProvider | None) -> None:
+        self.primary, self.fallback = primary, fallback
+
+    def lookup(self, pnr: str) -> PnrResult:
+        try:
+            return replace(self.primary.lookup(pnr), source=getattr(self.primary, "name", None))
+        except ProviderUnavailable as first:
+            if self.fallback is None:
+                raise
+            log.warning("PNR primary provider unavailable (%s); asking the fallback", first)
+            try:
+                return replace(self.fallback.lookup(pnr), source=getattr(self.fallback, "name", None))
+            except ProviderUnavailable as second:
+                raise ProviderUnavailable(f"{first}; fallback: {second}") from second
 
 
 class HttpSmsProvider:
@@ -318,13 +378,29 @@ class Msg91SmsProvider:
         return str(body.get("message") or "") or None
 
 
+def _rapidapi_from_settings(s) -> RapidApiPnrProvider | None:
+    if not (s.pnr_api_url and s.pnr_api_host and s.pnr_api_key):
+        return None
+    return RapidApiPnrProvider(s.pnr_api_url, s.pnr_api_host, s.pnr_api_key.get_secret_value(), s.external_timeout_seconds)
+
+
 @lru_cache
 def get_pnr_provider() -> PnrProvider:
+    """PNR_PROVIDER=railradar: RailRadar (app/providers/railradar_pnr.py) first, RapidAPI as the fallback when
+    PNR_API_* are set. PNR_PROVIDER=rapidapi: RapidAPI only. disabled: feedback stays pending, never a guess."""
     s = get_settings()
+    if s.pnr_provider == "railradar":
+        from app.providers import railradar_pnr
+
+        fallback = _rapidapi_from_settings(s)
+        if fallback is None:
+            log.warning("PNR_PROVIDER=railradar without PNR_API_URL/HOST/KEY: no RapidAPI fallback")
+        return FallbackPnrProvider(railradar_pnr.from_settings(s), fallback)
     if s.pnr_provider == "rapidapi":
-        if not (s.pnr_api_url and s.pnr_api_host and s.pnr_api_key):
+        provider = _rapidapi_from_settings(s)
+        if provider is None:
             raise RuntimeError("PNR_PROVIDER=rapidapi requires PNR_API_URL, PNR_API_HOST and PNR_API_KEY")
-        return RapidApiPnrProvider(s.pnr_api_url, s.pnr_api_host, s.pnr_api_key.get_secret_value(), s.external_timeout_seconds)
+        return FallbackPnrProvider(provider, None)  # no fallback; stamps PnrResult.source
     return DisabledPnrProvider()
 
 

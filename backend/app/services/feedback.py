@@ -31,6 +31,7 @@ from app.models import (
     UserStatus,
 )
 from app.providers.external import PnrProvider, ProviderUnavailable, SmsProvider
+from app.services import pnr_cache
 from app.schemas.common import PageParams
 from app.schemas.feedback import (
     OtpVerify,
@@ -266,7 +267,7 @@ def verify_pnr(db: Session, p: Principal, provider: PnrProvider, feedback_id: uu
     j = db.get(Journey, fb.journey_id)
     policy = get_policy(db, fb.division_id)
     try:
-        result = provider.lookup(fb.pnr)
+        result = pnr_cache.lookup(db, provider, fb.pnr)  # stored answer while fresh, else RailRadar -> RapidAPI
     except ProviderUnavailable as exc:
         _record_outage(db, p, fb, "feedback.passenger.pnr_unavailable", exc)
         raise ServiceUnavailable("PNR service unavailable; feedback remains pending", code="pnr_unavailable") from exc
@@ -413,7 +414,8 @@ def _pnr_details(result, match: dict) -> dict:
     """What is kept of the provider's answer: train, date, stations, class, chart and each passenger's status,
     coach and berth. The provider returns no passenger names; nothing personal beyond the ticket is stored."""
     return {
-        "found": result.found, "train_number": result.train_number, "train_name": result.train_name,
+        "found": result.found, "source": result.source,
+        "train_number": result.train_number, "train_name": result.train_name,
         "coach_ids": sorted(result.coach_ids), "status": result.status_text,
         "journey_date": result.journey_date.isoformat() if result.journey_date else None,
         "boarding": result.boarding_code, "from": result.from_code, "to": result.to_code, "upto": result.upto_code,

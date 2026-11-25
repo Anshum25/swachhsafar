@@ -206,3 +206,20 @@ class RailwayFeedbackRating(Base):
     feedback_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("railway_feedback.id", ondelete="CASCADE"), primary_key=True)
     question_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("questions.id"), primary_key=True)
     value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PnrLookup(Base):
+    """The last answer a PNR provider gave for a PNR, kept until `expires_at` so the same PNR is not fetched
+    again (app/services/pnr_cache.py). `result` is the parsed PnrResult (external.pnr_result_to_dict): train,
+    date, stations, class, chart and each passenger's status, coach and berth -- no passenger names, and never
+    the provider's raw body. Outages are never stored."""
+
+    __tablename__ = "pnr_lookups"
+
+    pnr: Mapped[str] = mapped_column(String(10), primary_key=True)
+    found: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    source: Mapped[str | None] = mapped_column(String(20))            # railradar | rapidapi
+    result: Mapped[dict] = mapped_column(JSONType, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(TZDateTime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(TZDateTime(), nullable=False, index=True)
+    hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

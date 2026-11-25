@@ -96,12 +96,39 @@ HMAC-stored 6-digit code (`OTP_PEPPER`), `OTP_TTL_SECONDS` expiry, `OTP_RESEND_C
 challenge per feedback (resends rotate the code). The OTP may now be sent before the PNR check. Verification is
 decided only by the server. SMS outages are logged for the failure report.
 
-### PNR (existing RapidAPI integration, extended)
+### PNR (RailRadar first, RapidAPI fallback, stored answers)
 
-Provider: RapidAPI "IRCTC Indian Railway PNR Status" (`PNR_API_URL`, `PNR_API_HOST`, `PNR_API_KEY`; the key stays
-on the server). The response is mapped field by field (`external.parse_rapidapi_pnr`): train, journey (boarding)
-date, boarding / from / to / reserved-up-to stations, class, chart status, train-cancelled flag and each passenger's
-current (else booking) status, coach and berth. A field the provider does not return is left empty, never guessed.
+Providers (`PNR_PROVIDER`):
+
+| Value | Behaviour |
+|---|---|
+| `railradar` | RailRadar's PNR JSON — the data behind railradar.in/pnr (`/app/v1/pnr/{pnr}`), `app/providers/railradar_pnr.py`, ported from the operator's pnrfetch tool. RapidAPI answers only when RailRadar cannot (down, PRS down/maintenance, blocked, rate limited, format changed). A definite "PNR not found / flushed" from RailRadar is final. Requires `RAILRADAR_PNR_AUTHORIZATION` (the reference of RailRadar's written permission). |
+| `rapidapi` | RapidAPI "IRCTC Indian Railway PNR Status" only (`PNR_API_URL`, `PNR_API_HOST`, `PNR_API_KEY`). |
+| `disabled` | no lookups; feedback stays pending. |
+
+RailRadar transport (`RAILRADAR_PNR_TRANSPORT`): `http` (default) requests the JSON directly with an identifying
+User-Agent, one request at a time, `RAILRADAR_PNR_MIN_INTERVAL_SECONDS` apart; `browser` loads the public page in
+headless Chromium and reads the JSON the page receives (pnrfetch's portal method; `pip install .[pnr-browser]`,
+`python -m playwright install chromium`). Neither works around a CAPTCHA, block or rate limit: those count as an
+outage and go to the fallback.
+
+Both responses are mapped field by field (`railradar_pnr.parse_railradar_pnr`, `external.parse_rapidapi_pnr`):
+train, journey (boarding) date, boarding / from / to / reserved-up-to stations, class, chart status, train-cancelled
+flag and each passenger's current (else booking) status, coach and berth. A field the provider does not return is
+left empty, never guessed. `pnr_details.source` records which provider answered.
+
+**Stored answers** (`pnr_lookups`, `app/services/pnr_cache.py`): every answer is kept, so verifying the same PNR
+again (a retry, a second passenger on one ticket) asks no provider while the answer is fresh:
+
+| Answer | Kept |
+|---|---|
+| chart prepared, or train cancelled | until the end of the journey date + `PNR_CACHE_DAYS_AFTER_JOURNEY` (2) days, India time |
+| chart not prepared | `PNR_CACHE_UNCHARTED_MINUTES` (180) |
+| PNR not found | `PNR_CACHE_NOT_FOUND_MINUTES` (15) |
+| provider outage | never stored |
+
+Only the parsed result is stored (no passenger names, never the provider's raw body). `PNR_CACHE_ENABLED=false`
+turns it off.
 
 The ticket must fit the journey (`feedback.match_pnr`):
 
