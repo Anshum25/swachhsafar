@@ -1,0 +1,12 @@
+[Unit]
+Description=Swachh Safar 2.0 timetable sync, every 6 hours (retries failed reads; refreshes weekly otherwise)
+
+[Timer]
+# 23:45 IST and every 6 hours after: the 23:45 run lands just before the 00:05 journey planner, so journeys
+# planned that night use the latest timetables. Persistent: a missed run happens at the next boot.
+OnCalendar=*-*-* 00,06,12,18:15:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

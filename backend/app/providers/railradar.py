@@ -128,10 +128,29 @@ _HHMM = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 
 
 @dataclass(frozen=True)
+class Stop:
+    """One halt on a train's route. Days count from the day the train leaves its first station (1)."""
+    seq: int
+    code: str
+    name: str | None
+    arrival: str | None        # "HH:MM"; None at the first station
+    arrival_day: int | None
+    departure: str | None      # "HH:MM"; None at the last station
+    departure_day: int | None
+    distance_km: float | None
+    platform: str | None
+
+    def as_dict(self) -> dict:
+        return dict(seq=self.seq, code=self.code, name=self.name, arrival=self.arrival, arrival_day=self.arrival_day,
+                    departure=self.departure, departure_day=self.departure_day, distance_km=self.distance_km,
+                    platform=self.platform)
+
+
+@dataclass(frozen=True)
 class TrainRun:
     """A train's schedule from its train-status page (`initialSchedule`): when it leaves its first station,
     when it reaches its last (arrival_days after the day it left: 0 = the same day), the days it runs, the
-    train that makes the return trip, and its passenger coaches."""
+    train that makes the return trip, its passenger coaches, and every station it halts at on the way."""
     train_no: str
     name: str | None
     origin_code: str | None
@@ -143,6 +162,43 @@ class TrainRun:
     run_days: tuple[str, ...] | None
     return_train_no: str | None
     coaches: tuple[Coach, ...]
+    stops: tuple[Stop, ...] = ()
+    distance_km: float | None = None
+    duration_minutes: int | None = None
+
+
+def _num(v) -> float | None:
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 else None
+
+
+def parse_route_stops(route: list) -> tuple[Stop, ...]:
+    """The halts of RailRadar's `route` (passing points dropped; the first and last station always kept), in
+    route order. A station visited twice stays twice. Values that are not what they should be are left out
+    (None), never guessed; validation (app/services/timetable.py) decides whether the result is usable."""
+    out: list[Stop] = []
+    entries = [e for e in route if isinstance(e, dict)]
+    for i, e in enumerate(entries):
+        station = e.get("station") if isinstance(e.get("station"), dict) else {}
+        code = str(station.get("code") or e.get("stationCode") or "").strip().upper()
+        if not STATION_CODE_RE.match(code):
+            continue
+        if e.get("isHalt") is False and 0 < i < len(entries) - 1:
+            continue
+        seq = e.get("sequence")
+        seq = seq if isinstance(seq, int) and seq > 0 else (out[-1].seq + 1 if out else 1)
+
+        def day(key, entry=e):
+            v = entry.get(key)
+            return v if isinstance(v, int) and 1 <= v <= 10 else None
+
+        name = _text(station.get("name"))
+        platform = _text(str(e.get("platform"))) if e.get("platform") not in (None, "") else None
+        out.append(Stop(seq=seq, code=code, name=name[:120] if name else None,
+                        arrival=_clock(e.get("arrival")) if i > 0 else None, arrival_day=day("arrivalDay") if i > 0 else None,
+                        departure=_clock(e.get("departure")) if i < len(entries) - 1 else None,
+                        departure_day=day("departureDay") if i < len(entries) - 1 else None,
+                        distance_km=_num(e.get("distance")), platform=platform[:8] if platform else None))
+    return tuple(out)
 
 
 def parse_train_run(html: str, train_no: str) -> TrainRun:
@@ -174,7 +230,10 @@ def parse_train_run(html: str, train_no: str) -> TrainRun:
         m = _COACH_POSITION.search(payload)
         position = m.group(1) if m else ""
     src, dst = train.get("source") or {}, train.get("destination") or {}
+    duration = train.get("duration")
     return TrainRun(
+        stops=parse_route_stops(route), distance_km=_num(train.get("distance")),
+        duration_minutes=duration if isinstance(duration, int) and 0 < duration < 15 * 1440 else None,
         train_no=train_no, name=(str(train["name"]).strip()[:100] or None) if train.get("name") else None,
         origin_code=normalize_code(src.get("code")) if src.get("code") else None,
         destination_code=normalize_code(dst.get("code")) if dst.get("code") else None,

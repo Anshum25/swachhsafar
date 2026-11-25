@@ -11,6 +11,7 @@ from app.timeutil import today_ist
 from app.schemas.common import PageParams
 from app.schemas.trains import CoachesReplace, CoachIn, TrainCreate, TrainUpdate
 from app.security.principal import Principal
+from app.services import feedback_plan
 from app.services.common import audit, commit_or_conflict, diff, flush_or_conflict, paginate
 
 
@@ -32,6 +33,7 @@ def create_train(db: Session, p: Principal, body: TrainCreate) -> Train:
     if division is None or not division.is_active:
         raise BusinessRuleViolation("Division is not active")
     train = Train(**body.model_dump(exclude={"coaches"}), coaches=_coach_rows(body.coaches))
+    _check_feedback_config(train)
     db.add(train)
     flush_or_conflict(db, "Train number already exists in this division")
     audit(db, actor_id=p.id, action="train.create", entity=train, division_id=train.division_id, changes=body.model_dump(mode="json"))
@@ -50,9 +52,33 @@ def update_train(db: Session, p: Principal, train_id: uuid.UUID, body: TrainUpda
     old_times = {k: getattr(train, k) for k in JOURNEY_TIMES}
     for k, v in updates.items():
         setattr(train, k, v)
+    _check_feedback_config(train)
     _sync_journeys(db, p, train, updates, old_times)
+    if (FEEDBACK_CONFIG | set(JOURNEY_LENGTH) | {"is_active"}) & updates.keys():
+        db.flush()
+        # Journeys not ended take the new targets on the days still ahead; days begun keep theirs, and no
+        # feedback record is touched (services/feedback_plan).
+        n = feedback_plan.refresh_for_trains(db, [train.id])
+        if n:
+            audit(db, actor_id=p.id, action="train.feedback_targets.sync", entity=train, division_id=train.division_id,
+                  changes={"journeys_updated": n})
     db.commit()
     return train
+
+
+# Train Master settings that shape the passenger feedback targets of its journeys.
+FEEDBACK_CONFIG = {"feedback_enabled", "feedback_daily_target", "feedback_coach_daily_target", "feedback_min_daily",
+                   "feedback_from_day", "feedback_to_day", "feedback_days", "feedback_targets_active"}
+
+
+def _check_feedback_config(train: Train) -> None:
+    """The rules the database also checks, answered as a clear 422 instead of a constraint error."""
+    if train.feedback_min_daily is not None and train.feedback_daily_target is not None \
+            and train.feedback_min_daily > train.feedback_daily_target:
+        raise BusinessRuleViolation("The daily minimum cannot be above the daily feedback target",
+                                    code="feedback_min_above_target")
+    if train.feedback_to_day is not None and train.feedback_to_day < (train.feedback_from_day or 1):
+        raise BusinessRuleViolation("Feedback collection cannot end before it starts", code="feedback_window_order")
 
 
 # Train fields each journey snapshots that only shape its inspections (not its dates).
@@ -157,7 +183,8 @@ def list_trains(db: Session, p: Principal, params: PageParams, *, division_id: u
     divisions = p.require_any_division("trains.read")
     if division_id is not None:
         divisions = [d for d in divisions if d == division_id]
-    stmt = select(Train).options(selectinload(Train.coaches)).where(Train.division_id.in_(divisions))
+    stmt = (select(Train).options(selectinload(Train.coaches), selectinload(Train.stops), selectinload(Train.return_train))
+            .where(Train.division_id.in_(divisions)))
     if active is not None:
         stmt = stmt.where(Train.is_active.is_(active))
     if q:

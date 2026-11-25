@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.config import get_settings
 from app.errors import BusinessRuleViolation, Conflict, Forbidden, NotFound, ServiceUnavailable
 from app.models import (
+    AuditLog,
     CoachClass,
     Journey,
     MediaKind,
@@ -42,7 +43,7 @@ from app.schemas.feedback import (
 )
 from app.schemas.operations import ReviewIn
 from app.security.principal import Principal
-from app.services import media
+from app.services import feedback_plan, media
 from app.services.common import audit, check_replay, get_or_404, paginate, payload_hash
 from app.services.inspections import day_is_open
 from app.services.journeys import check_capture_window, get_journey, is_allocated
@@ -212,6 +213,13 @@ def start_passenger(db: Session, p: Principal, body: PassengerFeedbackStart) -> 
     coach = _coach(j, body.coach_code)
     if body.journey_day > j.operational_days or not day_is_open(j, body.journey_day, captured_on):
         raise BusinessRuleViolation("Feedback is not open for this journey day", code="day_not_open")
+    # Train Master: feedback switched off for the train, or a day outside its collection window.
+    if not j.train.feedback_enabled:
+        raise BusinessRuleViolation("Passenger feedback is turned off for this train in Train Master",
+                                    code="feedback_disabled")
+    if not feedback_plan.in_window(j.train, body.journey_day):
+        raise BusinessRuleViolation("Train Master does not collect passenger feedback on this journey day",
+                                    code="day_outside_window")
     if policy.passenger_pnr_required and not body.pnr:
         raise BusinessRuleViolation("PNR is required", code="pnr_required")
     if db.scalar(select(User.id).where(User.mobile == body.mobile, User.status != UserStatus.DELETED)):
@@ -219,8 +227,11 @@ def start_passenger(db: Session, p: Principal, body: PassengerFeedbackStart) -> 
     _duplicate_checks(db, body.id, j.id, body.pnr, body.mobile, captured_on, coach.code, body.journey_day,
                       policy.passenger_feedback_per_coach_day)
     bank = active_bank(db, j.division_id, "passenger")
+    day = feedback_plan.day_info(j, body.journey_day)
     fb = PassengerFeedback(
         **body.model_dump(), division_id=j.division_id, bank_id=bank.id, coach_class=coach.classification,
+        direction=day["direction"], train_no=day["train_nos"][0] if len(day["train_nos"]) == 1 else None,
+        coach_source="selected",
         feedback_date=captured_on, collected_by_id=p.id, payload_hash=digest, status=PassengerFeedbackStatus.DRAFT,
         pnr_status=PnrStatus.PENDING if policy.passenger_pnr_required else PnrStatus.NOT_REQUIRED,
         otp_status=OtpStatus.NOT_SENT if policy.passenger_otp_required else OtpStatus.NOT_REQUIRED,
@@ -235,6 +246,11 @@ def start_passenger(db: Session, p: Principal, body: PassengerFeedbackStart) -> 
 
 
 def verify_pnr(db: Session, p: Principal, provider: PnrProvider, feedback_id: uuid.UUID) -> PassengerFeedback:
+    """Checks the PNR with the provider (RapidAPI) and matches the ticket to the journey: its train is one
+    running on the feedback day, its date falls on that train's leg, its stations are on that leg's route
+    and in order, and its coach is one of the journey's. When the ticket names a coach of this journey that
+    differs from the coach card picked, the feedback moves to the ticket's coach (coach_source = "pnr")
+    rather than being voided. Nothing is guessed: what the provider does not return is not checked."""
     fb = _load_feedback(db, p, feedback_id, for_update=True)
     _require_collector(p, fb)
     if fb.status != PassengerFeedbackStatus.DRAFT or fb.pnr_status != PnrStatus.PENDING:
@@ -244,31 +260,160 @@ def verify_pnr(db: Session, p: Principal, provider: PnrProvider, feedback_id: uu
     try:
         result = provider.lookup(fb.pnr)
     except ProviderUnavailable as exc:
+        _record_outage(db, p, fb, "feedback.passenger.pnr_unavailable", exc)
         raise ServiceUnavailable("PNR service unavailable; feedback remains pending", code="pnr_unavailable") from exc
 
-    reason = None
-    if not result.found:
-        reason = "PNR not found"
-    else:
-        trains = _expected_train_numbers(j, fb.journey_day, policy.pnr_train_day_mapping)
-        if result.train_number not in trains:
-            reason = "PNR is for a different train"
-        elif policy.pnr_coach_match_required and fb.coach_code.replace(" ", "") not in {c.replace(" ", "") for c in result.coach_ids}:
-            reason = "PNR coach does not match"
+    match = match_pnr(j, fb, result, policy)
+    reason = match["reason"]
+    if reason is None and match["coach"] != fb.coach_code:
+        reason = _move_coach(db, j, fb, match["coach"], policy)
     fb.pnr_checked_at = utcnow()
-    fb.pnr_details = {"found": result.found, "train_number": result.train_number, "train_name": result.train_name,
-                      "coach_ids": sorted(result.coach_ids), "status": result.status_text}
+    fb.pnr_details = _pnr_details(result, match)
+    if result.found:
+        fb.pnr_journey_date = result.journey_date
+        fb.boarding_code = result.boarding_code or result.from_code
+        fb.alighting_code = result.alighting_code
     if reason:
         fb.pnr_status = PnrStatus.INVALID
         fb.status = PassengerFeedbackStatus.VOID
         fb.void_reason = reason
     else:
         fb.pnr_status = PnrStatus.VALID
+        fb.train_no = match["train_no"]
+        fb.direction = match["direction"] or fb.direction
+        fb.coach_verified = match["coach_verified"]
+        if match["berth"] and not fb.seat_no:
+            fb.seat_no = match["berth"][:10]  # from the ticket, only where staff left it empty
         _maybe_verified(fb)
     audit(db, actor_id=p.id, action="feedback.passenger.pnr", entity=fb, division_id=fb.division_id,
-          changes={"pnr_status": fb.pnr_status, "reason": reason})
+          changes={"pnr_status": fb.pnr_status, "reason": reason, "coach_source": fb.coach_source,
+                   "coach_verified": fb.coach_verified, "checks": match["checks"]})
     _commit_transition(db)
     return fb
+
+
+def _record_outage(db: Session, p: Principal, fb: PassengerFeedback, action: str, exc: Exception) -> None:
+    """A provider that could not answer leaves the feedback as it was; the outage itself is logged (for the
+    verification failure report) in its own transaction. The reason names the failure, never the PNR."""
+    fb_id, division_id = fb.id, fb.division_id
+    db.rollback()
+    db.add(AuditLog(actor_id=p.id, division_id=division_id, action=action, entity_type="passenger_feedback",
+                    entity_id=str(fb_id), changes={"reason": str(exc)[:120]}))
+    db.commit()
+
+
+def _norm(code: str | None) -> str:
+    return (code or "").replace(" ", "").upper()
+
+
+def match_pnr(j: Journey, fb: PassengerFeedback, result, policy) -> dict:
+    """How a PNR result fits the journey (pure). reason = None when it fits. checks records what was and was
+    not checked (a field the provider did not return is "unknown", never assumed)."""
+    out = dict(reason=None, train_no=None, direction=None, coach=fb.coach_code, coach_verified=False, berth=None,
+               checks={})
+    checks = out["checks"]
+    if not result.found:
+        out["reason"] = "PNR not found"
+        return out
+    if result.train_cancelled:
+        out["reason"] = "The train is cancelled on this PNR's date"
+        return out
+    if result.all_cancelled:
+        out["reason"] = "The ticket on this PNR is cancelled"
+        return out
+    # The train: one that runs on the feedback day (its leg), else any train of the journey (layover days and
+    # journeys without legs use the older rule, pnr_train_day_mapping).
+    info = feedback_plan.day_info(j, fb.journey_day)
+    expected = set(info["train_nos"]) or _expected_train_numbers(j, fb.journey_day, policy.pnr_train_day_mapping)
+    if result.train_number not in expected:
+        out["reason"] = "PNR is for a different train"
+        checks["train"] = "mismatch"
+        return out
+    checks["train"] = "ok"
+    out["train_no"] = result.train_number
+    leg = feedback_plan.leg_for(j, result.train_number)
+    if leg is not None:
+        out["direction"] = leg["direction"]
+    # The date: the ticket's journey date is the boarding date, which falls on the leg's run.
+    if result.journey_date is None or leg is None:
+        checks["date"] = "unknown"
+    elif not (leg["departs_on"] <= result.journey_date <= leg["arrives_on"]):
+        out["reason"] = "PNR is for another date of this train"
+        checks["date"] = "mismatch"
+        return out
+    elif fb.feedback_date < result.journey_date:
+        out["reason"] = "The passenger boards after the feedback date"
+        checks["date"] = "mismatch"
+        return out
+    else:
+        checks["date"] = "ok"
+    # The stations: boarding before alighting, both on the leg's route (a station on it twice may match either).
+    board, alight = result.boarding_code or result.from_code, result.alighting_code
+    codes = [s.get("code") for s in (leg or {}).get("stops") or []]
+    if not codes or not board or not alight:
+        checks["stations"] = "unknown"
+    else:
+        firsts = [i for i, c in enumerate(codes) if c == board]
+        lasts = [i for i, c in enumerate(codes) if c == alight]
+        if not firsts or not lasts or min(firsts) >= max(lasts):
+            out["reason"] = "PNR stations are not on this train's route"
+            checks["stations"] = "mismatch"
+            return out
+        checks["stations"] = "ok"
+    # The coach: the passenger's allocation (current, else booking), live passengers only.
+    live = [x for x in result.passengers if not x.cancelled]
+    coaches = list(dict.fromkeys(x.coach for x in live if x.coach)) or sorted(result.coach_ids)
+    journey_coaches = {_norm(c.code): c.code for c in j.coaches}
+    if _norm(fb.coach_code) in {_norm(c) for c in coaches}:
+        out["coach_verified"] = True
+        checks["coach"] = "ok"
+    elif on_journey := [journey_coaches[_norm(c)] for c in coaches if _norm(c) in journey_coaches]:
+        out["coach"], out["coach_verified"] = on_journey[0], True
+        checks["coach"] = "moved"
+    elif coaches:
+        checks["coach"] = "mismatch"
+        if policy.pnr_coach_match_required:
+            out["reason"] = "PNR coach does not match"
+            return out
+    else:
+        checks["coach"] = "unknown"
+        if policy.pnr_coach_match_required:
+            out["reason"] = ("The ticket is waitlisted, not confirmed" if result.all_waitlisted
+                             else "PNR coach does not match")
+            return out
+    seat = next((x for x in live if x.coach and _norm(x.coach) == _norm(out["coach"])), None)
+    out["berth"] = seat.berth if seat is not None else None
+    return out
+
+
+def _move_coach(db: Session, j: Journey, fb: PassengerFeedback, code: str, policy) -> str | None:
+    """Put the feedback on the coach its ticket names. Refused (returns a reason) when that coach's limit for
+    the day is already reached."""
+    coach = _coach(j, code)
+    limit = policy.passenger_feedback_per_coach_day
+    if limit and db.scalar(select(func.count()).where(
+            PassengerFeedback.journey_id == j.id, PassengerFeedback.id != fb.id, PassengerFeedback.status.in_(COUNTED),
+            PassengerFeedback.coach_code == coach.code, PassengerFeedback.journey_day == fb.journey_day)) >= limit:
+        return f"Feedback limit reached for coach {coach.code} (the coach on the ticket) on this day"
+    if coach.classification != fb.coach_class:
+        fb.coach_class = coach.classification  # ratings come later, on the questions of the right class
+    fb.coach_code, fb.coach_source = coach.code, "pnr"
+    return None
+
+
+def _pnr_details(result, match: dict) -> dict:
+    """What is kept of the provider's answer: train, date, stations, class, chart and each passenger's status,
+    coach and berth. The provider returns no passenger names; nothing personal beyond the ticket is stored."""
+    return {
+        "found": result.found, "train_number": result.train_number, "train_name": result.train_name,
+        "coach_ids": sorted(result.coach_ids), "status": result.status_text,
+        "journey_date": result.journey_date.isoformat() if result.journey_date else None,
+        "boarding": result.boarding_code, "from": result.from_code, "to": result.to_code, "upto": result.upto_code,
+        "class": result.journey_class, "chart_status": result.chart_status, "train_cancelled": result.train_cancelled,
+        "passengers": [dict(serial=x.serial, status=x.status, coach=x.coach, berth=x.berth) for x in result.passengers],
+        "matched_coach": match["coach"] if not match["reason"] else None, "berth": match["berth"],
+        "direction": match["direction"], "checks": match["checks"],
+    }
 
 
 def _expected_train_numbers(j: Journey, day: int, day_mapping: bool) -> set[str]:
@@ -292,8 +437,8 @@ def send_otp(db: Session, p: Principal, sms: SmsProvider, feedback_id: uuid.UUID
     _require_collector(p, fb)
     if fb.status != PassengerFeedbackStatus.DRAFT or fb.otp_status not in (OtpStatus.NOT_SENT, OtpStatus.SENT):
         raise BusinessRuleViolation("OTP cannot be sent in the current state", code="invalid_state")
-    if fb.pnr_status == PnrStatus.PENDING:
-        raise BusinessRuleViolation("Verify the PNR before sending the OTP", code="pnr_pending")
+    # The mobile number is verified first, then the PNR (either order is accepted: both must pass before the
+    # feedback counts, and verification is always decided here, never by what the device reports).
     now = utcnow()
     challenge = db.scalar(select(OtpChallenge).where(OtpChallenge.feedback_id == fb.id))
     if challenge is not None:
@@ -307,7 +452,7 @@ def send_otp(db: Session, p: Principal, sms: SmsProvider, feedback_id: uuid.UUID
     try:
         sms.send_otp(fb.mobile, code)
     except ProviderUnavailable as exc:
-        db.rollback()
+        _record_outage(db, p, fb, "feedback.passenger.sms_unavailable", exc)
         raise ServiceUnavailable("SMS service unavailable; try again later", code="sms_unavailable") from exc
     expires = now + timedelta(seconds=settings.otp_ttl_seconds)
     if challenge is None:

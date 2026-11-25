@@ -18,6 +18,7 @@ from app.schemas.reports import (
     PsiRow,
 )
 from app.security.principal import Principal, get_principal
+from app.services import feedback_reports as fb_reports
 from app.services import reports as svc
 from app.timeutil import today_ist
 
@@ -62,6 +63,33 @@ def complaints(date_from: date, date_to: date, division_id: uuid.UUID | None = N
 def inventory(date_from: date, date_to: date, division_id: uuid.UUID | None = None,
               db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return svc.inventory_report(db, p, division_id=division_id, date_from=date_from, date_to=date_to)
+
+
+@router.get("/feedback-targets")
+def feedback_targets(date_from: date, date_to: date,
+                     group_by: Literal["train", "direction", "date", "day", "coach"] = "train",
+                     division_id: uuid.UUID | None = None, train_id: uuid.UUID | None = None,
+                     direction: Literal[1, 2, 3] | None = None,
+                     db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Passenger feedback against the Train Master targets of journey days in the range, train-wise
+    (with direction), direction-wise, date-wise, per journey day, or coach-wise. Pending is summed day by
+    day (a day over its target does not make up for another under it)."""
+    return fb_reports.target_report(db, p, date_from=date_from, date_to=date_to, group_by=group_by,
+                                    division_id=division_id, train_id=train_id, direction=direction)
+
+
+@router.get("/feedback-verification")
+def feedback_verification(date_from: date, date_to: date, division_id: uuid.UUID | None = None,
+                          db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """PNR and OTP outcomes: rejections by reason, coaches moved to the ticket's, provider outages, wrong codes."""
+    return fb_reports.verification_report(db, p, date_from=date_from, date_to=date_to, division_id=division_id)
+
+
+@router.get("/timetable-sync")
+def timetable_sync(division_id: uuid.UUID | None = None, db: Session = Depends(get_db),
+                   p: Principal = Depends(get_principal)):
+    """Each train's timetable state (ok / failed / rejected / never read) and the latest failed reads."""
+    return fb_reports.sync_report(db, p, division_id=division_id)
 
 
 class MapPoint(BaseModel):

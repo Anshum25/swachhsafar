@@ -1,0 +1,13 @@
+[Unit]
+Description=Swachh Safar 2.0: read Train Master timetables (both directions) from RailRadar
+After=swachhsafar-api.service
+Wants=swachhsafar-api.service
+
+[Service]
+Type=oneshot
+User=swachhsafar
+WorkingDirectory=/var/www/html/swachhsafar2.0/swachhsafar/backend
+EnvironmentFile=/etc/swachhsafar/backend.env
+# Trains never read, read more than 7 days ago, or failed and past their retry delay (1 h, 6 h, 24 h).
+# At most 60 trains a run; requests to RailRadar are spaced 3 s apart and the run stops on 403/429/CAPTCHA.
+ExecStart=/var/www/html/swachhsafar2.0/swachhsafar/backend/.venv/bin/python -m app.cli sync-timetables --limit 60

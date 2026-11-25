@@ -38,6 +38,7 @@ from app.models import (
 )
 from app.providers.railradar import RailRadarError, TimetableProvider, TrainRun, WEEKDAYS
 from app.security.principal import Principal
+from app.services import feedback_plan
 from app.services.clients import charge_journey
 from app.services.common import audit, get_or_404
 from app.services.journeys import derive_dates
@@ -253,6 +254,7 @@ def save_setup(db: Session, p: Principal, client_id: uuid.UUID, body, provider: 
             run = _train_run(provider, no) if (not train.coaches or train.arrival_days is None) else None
             if run is not None:
                 _apply_run(train, run)
+                adopt_run(train, run)
             if not train.coaches:
                 if run is not None and run.coaches:
                     train.coaches = [TrainCoach(code=c.code, classification=c.classification, position=i)
@@ -301,6 +303,23 @@ def _apply_run(train: Train, run: TrainRun) -> None:
     train.destination_name = run.destination_name or train.destination_name
 
 
+def adopt_run(train: Train, run: TrainRun) -> bool:
+    """Keep the full stop list of a reading taken during setup, when it validates (services/timetable). An
+    invalid or partial reading leaves the stops as they were; the scheduled sync tries again."""
+    from app.services import timetable
+
+    if timetable.validate_run(run):
+        return False
+    digest = timetable.schedule_hash(run)
+    if digest != train.schedule_hash:
+        timetable._store(train, run)
+        train.schedule_hash = digest
+    now = utcnow()
+    train.schedule_status, train.schedule_synced_at, train.schedule_checked_at = "ok", now, now
+    train.schedule_error, train.schedule_failures = None, 0
+    return True
+
+
 def _link_return(db: Session, provider: TimetableProvider, train: Train, run: TrainRun) -> None:
     """The train that brings the rake back, as a train of the same division: journeys link it, and end when it
     is back. Made from its own train-status page (its coaches, or the outbound rake when the page has none);
@@ -321,6 +340,7 @@ def _link_return(db: Session, provider: TimetableProvider, train: Train, run: Tr
                          daywise=False, is_active=True, auto_journeys=False)
             db.add(back)
         _apply_run(back, back_run)
+        adopt_run(back, back_run)
         if not back.coaches:
             source = back_run.coaches or [c for c in train.coaches]
             back.coaches = [TrainCoach(code=c.code, classification=c.classification, position=i)
@@ -341,6 +361,7 @@ def refresh_schedules(db: Session, provider: TimetableProvider, trains: list[Tra
         if run is None:
             continue
         _apply_run(train, run)
+        adopt_run(train, run)
         _link_return(db, provider, train, run)
         done += 1
     if done:
@@ -422,6 +443,8 @@ def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = Non
     if provider is not None and refresh_schedules(db, provider, trains):
         trains = list(db.scalars(stmt.execution_options(populate_existing=True)))
         _redate_unstarted(db, trains, today)
+        feedback_plan.refresh_for_trains(db, [t.id for t in trains], today)
+        db.commit()
     window = [today + timedelta(days=i) for i in range(days)]
     have = set(db.execute(select(Journey.train_id, Journey.journey_date).where(
         Journey.train_id.in_([t.id for t in trains]), Journey.journey_date.in_(window), Journey.auto_created)).all())
@@ -446,12 +469,14 @@ def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = Non
                     db.add(j)
                     db.flush()
                     credits = charge_journey(db, j.division_id, j.id)
+                    feedback_plan.refresh(db, j, today)  # its legs and the Train Master feedback targets
                 audit(db, actor_id=None, action="journey.plan", entity=j, division_id=j.division_id,
                       changes={"train_no": train.train_no, "journey_date": str(day), "credits_charged": credits})
                 created += 1
             except PaymentRequired:
                 skipped += 1  # the savepoint rolled the journey back; it is tried again on the next run
     db.commit()
+    feedback_plan.backfill(db, today)  # journeys from before Train Master targets, or made another way
     return dict(created=created, skipped=skipped)
 
 

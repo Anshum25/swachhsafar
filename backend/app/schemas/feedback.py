@@ -133,6 +133,17 @@ class PassengerFeedbackOut(ReadModel):
     server_timestamp: datetime
     verified_at: datetime | None
     completed_at: datetime | None
+    # ---- the passenger's journey (Train Master and the PNR) ----
+    direction: int | None = None
+    train_no: str | None = None
+    coach_source: str | None = None
+    coach_verified: bool = False
+    pnr_journey_date: date | None = None
+    boarding_code: str | None = None
+    alighting_code: str | None = None
+    # The provider's answer as kept (train, date, stations, class, chart, each passenger's status/coach/berth);
+    # it holds no passenger names.
+    pnr_details: dict | None = None
 
 
 class OtpSent(StrictModel):

@@ -46,14 +46,12 @@ def test_full_passenger_flow_never_exposes_otp(world, fakes):
     assert (fb["status"], fb["pnr_status"], fb["otp_status"]) == ("draft", "pending", "not_sent")
     assert fb["mobile_masked"] == "91XXXXXX89" and "mobile" not in fb
 
-    r = world.client.post(f"{API}/passenger/{fb['id']}/send-otp", headers=world.h("sup"))
-    assert r.status_code == 422 and r.json()["error"]["code"] == "pnr_pending"
-    r = world.client.post(f"{API}/passenger/{fb['id']}/verify-pnr", headers=world.h("sup"))
-    assert r.json()["pnr_status"] == "valid" and r.json()["status"] == "draft"
-
+    # Mobile first (the passenger workflow's order), then the PNR: an OTP may be sent before the PNR check.
     r = world.client.post(f"{API}/passenger/{fb['id']}/send-otp", headers=world.h("sup"))
     assert r.status_code == 200
     code = fakes[1].last_code
+    r = world.client.post(f"{API}/passenger/{fb['id']}/verify-pnr", headers=world.h("sup"))
+    assert r.json()["pnr_status"] == "valid" and r.json()["status"] == "draft"
     assert code not in r.text and len(code) == 6
     stored = world.db.scalar(select(OtpChallenge).where(OtpChallenge.feedback_id == uuid.UUID(fb["id"])))
     assert code not in stored.code_hash and len(stored.code_hash) == 64

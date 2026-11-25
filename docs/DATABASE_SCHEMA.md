@@ -272,9 +272,61 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `auto_journeys` | BOOLEAN | not null; journeys planned daily (services/railway.plan_journeys) |
 | `arrival_days` | INTEGER | days after departure it reaches its last station, 0–7; NULL = schedule not read |
 | `return_train_id` | UUID | → trains.id (SET NULL); the train that makes the return trip |
+| `feedback_enabled` | BOOLEAN | not null, default true; passenger feedback collected on this train's journeys (0020) |
+| `feedback_daily_target` | INTEGER | 1–500; passenger feedback required per journey day, whole train; NULL = no target |
+| `feedback_coach_daily_target` | INTEGER | 1–100; optional target per coach per journey day (separate from the daily target) |
+| `feedback_min_daily` | INTEGER | optional floor, ≤ the daily target; a day under it is reported "short" |
+| `feedback_from_day` | INTEGER | not null, default 1; first journey day feedback is collected/targeted |
+| `feedback_to_day` | INTEGER | last such day (≥ from); NULL = the journey's last day |
+| `feedback_days` | VARCHAR(10) | not null: `all` (every journey day) or `running` (days a leg runs; no layovers) |
+| `feedback_targets_active` | BOOLEAN | not null, default true; false = journeys carry no target |
+| `schedule_status` | VARCHAR(10) | `ok`, `failed`, `rejected`; NULL = timetable never read |
+| `schedule_synced_at` | DATETIME | last successful timetable read |
+| `schedule_checked_at` | DATETIME | last attempt |
+| `schedule_error` | VARCHAR(300) | why the last attempt failed or was rejected |
+| `schedule_failures` | INTEGER | not null; failures in a row (sets the retry delay) |
+| `schedule_hash` | VARCHAR(64) | sha256 of the validated stops, run days and return train (change detection) |
+| `distance_km` | NUMERIC(7, 1) |  |
+| `duration_minutes` | INTEGER |  |
 | `id` | UUID | PK |
 | `created_at` | DATETIME | not null |
 | `updated_at` | DATETIME | not null |
+
+### train_stops
+
+Every halt of a train's own timetable (migration 0020), in route order. A station the route visits twice is two
+rows. The return train has its own rows, read from its own page.
+
+| Column | Type | Keys / rules |
+|---|---|---|
+| `train_id` | UUID | → trains.id (CASCADE) not null |
+| `seq` | INTEGER | not null; RailRadar's route sequence; unique with train_id |
+| `station_code` | VARCHAR(8) | not null |
+| `station_name` | VARCHAR(120) |  |
+| `arrival` | TIME | NULL at the origin |
+| `departure` | TIME | NULL at the destination |
+| `arrival_day` | INTEGER | 1–10; day of the run (1 = the day it leaves its origin) |
+| `departure_day` | INTEGER | 1–10 |
+| `distance_km` | NUMERIC(7, 1) |  |
+| `platform` | VARCHAR(8) |  |
+| `id` | UUID | PK |
+
+### train_sync_runs
+
+The timetable extraction log: one row per attempt (migration 0020).
+
+| Column | Type | Keys / rules |
+|---|---|---|
+| `train_id` | UUID | → trains.id (CASCADE) not null; index with started_at |
+| `train_no` | VARCHAR(15) | not null |
+| `trigger` | VARCHAR(10) | not null: manual, bulk, scheduled, retry, setup |
+| `started_at` / `finished_at` | DATETIME | not null |
+| `outcome` | VARCHAR(10) | not null: updated, unchanged, failed (not read; timetable kept), rejected (invalid; timetable kept) |
+| `error_kind` | VARCHAR(20) | blocked, rate_limited, disallowed, not_found, timeout, parse, invalid, config ... |
+| `message` | VARCHAR(300) |  |
+| `changes` | JSON | stations added/removed/retimed, run days, arrival day, return train |
+| `actor_id` | UUID | → users.id; NULL for the scheduled sync |
+| `id` | UUID | PK |
 
 ### train_coaches
 
@@ -414,6 +466,44 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `code` | VARCHAR(10) | not null |
 | `classification` | VARCHAR(8) | not null: AC, NON_AC or GEN (general) |
 | `position` | INTEGER | not null |
+| `id` | UUID | PK |
+
+### journey_legs
+
+Each direction of a journey (migration 0020): 1 = outbound with the journey's train, 2 = back with its linked
+train. Re-snapshotted from the trains' timetables until the journey starts, then kept.
+
+| Column | Type | Keys / rules |
+|---|---|---|
+| `journey_id` | UUID | → journeys.id (CASCADE) not null; unique with direction |
+| `direction` | INTEGER | not null: 1 or 2 |
+| `train_id` | UUID | → trains.id (SET NULL) |
+| `train_no` / `train_name` | VARCHAR | train_no not null |
+| `origin_code` / `origin_name` / `destination_code` / `destination_name` | VARCHAR |  |
+| `departs_on` / `arrives_on` | DATE | not null; arrives_on ≥ departs_on |
+| `departs_at` / `arrives_at` | TIME |  |
+| `first_day` / `last_day` | INTEGER | not null; the journey days the leg runs on |
+| `stops` | JSON | not null; [{seq, code, name, arrival, departure, day, date, journey_day, distance_km, platform}] |
+| `schedule_hash` | VARCHAR(64) | the train's timetable hash when snapshotted |
+| `generated_at` | DATETIME | not null |
+| `id` | UUID | PK |
+
+### journey_feedback_targets
+
+Passenger feedback a journey needs on each journey day, from Train Master (migration 0020). Submitted / verified /
+pending are counted from passenger_feedback, never stored. A day that has begun keeps its target.
+
+| Column | Type | Keys / rules |
+|---|---|---|
+| `journey_id` | UUID | → journeys.id (CASCADE) not null; unique with journey_day |
+| `journey_day` | INTEGER | not null, ≥ 1 |
+| `day_date` | DATE | not null, indexed |
+| `direction` | INTEGER | 1 outbound, 2 return, 3 both, NULL layover |
+| `train_nos` | VARCHAR(40) | trains running that day ("12951" or "12951,12952"); used to check a PNR |
+| `required` | INTEGER | not null, ≥ 0 |
+| `coach_required` | INTEGER | per-coach target that day |
+| `minimum` | INTEGER | daily floor that day |
+| `generated_at` | DATETIME | not null |
 | `id` | UUID | PK |
 
 ### staff_allocations
@@ -560,8 +650,18 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `latitude` | NUMERIC(9, 6) | not null |
 | `longitude` | NUMERIC(9, 6) | not null |
 | `gps_accuracy_m` | NUMERIC(8, 2) |  |
+| `direction` | INTEGER | leg of the feedback day: 1, 2, 3 (both), NULL layover/unknown (0020) |
+| `train_no` | VARCHAR(15) | the passenger's train: from the valid PNR, else the one train running that day |
+| `coach_source` | VARCHAR(10) | `selected` (coach card) or `pnr` (moved to the coach on the ticket) |
+| `coach_verified` | BOOLEAN | not null; true only when the PNR named this coach |
+| `pnr_journey_date` | DATE | boarding date on the ticket |
+| `boarding_code` / `alighting_code` | VARCHAR(8) | ticket's boarding station / reserved up to |
 | `created_at` | DATETIME | not null |
 | `updated_at` | DATETIME | not null |
+
+Duplicate rules (unique partial indexes over verified/completed records): one feedback per PNR per journey, and one
+per mobile number per journey per day. A retry of the same record (same device-generated id and payload) is
+answered with the stored record, never a second one.
 
 ### passenger_feedback_ratings
 

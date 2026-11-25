@@ -101,7 +101,109 @@ class JourneyOut(ReadModel):
     version: int
     coaches: list[CoachOut]
     updated_at: datetime
+    # ---- Train Master feedback configuration and the journey's directions (services/feedback_plan) ----
+    feedback_enabled: bool = True
+    feedback_daily_target: int | None = None
+    legs: list["LegBrief"] = []
+
+
+class LegBrief(ReadModel):
+    direction: int
+    train_no: str
+    train_name: str | None = None
+    origin_code: str | None = None
+    origin_name: str | None = None
+    destination_code: str | None = None
+    destination_name: str | None = None
+    departs_on: date
+    departs_at: time | None = None
+    arrives_on: date
+    arrives_at: time | None = None
+    first_day: int
+    last_day: int
+
+
+class LegOut(LegBrief):
+    stops: list[dict] = []
+
+
+class PlanDay(ReadModel):
+    journey_day: int
+    day_date: date
+    direction: int | None
+    direction_label: str
+    train_nos: str | None
+    required: int
+    coach_required: int | None
+    minimum: int | None
+    submitted: int
+    verified: int
+    in_progress: int
+    rejected: int
+    pending: int
+    completion: float | None
+    status: str
+    is_today: bool
+
+
+class PlanCoachDay(ReadModel):
+    journey_day: int
+    required: int
+    submitted: int
+    verified: int
+    in_progress: int
+    rejected: int
+    pending: int
+
+
+class PlanCoach(ReadModel):
+    code: str
+    classification: str
+    days: list[PlanCoachDay]
+    required: int
+    submitted: int
+    verified: int
+    in_progress: int
+    rejected: int
+    pending: int
+    completion: float | None
+
+
+class PlanTotals(ReadModel):
+    required: int
+    submitted: int
+    verified: int
+    in_progress: int
+    rejected: int
+    pending: int
+    completion: float | None
+
+
+class FeedbackPlanOut(ReadModel):
+    journey_id: uuid.UUID
+    train_id: uuid.UUID
+    train_no: str
+    train_name: str
+    journey_date: date
+    end_date: date
+    operational_days: int
+    feedback_enabled: bool
+    targets_active: bool
+    daily_target: int | None
+    coach_daily_target: int | None
+    min_daily: int | None
+    feedback_from_day: int
+    feedback_to_day: int | None
+    feedback_days: str
+    persisted: bool
+    legs: list[LegOut]
+    days: list[PlanDay]
+    coaches: list[PlanCoach]
+    totals: PlanTotals
 
 
 class JourneyDetail(JourneyOut):
     staff: list[StaffOut]
+
+
+JourneyOut.model_rebuild()
