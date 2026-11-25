@@ -1,23 +1,25 @@
-// Point the camera at the crew; it follows everyone's head movement, takes the photo itself when everyone
+// Point the camera at the crew; it watches for movement, takes the photo itself once one person in the crew
 // has moved, works out who is in it, and hands back the names. Built for a crew of ten to fifteen people.
 //
 // How the shutter decides: the crew's own movement. Nobody is asked to do anything special; people shift,
-// glance around and turn as they settle. The preview follows every face from frame to frame and judges each
-// on its own (groupLiveness.js): a real head moving shows 3-D depth -- the nose moves off the plane of the
-// eyes, brows and mouth (depthCheck.js). A printed photo, or a photo or video of a face on a phone held up to
-// the camera, is flat and never passes.
+// glance around and turn as they settle. The preview follows every face from frame to frame
+// (groupLiveness.js): a real head moving shows 3-D depth -- the nose moves off the plane of the eyes, brows
+// and mouth (depthCheck.js). A printed photo, or a photo or video of a face on a phone held up to the camera,
+// is flat and never passes. ONE face seen moving is enough: it shows the camera is looking at a live crew,
+// and everyone recognised in the photo is marked. (Weaker than asking every face to move: a picture held up
+// beside a live person would be read too. The supervisor taking the photo is answerable for it.)
 //
 // The photo is NOT taken while people are moving: a face turned away is a face that cannot be recognised.
 // It is taken at the first moment after that when every face in view is looking at the camera and the
-// crew is steady -- one still, at full resolution. If someone never moves, the photo is still taken (on a
-// frame where everyone faces the camera) after a while; that face is reported as "not seen moving".
+// crew is steady -- one still, at full resolution. If nobody moves, the photo is still taken (on a frame
+// where everyone faces the camera) after a while, and nobody is marked.
 //
 // What it reads. The still is read with the thorough detector (SSD MobileNet, faceEngine.describeAll),
 // whole and in tiles so back-row faces are found, each face from its own enlarged close-up.
 //
-// Recognition never guesses (faceMatch.identifyFaces): everyone recognised clearly AND seen live is marked
-// present at once, with nothing to press. A face whose closest match does not clearly beat the runner-up,
-// that matched nobody, or that never moved, is never marked; the screen says why under its picture.
+// Recognition never guesses (faceMatch.identifyFaces): once someone was seen moving, everyone recognised
+// clearly is marked present at once, with nothing to press. A face whose closest match does not clearly beat
+// the runner-up, or that matched nobody, is never marked; the screen says why under its picture.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GROUP_INPUT_SIZE, analyseFaces, cropFace, describeAll, loadFaceEngine } from './faceEngine.js';
 import { createGroupLiveness, liveTrackFor } from './groupLiveness.js';
@@ -27,7 +29,7 @@ import { RefreshIcon, UsersIcon } from '../components/Icons.jsx';
 // Why a face was not marked, in one short line under its picture.
 function whyNot(r, nameOf, threshold) {
   if (r.small) return 'Too small or unclear to read. Come closer.';
-  if (r.status === 'identified' && !r.live) return `Looks like ${nameOf(r.userId)}, but was not seen moving (or is a photo).`;
+  if (r.status === 'identified' && !r.live) return `Looks like ${nameOf(r.userId)}, but nobody was seen moving (or it is a photo).`;
   if (r.status === 'ambiguous') return `Looks like ${nameOf(r.userId)} or ${nameOf(r.runnerUpId)}; too close to tell apart.`;
   if (r.distance == null) return 'Nobody registered to compare with.';
   return `Closest match ${similarityPercent(r.distance)}%; needs ${requiredPercent(threshold)}%.`;
@@ -132,9 +134,12 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
         setError('No faces could be read from the photo. Hold the phone steady with everyone facing the camera.');
         return;
       }
+      // One face seen moving makes the crew live; every face then counts as seen live.
+      const crewLive = liveCtx.tracks.some((t) => t.live);
       const found = identifyFaces({ faces, profiles, threshold })
         .map((r) => ({ ...r, small: faces[r.index].small,
-          live: !!liveTrackFor(liveCtx.tracks, faces[r.index].box, { sx: liveCtx.sx, sy: liveCtx.sy }) }));
+          moved: !!liveTrackFor(liveCtx.tracks, faces[r.index].box, { sx: liveCtx.sx, sy: liveCtx.sy }),
+          live: crewLive }));
       const cut = await Promise.all(faces.map((f) => cropFace(canvas, f.box)));
       if (myRun !== runId.current) return;
       setCrops(cut);
@@ -217,7 +222,9 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       if (shooting || myRun !== runId.current || !video.current) return;
       const height = video.current.videoHeight || 720;
       liveState = liveness.feed(found);
-      setLiveSeen({ live: liveState.live, total: liveState.total });
+      // Anyone seen moving so far counts, even if they have since turned away or stepped behind someone.
+      const movedSoFar = liveState.tracks.filter((t) => t.live).length;
+      setLiveSeen({ live: movedSoFar, total: liveState.total });
       // Only faces big enough to recognise are counted, so the shutter never fires on a crowd in the
       // distance that the slow pass would fail to identify anyway.
       const usable = found.filter((f) => f.box.height / height >= MIN_FACE_SHARE);
@@ -237,12 +244,12 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
       const frontal = usable.length > 0 && usable.every((f) => Math.abs(f.yaw) <= FRONTAL_YAW);
       frontalRun = frontal ? frontalRun + 1 : 0;
       setLooking(frontal);
-      // Everyone in view has to have moved like a real person before the photo is taken.
-      const allLive = liveState.total > 0 && liveState.live >= Math.min(liveState.total, usable.length);
+      // One person in view has to have moved like a real person before the photo is taken.
+      const someoneLive = movedSoFar >= 1;
       // The whole crew in view, or long enough waited for the rest.
       const enough = usable.length >= want || t - startedAt >= WAIT_FOR_ALL_MS;
-      setHoldLeft(allLive && since != null ? Math.max(0, STEADY_MS - (t - since)) : null);
-      const settled = allLive && enough && frontalRun >= FRONTAL_FRAMES
+      setHoldLeft(someoneLive && since != null ? Math.max(0, STEADY_MS - (t - since)) : null);
+      const settled = someoneLive && enough && frontalRun >= FRONTAL_FRAMES
         && steady >= STEADY_FRAMES && since != null && t - since >= STEADY_MS;
       // Out of patience: take the photo anyway, on a frame where everyone faces the camera if one comes
       // soon. Faces not seen moving are reported, never marked.
@@ -266,8 +273,8 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
     : phase === 'failed' ? 'The camera stopped'
       : seen === 0 ? 'Point the camera at the crew'
         : tooSmall ? `${seen} ${seen === 1 ? 'face' : 'faces'} in view — come closer, the faces are too small`
-          : liveSeen.live < liveSeen.total
-            ? `Checking everyone is present · ${liveSeen.live}/${liveSeen.total}`
+          : liveSeen.live === 0
+            ? 'Waiting for someone to move'
             : !looking ? 'Everyone look at the camera'
               : `Hold still${holdLeft ? ` · ${(holdLeft / 1000).toFixed(1)}s` : ''}`;
 
@@ -299,8 +306,8 @@ export default function GroupPhotoCapture({ candidates, profiles, threshold, onC
 
       {phase === 'looking' && (
         <p className="text-xs text-muted">
-          Stand 2{'–'}3 metres from the crew, in two rows at most, in good light. The crew can move
-          naturally; the photo is taken by itself the moment everyone is looking at the camera.
+          Stand 2{'–'}3 metres from the crew, in two rows at most, in good light. Once anyone moves, the
+          photo is taken by itself the moment everyone is looking at the camera.
         </p>
       )}
 

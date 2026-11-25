@@ -58,9 +58,9 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   // `cameraOn`: the photo is taken by the app from the live camera, never chosen from the gallery, and
   // a blink has to be seen before it is taken -- a photograph of a face, on paper or on another phone,
   // does not blink, and without that anyone could mark anyone else present with a picture of them.
-  // `liveOn`: a head turn as well, which a division asks for with face_liveness_required.
+  // Only a blink is asked for: the camera captures the moment the blink is seen (no head turn), also where
+  // the division requires liveness -- the blink is the liveness proof.
   const cameraOn = faceOn || policy.data?.face_liveness_required === true;
-  const liveOn = policy.data?.face_liveness_required === true;
   const [liveness, setLiveness] = useState(cameraOn ? null : 'not_required');
   const face = useFaceCheck({ photo, employeeId: target.staff.employee_id, enabled: faceOn, threshold: policy.data?.face_match_threshold ?? 0.5 });
   // Fingerprint is an alternative to the face check, never a replacement: the scanner can be absent or
@@ -113,7 +113,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
               </button>
             </div>
           )
-            : <LiveFaceCapture name={target.staff.name} mode={liveOn ? 'challenge' : 'presence'}
+            : <LiveFaceCapture name={target.staff.name} mode="presence"
                 onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
         ) : <PhotoCapture value={photo} onChange={setPhoto} required stamp={stampLines({ ...gps, address })} />}
         <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
@@ -167,10 +167,9 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [faces, setFaces] = useState({});
   const faceOn = policy.data?.attendance_face_verification === true;
   // The same live camera as one person's attendance (CaptureDialog): with face verification or liveness on,
-  // each person's photo is taken by the app from the live camera after a blink (and a head turn where
-  // face_liveness_required), never picked from the gallery.
+  // each person's photo is taken by the app from the live camera the moment a blink is seen, never picked
+  // from the gallery.
   const cameraOn = faceOn || policy.data?.face_liveness_required === true;
-  const liveOn = policy.data?.face_liveness_required === true;
   const [live, setLive] = useState({});
   const gate = useSecurityGate('attendance');
   const threshold = policy.data?.face_match_threshold ?? 0.5;
@@ -238,8 +237,8 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
           // The distance is evidence only where the device recognised this person and the supervisor
           // agreed. Where the supervisor supplied the name, nothing is claimed about a match.
           ...(hit && typeof hit.distance === 'number' ? { face_distance: hit.distance, face_model: FACE_MODEL } : {}),
-          // The face was followed in the live preview and showed real 3-D depth as the person turned their
-          // head (GroupPhotoCapture); a picture of a face never gets this, and is never in `recognised`.
+          // Someone in the crew was seen moving in 3-D in the live preview before the photo was taken
+          // (GroupPhotoCapture); with nobody moving, nobody is in `recognised`.
           ...gate.evidence({ liveness: hit?.liveness ?? 'not_required', faceModel: hit ? FACE_MODEL : null }),
         };
         // Each record keeps this person's own face cut out of the group photo; a person named by hand
@@ -368,7 +367,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                         ) : m.employee_id !== nextLive ? (
                           <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-muted">The live camera opens here after the person above.</p>
                         ) : (
-                          <LiveFaceCapture key={m.employee_id} name={m.name} mode={liveOn ? 'challenge' : 'presence'}
+                          <LiveFaceCapture key={m.employee_id} name={m.name} mode="presence"
                             onDone={(r) => { setLive((l) => ({ ...l, [m.employee_id]: r.liveness })); setPhotos((p) => ({ ...p, [m.employee_id]: r.photo })); }} />
                         )}
                         <MemberFaceCheck photo={photos[m.employee_id]} member={m} enabled={faceOn} threshold={threshold} onResult={onFace} />
