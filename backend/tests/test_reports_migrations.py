@@ -54,7 +54,7 @@ def test_inspection_completion_report(world):
     today = str(today_ist())
     params = {"date_from": today, "date_to": today}
     [journey_row] = world.client.get(f"{API}/reports/inspections", params=params, headers=world.h("manager")).json()
-    assert (journey_row["required"], journey_row["done"], journey_row["completion_pct"]) == (16, 2, 12.5)
+    assert (journey_row["required"], journey_row["done"], journey_row["completion_pct"]) == (8, 2, 25.0)  # not day-wise: coaches x rounds x phases
     coach_rows = world.client.get(f"{API}/reports/inspections", params={**params, "coach_wise": True}, headers=world.h("manager")).json()
     assert {r["coach_code"]: r["done"] for r in coach_rows} == {"B1": 2, "S1": 0}
 
