@@ -40,10 +40,25 @@ class Settings(BaseSettings):
     sms_template_id: str | None = None
     sms_login_template_id: str | None = None  # DLT template of the sign-in OTP message
 
-    pnr_provider: Literal["disabled", "rapidapi"] = "disabled"
+    # PNR verification. "railradar": RailRadar's PNR JSON (app/providers/railradar_pnr.py) with RapidAPI as the
+    # fallback when PNR_API_* are set; "rapidapi": RapidAPI only; "disabled": feedback stays pending.
+    pnr_provider: Literal["disabled", "rapidapi", "railradar"] = "disabled"
     pnr_api_url: str | None = None
     pnr_api_host: str | None = None
     pnr_api_key: SecretStr | None = None
+    # RailRadar PNR: the reference of the written permission from RailRadar (required for PNR_PROVIDER=railradar),
+    # "http" (direct JSON request) or "browser" (headless Chromium via Playwright, the pnrfetch portal method),
+    # and the minimum spacing between lookups.
+    railradar_pnr_authorization: str | None = None
+    railradar_pnr_transport: Literal["http", "browser"] = "http"
+    railradar_pnr_min_interval_seconds: float = 2.0
+    railradar_pnr_browser_channel: str | None = None  # "chrome" / "msedge" to use an installed browser
+    # Stored PNR answers (pnr_lookups), so the same PNR is not fetched again: a charted ticket is final until
+    # the journey is over; an uncharted one is re-checked after a few hours; "not found" after a few minutes.
+    pnr_cache_enabled: bool = True
+    pnr_cache_uncharted_minutes: int = 180
+    pnr_cache_not_found_minutes: int = 15
+    pnr_cache_days_after_journey: int = 2
 
     # RailRadar station timetables for client setup (app/providers/railradar.py), used under the operator's
     # written permission from RailRadar. On by default; RAILRADAR_ENABLED=false turns the train list off.

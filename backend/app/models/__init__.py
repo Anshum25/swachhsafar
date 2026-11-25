@@ -22,6 +22,7 @@ from app.models.feedback import (
     PassengerFeedback,
     PassengerFeedbackRating,
     PassengerFeedbackStatus,
+    PnrLookup,
     PnrStatus,
     Question,
     QuestionBank,

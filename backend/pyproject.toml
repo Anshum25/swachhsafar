@@ -23,6 +23,8 @@ dependencies = [
 test = ["pytest>=8", "pgserver>=0.1.4"]
 # Only for STORAGE_BACKEND=firebase and the one-off `app.cli import-firebase-passwords`; sign-in never needs it.
 firebase = ["firebase-admin>=6.5"]
+# Only for RAILRADAR_PNR_TRANSPORT=browser (then: python -m playwright install chromium).
+pnr-browser = ["playwright>=1.40"]
 
 [build-system]
 requires = ["setuptools>=68"]

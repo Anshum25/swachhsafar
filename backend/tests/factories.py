@@ -37,8 +37,10 @@ class FakePnr:
     def __init__(self) -> None:
         self.results: dict[str, PnrResult] = {}
         self.down = False
+        self.calls: list[str] = []
 
     def lookup(self, pnr: str) -> PnrResult:
+        self.calls.append(pnr)
         if self.down:
             raise ProviderUnavailable("down")
         return self.results.get(pnr, PnrResult(found=False))

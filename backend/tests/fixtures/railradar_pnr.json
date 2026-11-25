@@ -1,0 +1,79 @@
+{
+  "success": true,
+  "data": {
+    "pnrNumber": "8944377876",
+    "charting": {
+      "status": "Chart Prepared",
+      "isPrepared": true
+    },
+    "generatedAt": "2026-11-17T10:20:16+05:30",
+    "informationMessage": ["NO REFUND AGAINST CANCELLATION"],
+    "isWaitlisted": false,
+    "passengers": [
+      {
+        "serialNumber": 1,
+        "berthCode": "UB",
+        "booking": {
+          "status": "CNF",
+          "formatted": "CNF/A1/40/UB/GN",
+          "coachId": "A1",
+          "berthCode": "UB",
+          "berthNo": 40,
+          "quota": "GN"
+        },
+        "coachPosition": "7",
+        "current": {
+          "status": "CNF",
+          "formatted": "CNF/A1/40",
+          "coachId": "A1",
+          "berthNo": 40,
+          "quota": "GN"
+        },
+        "isCancelled": false,
+        "isConfirmed": true,
+        "isRAC": false,
+        "isWaitlisted": false
+      },
+      {
+        "serialNumber": 2,
+        "berthCode": "SU",
+        "booking": {
+          "status": "CNF",
+          "formatted": "CNF/A1/42/SU/GN",
+          "coachId": "A1",
+          "berthCode": "SU",
+          "berthNo": 42,
+          "quota": "GN"
+        },
+        "coachPosition": "7",
+        "current": {
+          "status": "CNF",
+          "formatted": "CNF/A1/42",
+          "coachId": "A1",
+          "berthNo": 42,
+          "quota": "GN"
+        },
+        "isCancelled": false,
+        "isConfirmed": true,
+        "isRAC": false,
+        "isWaitlisted": false
+      }
+    ],
+    "train": {
+      "number": "11702",
+      "name": "Mook Mati Express",
+      "journeyDate": "2026-11-17",
+      "boardingPoint": {"code": "JBP", "name": "Jabalpur"},
+      "bookingFare": 2000,
+      "destination": {"code": "R", "name": "Raipur Jn"},
+      "journeyClass": "2A",
+      "journeyDateRaw": "Nov 17, 2026 6:00:00 AM",
+      "reservationUpto": {"code": "R", "name": "Raipur Jn"},
+      "source": {"code": "JBP", "name": "Jabalpur"}
+    }
+  },
+  "meta": {
+    "timestamp": "2026-11-17T10:20:16+05:30",
+    "traceId": "f2f8f96b-447f-4462-afa5-000000000000"
+  }
+}
