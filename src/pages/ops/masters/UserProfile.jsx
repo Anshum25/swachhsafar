@@ -8,6 +8,7 @@ import { ArrowLeftIcon, FingerprintIcon, KeyIcon, UserIcon } from '../../../comp
 import FaceEnrollDialog from './FaceEnrollment.jsx';
 import FingerprintEnrollDialog from './FingerprintEnrollment.jsx';
 import { RowMenu } from './Users.jsx';
+import { permissionGroup, permissionHint, permissionName } from '../../../utils/permissionNames.js';
 import {
   DeleteUserDialog, EditUserDialog, ResetPasswordDialog, SignInForm, StatusDialog, TransferUserDialog, useCanManageUser,
 } from './UserDialogs.jsx';
@@ -27,8 +28,7 @@ function Section({ title, children, actions }) {
 // permission codes grouped by module: 'users.manage' -> users: [manage]
 function Permissions({ codes }) {
   const groups = codes.reduce((acc, c) => {
-    const [mod, ...rest] = c.split('.');
-    (acc[mod] ??= []).push(rest.join('.') || mod);
+    (acc[permissionGroup(c)] ??= []).push(c);
     return acc;
   }, {});
   if (!codes.length) return <p className="text-sm text-slate-500">This role holds no permissions in this division.</p>;
@@ -36,8 +36,8 @@ function Permissions({ codes }) {
     <div className="grid gap-3 sm:grid-cols-2" data-testid="user-permissions">
       {Object.entries(groups).map(([mod, list]) => (
         <div key={mod}>
-          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-muted">{label(mod)}</p>
-          <div className="flex flex-wrap gap-1">{list.map((p) => <Badge key={p} tone="brand">{label(p)}</Badge>)}</div>
+          <p className="mb-1 text-xs font-bold uppercase tracking-wide text-muted">{mod}</p>
+          <div className="flex flex-wrap gap-1">{list.map((p) => <span key={p} title={permissionHint(p)}><Badge tone="brand">{permissionName(p)}</Badge></span>)}</div>
         </div>
       ))}
     </div>

@@ -18,6 +18,7 @@ import { useResource, useSession } from '../../../app/session.jsx';
 import { Badge, DataState, ErrorNote, Panel, Select, Tabs } from '../../../components/ui.jsx';
 import { ConfirmDialog, useSave } from './common.jsx';
 import { resolve } from './roleRights.js';
+import { permissionHint, permissionName } from '../../../utils/permissionNames.js';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
 
 const SUPER_ADMIN_ROLE = 1;
@@ -26,9 +27,9 @@ const ADMIN_ROLE = 2;
 // How each module's permissions are grouped for reading, and which client module gates them. `null`
 // gates nothing (the platform). Mirrors app/security/catalog.py.
 const MODULE_LABEL = {
-  admin: 'Administration', users: 'Users', masters: 'Master data', journeys: 'Journeys',
+  admin: 'Administration', users: 'Staff', masters: 'Master data', journeys: 'Journeys',
   attendance: 'Attendance', inspections: 'Coach inspection', feedback: 'Feedback',
-  complaints: 'Complaints', inventory: 'Inventory', reports: 'Reports', media: 'Media',
+  complaints: 'Complaints', inventory: 'Inventory', reports: 'Reports', media: 'Photos and files',
 };
 const ALWAYS_ON = new Set(['admin', 'users', 'masters', 'media', 'journeys']);
 
@@ -59,8 +60,8 @@ function PermissionRow({ perm, roleId, grants, scope, showOffice, showDivision, 
   return (
     <tr className="border-b border-slate-100 last:border-0">
       <td className="py-2 pr-3">
-        <span className="font-medium">{perm.code}</span>
-        <span className="block text-xs text-muted">{perm.description}</span>
+        <span className="font-medium" title={perm.code}>{permissionName(perm.code)}</span>
+        <span className="block text-xs text-muted">{permissionHint(perm.code, perm.description)}</span>
       </td>
       <td className="py-2 pr-3 text-center">
         <Badge tone={state.base ? 'green' : 'slate'}>{state.base ? 'Allowed' : 'Not granted'}</Badge>
@@ -155,7 +156,7 @@ export default function RolePermissions({ divisionId, divisionName, clientId, cl
           : at === 'division' ? { division_id: divisionId }
             : { client_id: clientId, division_kind: at }),
       });
-    }, `${perm.code} updated for ${SCOPE_TEXT[at]}.`);
+    }, `"${permissionName(perm.code)}" updated for ${SCOPE_TEXT[at]}.`);
   };
 
   const byModule = useMemo(() => {
@@ -255,7 +256,7 @@ export default function RolePermissions({ divisionId, divisionName, clientId, cl
         confirmLabel="Change it"
         onClose={() => { setPending(null); save.setError(null); }}
         message={pending
-          ? `${pending.perm.code} will be ${pending.choice === 'inherit' ? 'inherited again' : `${pending.choice === 'allow' ? 'allowed' : 'denied'}`} for this role in ${pending.scope === 'office' ? `every division of ${officeLabel}` : pending.scope === 'division' ? (divisionName || 'this division') : `all ${kindPlural} of ${officeLabel}`}. It takes effect the next time those users' devices reach the server.`
+          ? `"${permissionName(pending.perm.code)}" will be ${pending.choice === 'inherit' ? 'inherited again' : `${pending.choice === 'allow' ? 'allowed' : 'denied'}`} for this role in ${pending.scope === 'office' ? `every division of ${officeLabel}` : pending.scope === 'division' ? (divisionName || 'this division') : `all ${kindPlural} of ${officeLabel}`}. It takes effect the next time those users' devices reach the server.`
           : ''}
         onConfirm={commit}
       />
