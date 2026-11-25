@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     ForeignKey,
+    JSON,
     Index,
     Integer,
     String,
@@ -68,6 +69,10 @@ class Journey(UUIDPk, Timestamps, Base):
     inspection_rounds_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
     before_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     after_inspection_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Attendance stages snapshot (migration 0020): [{stage, kind, label, station_code, station_name}], from the
+    # train's attendance configuration. Follows the train while the journey has no attendance; fixed after
+    # that, so a record's stage always means what it meant when it was taken. None = the five legacy stages.
+    attendance_stages: Mapped[list | None] = mapped_column(JSON)
     # Empty on a journey the planner created, until somebody assigns a supervisor (migration 0017).
     supervisor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     # Empty when the planner created it (auto_created).

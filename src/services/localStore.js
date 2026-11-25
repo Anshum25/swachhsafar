@@ -23,6 +23,7 @@ import { createMediaStore, dataUrlToBytes } from '../database/mediaStore.js';
 import { createSyncStateRepository } from '../database/syncStateRepository.js';
 import { createSecurityRepository } from '../database/securityRepository.js';
 import { authorizeCapture } from './authorization.js';
+import { stagesOf } from '../utils/attendanceStages.js';
 
 export const OUTBOX_ENTITY = 'operation';
 export const CHANGES_SCOPE = 'changes';
@@ -368,7 +369,7 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
       const fb = Object.fromEntries(pf.map((r) => [r.status, r.n]));
       return {
         journey_id: j.id, state: j.state, staff_allocated: staff.length, attendance_records: att.length, attendance_by_stage: byStage,
-        staff_fully_attended: staff.filter((s) => perStaff[s.user_id] === 5).length, inspections_required: required,
+        staff_fully_attended: staff.filter((s) => perStaff[s.user_id] === stagesOf(j).length).length, inspections_required: required,
         inspections_done: insp[0].n, inspection_completion_pct: required ? (insp[0].n / required) * 100 : null,
         passenger_feedback_counted: (fb.draft ?? 0) + (fb.verified ?? 0) + (fb.completed ?? 0),
         passenger_feedback_completed: fb.completed ?? 0, passenger_feedback_pending: (fb.draft ?? 0) + (fb.verified ?? 0),

@@ -37,12 +37,19 @@ export const DEFAULT_POLICY = Object.freeze({
 
 const synced = (row, now) => ({ sync_status: 'synced', server_updated_at: row.updated_at ?? null, created_at: now, updated_at: now });
 
+const jsonOrNull = (v) => {
+  if (v == null || v === '') return null;
+  try { return JSON.parse(v); } catch { return null; }
+};
+
 const trainOut = (t, coaches) => ({
   id: t.id, division_id: t.division_id, train_no: t.train_no, name: t.name, linked_train_id: t.linked_train_id,
   duration_days: t.duration_days, operational_days: t.operational_days, start_time: t.start_time, end_time: t.end_time,
   return_start_time: t.return_start_time, return_end_time: t.return_end_time, daywise: fromBool(t.daywise),
   inspection_rounds_per_day: t.inspection_rounds_per_day, before_inspection_enabled: fromBool(t.before_inspection_enabled),
   after_inspection_enabled: fromBool(t.after_inspection_enabled), is_active: fromBool(t.is_active),
+  route_stations: jsonOrNull(t.route_stations), attendance_station_count: t.attendance_station_count ?? null,
+  attendance_station_codes: jsonOrNull(t.attendance_station_codes),
   coaches: coaches.map(({ code, classification, position }) => ({ code, classification, position })),
   updated_at: t.server_updated_at ?? t.updated_at,
 });
@@ -101,7 +108,14 @@ export function createMasterDataRepository(db) {
           end_time: t.end_time ?? null, return_start_time: t.return_start_time ?? null, return_end_time: t.return_end_time ?? null,
           daywise: bool(t.daywise), inspection_rounds_per_day: t.inspection_rounds_per_day ?? 1,
           before_inspection_enabled: bool(t.before_inspection_enabled ?? true), after_inspection_enabled: bool(t.after_inspection_enabled ?? true),
-          is_active: bool(t.is_active ?? true), is_placeholder: 0, ...synced(t, now),
+          is_active: bool(t.is_active ?? true), is_placeholder: 0,
+          // Station-wise attendance, when the server sends it (servers from before it do not).
+          ...('attendance_station_count' in t ? {
+            route_stations: t.route_stations ? JSON.stringify(t.route_stations) : null,
+            attendance_station_count: t.attendance_station_count ?? null,
+            attendance_station_codes: t.attendance_station_codes ? JSON.stringify(t.attendance_station_codes) : null,
+          } : {}),
+          ...synced(t, now),
         }),
         { sql: 'DELETE FROM train_coaches WHERE train_id = ?', params: [t.id] },
         ...(t.coaches ?? []).map((c, i) => insertStatement('train_coaches', {

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { IDS, actorFor, attendancePayload, changesFixture, seededStore } from '../helpers/operationalFixtures.js';
 import { attendanceCells, nextStageFor } from '../../src/database/attendanceRepository.js';
+import { LEGACY_STAGES } from '../../src/utils/attendanceStages.js';
 
 const groupOn = () => {
   const c = changesFixture();
@@ -32,7 +33,7 @@ const statesOf = async (store, id) => (await store.attendance.journeyStatus(IDS.
   .find((r) => r.employee_id === id).stages.map((c) => c.status);
 
 describe('nextStageFor (pure)', () => {
-  const row = (taken, pending = []) => attendanceCells(new Map(taken.map((s) => [s, `t${s}`])), new Map(pending.map((s) => [s, `p${s}`])));
+  const row = (taken, pending = []) => attendanceCells(LEGACY_STAGES, new Map(taken.map((s) => [s, `t${s}`])), new Map(pending.map((s) => [s, `p${s}`])));
   it('is each employee\'s own first unrecorded stage', () => {
     // Anshum at 3, Krish at 4, Om at 2 -- one photo gives each their own stage.
     expect([row([1, 2]), row([1, 2, 3]), row([1])].map((r) => nextStageFor(r))).toEqual([3, 4, 2]);

@@ -23,6 +23,7 @@ from app.schemas.trains import CoachIn
 from app.security.principal import Principal
 from app.services.clients import charge_journey, refund_journey
 from app.services.common import audit, commit_or_conflict, diff, paginate
+from app.services.trains import attendance_plan, stages_of
 from app.timeutil import to_ist_date, today_ist, utcnow
 
 ALLOCATABLE_ROLES = {RoleId.SUPERVISOR, RoleId.JANITOR}
@@ -206,6 +207,7 @@ def create_journey(db: Session, p: Principal, body: JourneyCreate) -> Journey:
         duration_days=train.duration_days, operational_days=train.operational_days, daywise=train.daywise,
         inspection_rounds_per_day=train.inspection_rounds_per_day,
         before_inspection_enabled=train.before_inspection_enabled, after_inspection_enabled=train.after_inspection_enabled,
+        attendance_stages=attendance_plan(train),
         supervisor_id=supervisor.id, created_by_id=p.id, status=JourneyStatus.PLANNED, coaches=_coach_rows(coaches),
     )
     db.add(j)
@@ -379,5 +381,5 @@ def to_out(j: Journey) -> dict:
         supervisor_id=j.supervisor_id, supervisor_name=j.supervisor.name if j.supervisor else None,
         created_by_id=j.created_by_id, auto_created=j.auto_created, charged=j.charged,
         state=journey_state(j), cancel_reason=j.cancel_reason, cancelled_at=j.cancelled_at, version=j.version,
-        coaches=j.coaches, updated_at=j.updated_at,
+        coaches=j.coaches, attendance_stages=stages_of(j), updated_at=j.updated_at,
     )

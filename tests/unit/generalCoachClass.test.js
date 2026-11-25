@@ -26,7 +26,7 @@ const classes = async (db, table) => Object.fromEntries((await db.query(`SELECT 
 describe('v15: General coaches are a class of their own on the phone', () => {
   it('moves general coaches to GEN and asks them what Non-AC coaches were asked', async () => {
     const db = await v14Db();
-    expect(await runMigrations(db)).toMatchObject({ from: 14, to: 15, applied: [15] });
+    expect(await runMigrations(db)).toMatchObject({ from: 14, to: 16, applied: [15, 16] });
     // B2 typed as NON_AC and S2 as AC are corrected; BHJ and X'1 say nothing, so they keep what was chosen.
     const want = { B1: 'AC', S1: 'NON_AC', GEN: 'GEN', GEN2: 'GEN', UR1: 'GEN', B2: 'AC', S2: 'NON_AC', BHJ: 'AC', "X'1": 'NON_AC' };
     expect(await classes(db, 'journey_coaches')).toEqual(want);
@@ -49,7 +49,7 @@ describe('v15: General coaches are a class of their own on the phone', () => {
     await db.close();
 
     const again = await createMemoryDb({ filename });
-    expect(await getSchemaVersion(again)).toBe(15);
+    expect(await getSchemaVersion(again)).toBe(16);
     await again.run('PRAGMA foreign_keys = OFF');
     await again.run("INSERT INTO train_coaches (train_id, code, classification, position) VALUES ('t1', 'GEN4', 'GEN', 9)");
     await expect(again.run("INSERT INTO train_coaches (train_id, code, classification, position) VALUES ('t1', 'X1', 'FIRST', 10)"))

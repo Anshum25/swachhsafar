@@ -20,10 +20,13 @@ import GroupPhotoCapture from '../../face/GroupPhotoCapture.jsx';
 import { FACE_MODEL } from '../../face/faceMatch.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 import { nextStageFor } from '../../database/attendanceRepository.js';
+import { stageCaption, stageInfo, stageLabel, stagesOf } from '../../utils/attendanceStages.js';
 
-export const STAGES = ['Source', 'Enroute 1', 'Destination', 'Enroute 2', 'End'];
-// Reference labels under the five stage icons.
-const STAGE_LABEL = ['Source', 'Enroute', 'DEST', 'Enroute', 'END'];
+// A status cell with its stage's name and station. Cells from a server that predates station-wise
+// attendance carry only the stage number, so they take the journey's stage descriptor.
+const describe = (stages, cell) => (cell.label ? cell : { ...stageInfo(stages, cell.stage), ...cell, label: stageInfo(stages, cell.stage).label });
+// Only sent when the stage has a station, so a journey on the five legacy stages submits what it always did.
+const stationField = (st) => (st?.station_code ? { station_code: st.station_code } : {});
 
 // Stage mark (reference: green check = taken, purple camera = capture now, grey lock = not open yet);
 // amber = saved on this device, waiting to sync.
@@ -83,6 +86,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
       type: 'attendance.create',
       payload: {
         id: crypto.randomUUID(), journey_id: journey.id, employee_id: target.staff.employee_id, stage: target.stage,
+        ...stationField(target.info),
         device_timestamp: deviceTimestamp(), ...gps, photo_media_id: mediaId,
         ...(fingerOk ? fingerprintFields(finger) : faceFields(face)),
         ...gate.evidence({ liveness: cameraOn && !fingerOk ? liveness : 'not_required', faceModel: faceOn && !fingerOk ? FACE_MODEL : null }),
@@ -95,10 +99,10 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   }
 
   return (
-    <Dialog open title={`${target.staff.name} · ${STAGES[target.stage - 1]}`} onClose={onClose} onSubmit={submit}
+    <Dialog open title={`${target.staff.name} · ${target.info.label}`} onClose={onClose} onSubmit={submit}
       footer={<SubmitBar busy={busy} disabled={!gps || (photoNeeded && !photo) || policy.loading || !faceOk || !liveOk || !gate.allowed} label="Mark attendance" onCancel={onClose} flush />}>
       <div className="space-y-3">
-        <p className="text-center text-xs font-medium text-muted">{target.staff.emp_id} · Stage {target.stage} of 5 · {journey.train_no}</p>
+        <p className="text-center text-xs font-medium text-muted">{target.staff.emp_id} · Stage {target.stage} of {target.total} · {journey.train_no}</p>
         {cameraOn ? (
           photo ? (
             <div className="relative overflow-hidden rounded-2xl ring-1 ring-line">
@@ -135,9 +139,9 @@ function MemberFaceCheck({ photo, member, enabled, threshold, onResult }) {
   return <FaceCheckNote check={check} name={member.name} />;
 }
 
-const StagePill = ({ stage }) => (
-  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-camera/10 px-2 py-0.5 text-[11px] font-semibold text-camera">
-    <CameraSolidIcon className="h-3 w-3" /> {stage} · {STAGES[stage - 1]}
+const StagePill = ({ member }) => (
+  <span className="inline-flex max-w-[45%] shrink-0 items-center gap-1 rounded-full bg-camera/10 px-2 py-0.5 text-[11px] font-semibold text-camera">
+    <CameraSolidIcon className="h-3 w-3 shrink-0" /> <span className="truncate">{member.stage} · {member.info.label}</span>
   </span>
 );
 
@@ -147,10 +151,12 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const policy = useResource(`/divisions/${journey.division_id}/policy`);
   // Photo required unless the division policy relaxes it (the strict default while it is loading).
   const photoRequired = policy.data?.attendance_photo_required !== false;
-  // Every employee's own next stage. Staff who have finished all five are not offered.
+  // Every employee's own next stage. Staff who have finished every stage are not offered.
+  const stages = stagesOf(journey);
   const members = rows
     .map((r) => ({ ...r, stage: nextStageFor(r, (st) => local[`${r.employee_id}:${st}`]) }))
-    .filter((r) => r.stage != null);
+    .filter((r) => r.stage != null)
+    .map((r) => ({ ...r, info: describe(stages, r.stages.find((c) => c.stage === r.stage) ?? { stage: r.stage }) }));
   const byId = new Map(members.map((m) => [m.employee_id, m]));
   const [picked, setPicked] = useState({});
   const [photos, setPhotos] = useState({});
@@ -175,7 +181,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   const [profiles, setProfiles] = useState([]);
   const onFace = useCallback((id, check) => setFaces((f) => (f[id] === check ? f : { ...f, [id]: check })), []);
   const chosen = members.filter((m) => picked[m.employee_id]);
-  // Faces are loaded for EVERY allocated staff member, finished or not: someone who has completed all five
+  // Faces are loaded for EVERY allocated staff member, finished or not: someone who has completed every stage
   // stages still turns up in the crew photo, and must be recognised (and shown as completed) rather than
   // left as an unknown face or mistaken for a colleague.
   const memberIds = rows.map((r) => r.employee_id).join(',');
@@ -247,6 +253,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         payload: {
           id: crypto.randomUUID(), journey_id: journey.id, employee_id: m.employee_id,
           stage: m.stage,   // this employee's own next stage, not a group-wide one
+          ...stationField(m.info),
           device_timestamp: at, ...gps, group_submission_id: submission, ...extra,
         },
         media,
@@ -266,7 +273,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
     if (saved.length) notify(synced === saved.length ? 'success' : 'warning', synced === saved.length
       ? `Group attendance saved and synchronized for ${synced} staff.`
       : `Group attendance saved on this device for ${saved.length} staff. It will sync when the server is reachable.`);
-    for (const r of refused) notify('error', `${r.member.name} (${STAGES[r.member.stage - 1]}): ${r.outcome.message}`);
+    for (const r of refused) notify('error', `${r.member.name} (${r.member.info.label}): ${r.outcome.message}`);
     onDone(saved.filter((r) => r.outcome.status !== 'synced').map((r) => [r.member.employee_id, r.member.stage]));
   }
 
@@ -276,7 +283,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
 
   return (
     <Dialog open title="Group attendance" onClose={onClose} wide>
-      {!members.length ? <Empty title="Every allocated staff member has completed all five stages." /> : (
+      {!members.length ? <Empty title="Every allocated staff member has completed all attendance stages." /> : (
         <form onSubmit={submit} className="space-y-3">
           <p className="text-xs text-muted">Each person is recorded at their own next stage.</p>
           <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
@@ -295,7 +302,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
               {!usePlain && (
                 <p className="text-sm font-medium text-muted" aria-live="polite">
                   {busy ? `Marking ${autoMembers.length} present…`
-                    : done ? `Done. ${autoMembers.map((m) => `${m.name}: ${STAGES[m.stage - 1]}`).join(' · ')}`
+                    : done ? `Done. ${autoMembers.map((m) => `${m.name}: ${m.info.label}`).join(' · ')}`
                       : !gps ? 'Waiting for the location fix…'
                         : !group?.ready ? 'Hold the phone steady; the photo is taken and read automatically.'
                           : 'Nobody due was recognised. See the reason under each face, then retake.'}
@@ -313,7 +320,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                         <label className="flex items-center gap-3 p-3 text-sm">
                           <input type="checkbox" className="h-5 w-5" checked={!!picked[m.employee_id]} onChange={(e) => toggle(m.employee_id, e.target.checked)} />
                           <span className="min-w-0 flex-1 truncate"><span className="font-medium">{m.name}</span><span className="text-slate-500"> · {m.emp_id}</span></span>
-                          <StagePill stage={m.stage} />
+                          <StagePill member={m} />
                           <span className={`hidden w-36 shrink-0 text-right text-[11px] font-semibold sm:inline ${picked[m.employee_id] ? 'text-success' : 'text-slate-400'}`}>
                             {picked[m.employee_id] ? `Ready · ${sourceOf(m.employee_id)}` : 'Not marked'}
                           </span>
@@ -336,7 +343,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
                     <label className="flex items-center gap-3 text-sm">
                       <input type="checkbox" className="h-5 w-5" checked={!!picked[m.employee_id]} onChange={(e) => toggle(m.employee_id, e.target.checked)} />
                       <span className="min-w-0 flex-1 truncate"><span className="font-medium">{m.name}</span><span className="text-slate-500"> · {m.emp_id}</span></span>
-                      <StagePill stage={m.stage} />
+                      <StagePill member={m} />
                     </label>
                     {picked[m.employee_id] && (
                       <div className="mt-2 space-y-2">
@@ -371,9 +378,11 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   );
 }
 
-// The five-stage grid of every allocated staff member (stage order and one record per stage are
-// enforced by the local repository and the server).
+// Each allocated staff member's own stage timeline: Source, the train's attendance stations, End (or the
+// five standard stages). Stage order and one record per stage are enforced by the local repository and
+// the server.
 function StageGrid({ journey: j, status }) {
+  const stages = stagesOf(j);
   const { can } = useSession();
   const [target, setTarget] = useState(null);
   // Records captured offline aren't in the server's status yet: show them as pending locally.
@@ -399,17 +408,20 @@ function StageGrid({ journey: j, status }) {
                   <p className="min-w-0 flex-1 truncate text-[15px] font-bold text-ink">{s.emp_id} - {s.name}</p>
                   {s.completed && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success"><CheckIcon className="h-3 w-3" /> Complete</span>}
                 </div>
-                <div className="grid grid-cols-5">
-                  {s.stages.map((c) => {
+                <div className={`-mx-1 flex overflow-x-auto px-1 pb-1 ${s.stages.length > 5 ? 'snap-x' : ''}`} role="list"
+                  aria-label={`${s.name}: ${s.stages.length} attendance stages`}>
+                  {s.stages.map((raw) => {
+                    const c = describe(stages, raw);
                     const pending = local[`${s.employee_id}:${c.stage}`] || c.status === 'pending';
                     const state = pending ? 'pending' : MARK[c.status] ? c.status : 'locked';
                     const clickable = submit && c.status === 'next' && !pending && j;
                     return (
-                      <button key={c.stage} type="button" disabled={!clickable} onClick={() => setTarget({ staff: s, stage: c.stage })}
-                        className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl py-1 transition duration-150 enabled:hover:bg-camera/5 enabled:active:scale-90"
-                        aria-label={`${s.name} stage ${c.stage} ${pending ? 'pending sync' : c.status}`} title={STAGES[c.stage - 1]}>
+                      <button key={c.stage} type="button" role="listitem" disabled={!clickable}
+                        onClick={() => setTarget({ staff: s, stage: c.stage, info: c, total: s.stages.length })}
+                        className="flex min-w-[3.75rem] flex-1 snap-start flex-col items-center gap-1.5 rounded-xl px-0.5 py-1 transition duration-150 enabled:hover:bg-camera/5 enabled:active:scale-90"
+                        aria-label={`${s.name} stage ${c.stage} ${c.label} ${pending ? 'pending sync' : c.status}`} title={c.label}>
                         {MARK[state].node}
-                        <span className={`text-[11px] font-semibold leading-none ${MARK[state].label}`}>{STAGE_LABEL[c.stage - 1]}</span>
+                        <span className={`w-full truncate text-center text-[11px] font-semibold leading-none ${MARK[state].label}`}>{stageCaption(c)}</span>
                       </button>
                     );
                   })}
@@ -442,10 +454,11 @@ function StageGrid({ journey: j, status }) {
   );
 }
 
-function AttendanceDetail({ record, staffName, onClose, onChanged }) {
+function AttendanceDetail({ record, stages, staffName, onClose, onChanged }) {
   const { me, ops } = useSession();
+  const name = stageLabel(stages, record.stage, record.stage_label);
   return (
-    <Dialog open title={`${staffName(record.employee_id)} · ${STAGES[record.stage - 1]}`} onClose={onClose} wide>
+    <Dialog open title={`${staffName(record.employee_id)} · ${name}`} onClose={onClose} wide>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2"><SyncBadge status={record.sync_status} error={record.last_sync_error} />
           {record.verification_status && <Badge tone={STATE_TONE[record.verification_status]}>{label(record.verification_status)}</Badge>}</div>
@@ -453,7 +466,8 @@ function AttendanceDetail({ record, staffName, onClose, onChanged }) {
           <p className="text-xs text-slate-500">Recorded on the server; its details are shown when online.</p>
         )}
         <DetailList items={[
-          ['Stage', `${record.stage} · ${STAGES[record.stage - 1]}`],
+          ['Stage', `${record.stage} · ${name}`],
+          ['Station', record.station_code ? stageInfo(stages, record.stage).station_name ?? record.station_code : null],
           ['Captured (device)', record.device_timestamp ? fmtDateTime(record.device_timestamp) : null],
           ['Received (server)', record.server_timestamp ? fmtDateTime(record.server_timestamp) : null],
           ['GPS', gpsText(record)],
@@ -483,12 +497,13 @@ function AttendanceRecords({ journey: j }) {
   const people = [...(j.supervisor_id ? [{ user_id: j.supervisor_id, name: j.supervisor_name }] : []), ...j.staff];
   const staffName = (id) => people.find((s) => s.user_id === id)?.name ?? 'Unknown user';
   const filter = (fn) => (v) => { fn(v); setPageNo(1); };
+  const stages = stagesOf(j);
 
   return (
     <Panel title="Attendance records">
       <FilterBar>
         <Field label="Staff"><Select value={employee} onChange={filter(setEmployee)} placeholder="All staff" options={j.staff.filter((s) => !s.removed_at).map((s) => ({ value: s.user_id, label: s.name }))} /></Field>
-        <Field label="Stage"><Select value={stage} onChange={filter(setStage)} placeholder="All stages" options={STAGES.map((n, i) => ({ value: String(i + 1), label: `${i + 1} · ${n}` }))} /></Field>
+        <Field label="Stage"><Select value={stage} onChange={filter(setStage)} placeholder="All stages" options={stages.map((st) => ({ value: String(st.stage), label: `${st.stage} · ${st.label}` }))} /></Field>
         <Field label="Verification"><Select value={verification} onChange={filter(setVerification)} placeholder="Any" options={VERIFICATION} /></Field>
       </FilterBar>
       <DataState res={res} empty="No attendance records match.">
@@ -496,7 +511,7 @@ function AttendanceRecords({ journey: j }) {
           <>
             <Table rows={page.items} onRowClick={setOpen} columns={[
               { key: 'employee', label: 'Staff', render: (r) => staffName(r.employee_id) },
-              { key: 'stage', label: 'Stage', render: (r) => STAGES[r.stage - 1] },
+              { key: 'stage', label: 'Stage', render: (r) => stageLabel(stages, r.stage, r.stage_label) },
               { key: 'when', label: 'Captured', render: (r) => fmtDateTime(r.device_timestamp ?? r.server_timestamp) },
               { key: 'method', label: 'Method', render: (r) => methodOf(r) },
               { key: 'gps', label: 'GPS', render: (r) => (r.latitude != null ? 'Yes' : '—') },
@@ -507,7 +522,7 @@ function AttendanceRecords({ journey: j }) {
           </>
         )}
       </DataState>
-      {open && <AttendanceDetail record={open} staffName={staffName} onClose={() => setOpen(null)} onChanged={() => { setOpen(null); res.reload(); }} />}
+      {open && <AttendanceDetail record={open} stages={stages} staffName={staffName} onClose={() => setOpen(null)} onChanged={() => { setOpen(null); res.reload(); }} />}
     </Panel>
   );
 }
