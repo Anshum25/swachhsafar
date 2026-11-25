@@ -1,7 +1,7 @@
 """Question banks can name their answer choices (Poor … Excellent), shown as faces instead of numbers.
 
-Revision ID: 0022
-Revises: 0021
+Revision ID: 0023
+Revises: 0022
 
 question_banks.option_labels: the choices, worst first. Choice k is stored as rating scale_min + k, so
 existing ratings, reports and PSI are unchanged. NULL on existing banks = the numbered scale as before.
@@ -9,8 +9,8 @@ existing ratings, reports and PSI are unchanged. NULL on existing banks = the nu
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0022"
-down_revision = "0021"
+revision = "0023"
+down_revision = "0022"
 branch_labels = None
 depends_on = None
 

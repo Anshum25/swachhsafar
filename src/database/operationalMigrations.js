@@ -868,4 +868,15 @@ const V18 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18];
+// v19: question banks can name their answer choices (backend 0023), shown as faces. JSON list, worst first;
+// NULL = the numbered scale.
+const V19 = {
+  version: 19,
+  name: 'question bank answer options',
+  async prepare(db) {
+    const has = (await db.query('PRAGMA table_info(question_banks)')).some((c) => c.name === 'option_labels');
+    return has ? [] : ["ALTER TABLE question_banks ADD COLUMN option_labels TEXT CHECK (option_labels IS NULL OR json_valid(option_labels))"];
+  },
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19];

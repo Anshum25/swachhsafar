@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useResource, useSession } from '../../../app/session.jsx';
 import { divisionLabel } from '../../../app/division.jsx';
 import { canManageMaster } from '../../../services/authorization.js';
-import { Badge, DataState, Dialog, ErrorNote, Field, Panel, Select, SubmitBar, Table, label } from '../../../components/ui.jsx';
+import { Badge, DataState, Dialog, ErrorNote, Field, Panel, RatingFace, RatingScale, Select, SubmitBar, Table, label } from '../../../components/ui.jsx';
 import { PlusIcon } from '../../../components/Icons.jsx';
 import { bankPayload, validateBank } from '../../../utils/masterValidation.js';
 import { ActiveBadge, ConfirmDialog, FilterBar, OfflineWriteNote, matches, useMasterAccess, useSave } from './common.jsx';
@@ -58,6 +58,36 @@ function QuestionEditor({ q, i, count, errors, onChange, onMove, onRemove }) {
       </div>
       {(err('applies') || err('psi_weight')) && <p className="mt-1 text-xs text-red-600">{err('applies') ?? err('psi_weight')}</p>}
     </li>
+  );
+}
+
+// Answer options, worst first. Each gets a face (frown → smile) and is shown grey until the passenger picks it.
+function OptionsEditor({ options, errors, onChange }) {
+  const [preview, setPreview] = useState(undefined);
+  const set = (i, v) => onChange(options.map((o, k) => (k === i ? v : o)));
+  return (
+    <section className="rounded-2xl p-3 ring-1 ring-slate-200">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-semibold">Answer options <span className="font-normal text-slate-500">(worst first)</span></span>
+        <span className="flex gap-3 text-xs">
+          <button type="button" className="btn-link" onClick={() => onChange([...DEFAULT_OPTIONS])}>Use standard 5</button>
+          <button type="button" className="btn-link" disabled={options.length >= 10} onClick={() => onChange([...options, ''])}>Add option</button>
+        </span>
+      </div>
+      <ol className="space-y-2">
+        {options.map((o, i) => (
+          <li key={i} className="flex items-center gap-2">
+            <RatingFace k={i} n={options.length} selected className="h-8 w-8 shrink-0" />
+            <input className="input h-10" value={o} maxLength={30} aria-label={`Answer option ${i + 1}`} onChange={(e) => set(i, e.target.value)} />
+            <button type="button" className="btn-link text-red-600" disabled={options.length <= 2} onClick={() => onChange(options.filter((_, k) => k !== i))}
+              aria-label={`Remove answer option ${i + 1}`}>Remove</button>
+          </li>
+        ))}
+      </ol>
+      {errors.option_labels && <p className="mt-1 text-xs text-red-600">{errors.option_labels}</p>}
+      <p className="mb-1 mt-3 text-xs text-slate-500">Preview — tap a face to see it selected:</p>
+      <RatingScale min={1} max={options.length} options={options.map((o, i) => o.trim() || `Option ${i + 1}`)} value={preview} onChange={setPreview} label="Preview" />
+    </section>
   );
 }
 
