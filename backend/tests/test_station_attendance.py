@@ -1,4 +1,4 @@
-"""Station-wise attendance: a train names the stations attendance is taken at; journeys get Source, those
+"""Station-wise attendance: a train names the stations attendance is taken at; journeys get exactly those
 stations in route order, and End (services/trains.attendance_plan)."""
 import json
 import uuid
@@ -92,31 +92,34 @@ def test_a_train_without_configuration_keeps_the_five_stages(world):
 
 
 @pytest.mark.parametrize("codes", [["ND", "ANND", "BRC"], ["ND", "ANND", "BRC", "BH", "ST"]])
-def test_configured_stations_become_the_stages_between_source_and_end(world, sched, codes):
+def test_the_selected_stations_are_the_only_stages(world, sched, codes):
     _load_route(world)
     r = _configure(world, len(codes), codes)
     assert r.status_code == 200, r.text
     stages = _journey(world)["attendance_stages"]
-    assert len(stages) == len(codes) + 2
-    assert stages[0]["label"] == "Source – Ahmedabad Jn" and stages[-1]["label"] == "End – Mumbai Central"
-    assert [s["station_code"] for s in stages[1:-1]] == codes
+    assert len(stages) == len(codes)          # 5 selected = 5 attendances, nothing added
+    assert [s["station_code"] for s in stages] == codes
     cells = _status(world)[0]["stages"]
-    assert [c["station_code"] for c in cells] == ["ADI", *codes, "BCT"]
-    assert [c["status"] for c in cells] == ["next"] + ["locked"] * (len(codes) + 1)
+    assert [c["status"] for c in cells] == ["next"] + ["locked"] * (len(codes) - 1)
+
+
+def test_the_first_and_last_station_can_be_selected(world, sched):
+    _load_route(world)
+    assert _configure(world, 3, ["ADI", "BRC", "BCT"]).status_code == 200
+    assert [s["label"] for s in _journey(world)["attendance_stages"]] == ["Ahmedabad Jn", "Vadodara Jn", "Mumbai Central"]
 
 
 def test_stations_are_kept_in_route_order(world, sched):
     _load_route(world)
     r = _configure(world, 3, ["ST", "ND", "BRC"])
     assert r.status_code == 200 and r.json()["attendance_station_codes"] == ["ND", "BRC", "ST"]
-    assert [s["station_name"] for s in _journey(world)["attendance_stages"][1:-1]] == ["Nadiad Jn", "Vadodara Jn", "Surat"]
+    assert [s["station_name"] for s in _journey(world)["attendance_stages"]] == ["Nadiad Jn", "Vadodara Jn", "Surat"]
 
 
 @pytest.mark.parametrize("count, codes, code", [
     (3, ["ND", "ANND", "BRC", "BH"], "attendance_count_mismatch"),   # more than configured
     (5, ["ND", "ANND", "BRC"], "attendance_count_mismatch"),         # fewer than required
     (2, ["ND", "PUNE"], "station_not_on_route"),
-    (2, ["ADI", "ND"], "station_not_on_route"),                      # Source is a stage of its own
     (9, ["ND"], "attendance_count_exceeds_route"),
 ])
 def test_invalid_configurations_are_refused(world, sched, count, codes, code):
@@ -140,27 +143,27 @@ def test_each_employee_progresses_through_the_configured_stages(world, sched):
                       json={"user_ids": [str(world.jan2.id)]})
     r, _ = _punch(world, "jan", 2)
     assert r.json()["error"]["code"] == "stage_order"
-    for stage in range(1, 6):
+    for stage in range(1, 4):
         r, _ = _punch(world, "jan", stage)
         assert r.status_code == 201, r.text
-    assert r.json()["station_code"] == "BCT" and r.json()["stage_label"] == "End – Mumbai Central"
-    r, _ = _punch(world, "jan", 6)
+    assert r.json()["station_code"] == "ST" and r.json()["stage_label"] == "Surat"
+    r, _ = _punch(world, "jan", 4)
     assert r.status_code == 422 and r.json()["error"]["code"] == "stage_out_of_range"
     by = {s["employee_id"]: s for s in _status(world)}
     assert by[str(world.jan.id)]["completed"] and all(c["status"] == "taken" for c in by[str(world.jan.id)]["stages"])
-    assert [c["status"] for c in by[str(world.jan2.id)]["stages"]] == ["next", "locked", "locked", "locked", "locked"]
+    assert [c["status"] for c in by[str(world.jan2.id)]["stages"]] == ["next", "locked", "locked"]
 
 
 def test_a_capture_against_changed_stations_is_refused_and_replays_are_not_duplicated(world, sched):
     _load_route(world)
     _configure(world, 2, ["ND", "BRC"])
-    r, body = _punch(world, "jan", 1, station_code="ADI")
+    r, body = _punch(world, "jan", 1, station_code="ND")
     assert r.status_code == 201
     assert world.client.post(f"{API}/attendance", headers=world.h("sup"), json=body).status_code == 200  # replay
     r, _ = _punch(world, "jan", 2, station_code="ANND")
     assert r.status_code == 409 and r.json()["error"]["code"] == "attendance_plan_changed"
     r, _ = _punch(world, "jan", 2)  # an app that does not send the station is judged by the stage alone
-    assert r.status_code == 201 and r.json()["station_code"] == "ND"
+    assert r.status_code == 201 and r.json()["station_code"] == "BRC"
     assert world.db.scalar(select(func.count()).select_from(Attendance)) == 2
 
 
@@ -172,17 +175,17 @@ def test_recorded_journeys_keep_their_stages_and_others_follow_the_train(world, 
     r = _configure(world, 3, ["ANND", "BH", "ST"])
     assert r.status_code == 200
     kept = _journey(world)["attendance_stages"]
-    assert [s["station_code"] for s in kept] == ["ADI", "ND", "BRC", "BCT"]   # attendance was taken: unchanged
-    rec = world.db.scalars(select(Attendance).where(Attendance.stage == 2)).one()
+    assert [s["station_code"] for s in kept] == ["ND", "BRC"]   # attendance was taken: unchanged
+    rec = world.db.scalars(select(Attendance).where(Attendance.stage == 1)).one()
     assert (rec.station_code, rec.stage_label) == ("ND", "Nadiad Jn")
 
 
 def test_a_journey_with_no_attendance_follows_a_change_and_clearing_restores_five_stages(world, sched):
     _load_route(world)
     _configure(world, 2, ["ND", "BRC"])
-    assert len(_journey(world)["attendance_stages"]) == 4
+    assert len(_journey(world)["attendance_stages"]) == 2
     _configure(world, 3, ["ANND", "BH", "ST"])
-    assert [s["station_code"] for s in _journey(world)["attendance_stages"]][1:-1] == ["ANND", "BH", "ST"]
+    assert [s["station_code"] for s in _journey(world)["attendance_stages"]] == ["ANND", "BH", "ST"]
     r = _configure(world, None, None)
     assert r.status_code == 200 and r.json()["attendance_station_count"] is None
     assert len(_journey(world)["attendance_stages"]) == 5

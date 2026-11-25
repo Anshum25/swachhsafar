@@ -82,7 +82,7 @@ class TrainUpdate(StrictModel):
     after_inspection_enabled: bool | None = None
     is_active: bool | None = None
     # Station-wise attendance. Both null clears it (journeys go back to the five standard stages); otherwise
-    # exactly `attendance_station_count` distinct stations of the train's route, between its source and end.
+    # exactly `attendance_station_count` distinct stations of the train's route (first and last included).
     attendance_station_count: int | None = Field(default=None, ge=1, le=MAX_ATTENDANCE_STATIONS)
     attendance_station_codes: list[str] | None = Field(default=None, max_length=MAX_ATTENDANCE_STATIONS)
 
