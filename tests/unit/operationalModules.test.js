@@ -183,10 +183,10 @@ describe('coach inspections', () => {
     expect(rows.find((r) => r.coach_code === 'S1').coach_class).toBe('NON_AC');
   });
 
-  it('enforces uniqueness, phase order, round order, open day and configuration', async () => {
+  it('takes any round and phase in any order, and enforces uniqueness, open day and configuration', async () => {
     const { store } = await seededStore();
-    await expect(store.capture(inspectionPayload({ phase: 'A' }))).rejects.toMatchObject({ code: 'phase_order' });
-    await expect(store.capture(inspectionPayload({ round: 2 }))).rejects.toMatchObject({ code: 'round_order' });
+    await store.capture(inspectionPayload({ round: 2, phase: 'A' })); // no Before, no round 1 needed first
+    await store.capture(inspectionPayload({ phase: 'A' }));
     await store.capture(inspectionPayload());
     await expect(store.capture(inspectionPayload())).rejects.toMatchObject({ code: 'duplicate_inspection' });
     await expect(store.capture(inspectionPayload({ day: 2 }))).rejects.toMatchObject({ code: 'day_not_open' }); // day 2 opens on 5 Nov IST
@@ -201,7 +201,7 @@ describe('coach inspections', () => {
     const grid = await store.inspections.journeyGrid(await store.journeys.get(IDS.journey, '2026-11-05'), '2026-11-05');
     const b1d2 = grid.find((c) => c.coach_code === 'B1' && c.day === 2);
     expect(b1d2.day_open).toBe(true);
-    expect(b1d2.cells.map((c) => `${c.round}${c.phase}:${c.status}`)).toEqual(['1B:pending', '1A:open', '2B:open', '2A:locked']);
+    expect(b1d2.cells.map((c) => `${c.round}${c.phase}:${c.status}`)).toEqual(['1B:pending', '1A:open', '2B:open', '2A:open']);
   });
 });
 
@@ -232,6 +232,17 @@ describe('feedback', () => {
     await expect(store.capture(passenger({ pnr: null }))).rejects.toMatchObject({ code: 'pnr_required' });
     await expect(store.capture(passenger({ coach_code: 'Z9' }))).rejects.toMatchObject({ code: 'unknown_coach' });
     await expect(store.capture(passenger({ passenger_name: 'A' }))).rejects.toMatchObject({ code: 'invalid_value' });
+  });
+
+  it('asks a general coach for its seat, not a PNR, even where the division requires PNRs', async () => {
+    const { store } = await seededStore();
+    await store.db.run("INSERT INTO journey_coaches (journey_id, code, classification, position) VALUES (?, 'GEN1', 'GEN', 9)", [IDS.journey]);
+    await expect(store.capture(passenger({ coach_code: 'GEN1', seat_no: null, pnr: null }))).rejects.toMatchObject({ code: 'seat_required' });
+    const capture = passenger({ coach_code: 'GEN1', seat_no: '41', pnr: '2451870009' });
+    await store.capture(capture);
+    expect(await store.feedback.getPassenger(capture.payload.id)).toMatchObject({
+      coach_class: 'GEN', seat_no: '41', pnr: null, pnr_status: 'not_required',
+    });
   });
 
   it('keeps the full mobile when the server state is ingested, and updates verification from the server', async () => {

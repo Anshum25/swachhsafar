@@ -857,4 +857,15 @@ const V17 = {
   },
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17];
+// v18: inspections in any order. Every round and Before/After slot of an open day can be taken in any order
+// (backend services/inspections.py), so the ordering triggers of v5 are dropped; slot uniqueness stays.
+const V18 = {
+  version: 18,
+  name: 'inspections in any order',
+  statements: [
+    'DROP TRIGGER IF EXISTS trg_inspection_round_order',
+    'DROP TRIGGER IF EXISTS trg_inspection_phase_order',
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18];
