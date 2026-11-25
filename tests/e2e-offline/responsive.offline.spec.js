@@ -130,7 +130,7 @@ test('every screen fits phone, tablet and desktop widths', async () => {
       await page.getByRole('button', { name: 'Close menu' }).click();
     }
     await page.goto(`/#/attendance/${IDS.journey}`); // a capture dialog
-    const next = page.getByRole('button', { name: /stage 1 next/ }).first();
+    const next = page.getByRole('listitem', { name: /stage 1 .*next$/ }).first();
     if (await next.isVisible().catch(() => false)) {
       await next.click();
       await expect(page.getByRole('dialog')).toBeVisible();

@@ -13,7 +13,6 @@ import { istDate } from '../../src/utils/businessDate.js';
 
 const BASE = `http://localhost:${process.env.E2E_PORT || '4175'}/`;
 const EMAIL = 'face.e2e@example.com';
-const NO_FACE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const net = createFakeNetwork({
   users: { [EMAIL]: meFor({ id: IDS.supervisor, name: 'Ravi Kumar', email: EMAIL, roleId: 4, divisionId: IDS.division, perms: FIELD_PERMS }) },
   today: istDate(new Date()),
@@ -28,7 +27,7 @@ test.beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'swachh-face-')); });
 test.afterAll(() => { try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }); } catch { /* Windows lock */ } });
 test.afterAll(() => expect(server.cspViolations).toEqual([]));
 
-test('face verification blocks offline attendance without a matching registered face', async () => {
+test('face verification blocks offline attendance without a live face capture', async () => {
   test.setTimeout(300_000);
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
   const context = await chromium.launchPersistentContext(dir, {
@@ -52,28 +51,22 @@ test('face verification blocks offline attendance without a matching registered 
   await context.setOffline(true);
   await page.goto(`/#/attendance/${IDS.journey}`);
 
-  // Sunita Devi is registered: a photo without a face cannot be saved.
-  await page.getByRole('button', { name: 'Sunita Devi stage 1 next' }).click();
-  let dialog = page.getByRole('dialog');
-  await ensureGps(dialog);
-  await expect(dialog.getByTestId('face-check')).toHaveAttribute('data-status', 'waiting');
-  await dialog.getByTestId('photo-input').setInputFiles({ name: 'no-face.png', mimeType: 'image/png', buffer: NO_FACE });
-  await expect(dialog.getByTestId('face-check')).toHaveAttribute('data-status', 'no_face', { timeout: 120_000 });
-  await expect(dialog.getByText('No face found')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Mark attendance' })).toBeDisabled();
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
-
-  // Mohan Lal has no registered face: blocked before any analysis.
-  await page.getByRole('button', { name: 'Mohan Lal stage 1 next' }).click();
-  dialog = page.getByRole('dialog');
-  await ensureGps(dialog);
-  await dialog.getByTestId('photo-input').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: NO_FACE });
-  await expect(dialog.getByTestId('face-check')).toHaveAttribute('data-status', 'not_enrolled');
-  await expect(dialog.getByRole('button', { name: 'Mark attendance' })).toBeDisabled();
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  // With face verification on, the photo comes only from the live camera, after a blink: there is no gallery
+  // picker, so a picture of someone (or a photo with no face) cannot be chosen. This machine has no camera,
+  // so nothing is captured and attendance cannot be marked, for a registered or an unregistered person.
+  for (const name of ['Sunita Devi', 'Mohan Lal']) {
+    await page.getByRole('listitem', { name: `${name} stage 1 Source next` }).click();
+    const dialog = page.getByRole('dialog');
+    await ensureGps(dialog);
+    await expect(dialog.getByTestId('live-face')).toBeVisible();
+    await expect(dialog.getByTestId('photo-input')).toHaveCount(0);
+    await expect(dialog.getByTestId('face-check')).toHaveAttribute('data-status', 'waiting');
+    await expect(dialog.getByRole('button', { name: 'Mark attendance' })).toBeDisabled();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+  }
 
   // Nothing was saved or sent.
-  await expect(page.getByRole('button', { name: /pending sync/ })).toHaveCount(0);
+  await expect(page.getByRole('listitem', { name: /pending sync/ })).toHaveCount(0);
   expect(server.batches).toEqual([]);
   await context.close();
 });

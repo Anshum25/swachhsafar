@@ -94,12 +94,12 @@ test('operational screens capture and keep records with the network disconnected
   await page.goto('/#/attendance');
   await page.getByRole('button', { name: /12951/ }).click();
   await expect(page.getByText('Offline — showing data stored on this device.')).toBeVisible();
-  await page.getByRole('button', { name: 'Sunita Devi stage 1 next' }).click();
+  await page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source next' }).click();
   let dialog = page.getByRole('dialog');
   await captureEvidence(dialog);
   await dialog.getByRole('button', { name: 'Mark attendance' }).click();
   await toast(page, 'Attendance saved on this device');
-  await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toBeVisible();
+  await expect(page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source pending sync' })).toBeVisible();
 
   // Coach inspection: B1, day 1, round 1, Before
   await page.goto('/#/inspections');
@@ -107,7 +107,7 @@ test('operational screens capture and keep records with the network disconnected
   await page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before open' }).click();
   dialog = page.getByRole('dialog');
   await captureEvidence(dialog);
-  await dialog.getByLabel('Comments').fill('Floor mopped, dustbin emptied');
+  await dialog.getByLabel('Summary').fill('Floor mopped, dustbin emptied');
   await dialog.getByRole('button', { name: 'Save Now' }).click();
   await toast(page, 'Inspection saved on this device');
   await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before pending' })).toBeVisible();
@@ -131,8 +131,8 @@ test('operational screens capture and keep records with the network disconnected
   await page.getByRole('combobox', { name: 'Journey', exact: true }).selectOption({ label: '12951 · Mumbai Rajdhani' });
   await page.getByLabel('Railway employee ID').fill('RLY42');
   await page.getByLabel('Official name').fill('A. Inspector');
-  await expect(page.getByText('1. Question 1')).toBeVisible();
-  await page.getByText('1. Question 1').locator('..').getByRole('button', { name: '4', exact: true }).click();
+  await expect(page.getByText('1) Question 1')).toBeVisible();
+  await page.getByRole('radiogroup', { name: 'Rating for question 1' }).getByRole('radio', { name: '4', exact: true }).click();
   await ensureGps(page);
   await page.getByRole('button', { name: 'Submit', exact: true }).click();
   await toast(page, 'Railway feedback saved on this device');
@@ -195,7 +195,7 @@ test('operational screens capture and keep records with the network disconnected
   page = context.pages()[0] ?? (await context.newPage());
   await page.goto(`/#/attendance/${IDS.journey}`);
   await expect(page.getByText('Signed in offline with your cached profile')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toBeVisible();
+  await expect(page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source pending sync' })).toBeVisible();
   await page.goto(`/#/inspections/${IDS.journey}`);
   await expect(page.getByRole('button', { name: 'Coach B1 day 1 round 1 Before pending' })).toBeVisible();
   await expect(queueBadge(page)).toHaveText(/7 pending/);

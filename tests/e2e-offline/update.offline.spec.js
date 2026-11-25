@@ -67,13 +67,13 @@ test('a new version is offered, keeps the unsynced record, and the record is del
   server.connected = false;
   await page.goto('/#/attendance');
   await page.getByRole('button', { name: /12951/ }).click();
-  await page.getByRole('button', { name: 'Sunita Devi stage 1 next' }).click();
+  await page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source next' }).click();
   const dialog = page.getByRole('dialog');
   await ensureGps(dialog);
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: PNG });
   await expect(dialog.getByAltText('Captured evidence')).toBeVisible();
   await dialog.getByRole('button', { name: 'Mark attendance' }).click();
-  await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toBeVisible();
+  await expect(page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source pending sync' })).toBeVisible();
 
   // ---- a new version is published: it waits, and the banner says the unsynced record is kept ----
   writeFileSync(SW_FILE, swOriginal + V2_MARKER);
@@ -90,13 +90,13 @@ test('a new version is offered, keeps the unsynced record, and the record is del
   // ---- after the update: the record is still on the device and still pending ----
   await page.goto('/#/attendance');
   await page.getByRole('button', { name: /12951/ }).click();
-  await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toBeVisible();
+  await expect(page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source pending sync' })).toBeVisible();
   expect(server.batches).toEqual([]);
 
   // ---- server back: delivered exactly once ----
   server.connected = true;
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toHaveCount(0, { timeout: 60_000 });
+  await expect(page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source pending sync' })).toHaveCount(0, { timeout: 60_000 });
   const att = server.batches.filter((o) => o.type === 'attendance.create');
   expect(att).toHaveLength(1);
   expect(new Set(server.batches.map((o) => o.op_id)).size).toBe(server.batches.length);

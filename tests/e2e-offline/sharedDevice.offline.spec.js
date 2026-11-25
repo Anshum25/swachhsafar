@@ -83,12 +83,12 @@ test("one user's offline records are never synced with another user's session", 
   server.connected = false;
   await context.setOffline(true);
   await page.getByRole('button', { name: /12951/ }).click();
-  await page.getByRole('button', { name: 'Sunita Devi stage 1 next' }).click();
+  await page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source next' }).click();
   const dialog = page.getByRole('dialog');
   await ensureGps(dialog);
   await dialog.getByTestId('photo-input').setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: PNG });
   await dialog.getByRole('button', { name: 'Mark attendance' }).click();
-  await expect(page.getByRole('button', { name: 'Sunita Devi stage 1 pending sync' })).toBeVisible();
+  await expect(page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source pending sync' })).toBeVisible();
   await expect(page.getByTestId('ops-queue')).toHaveText(/1 pending/);
   await signOut(page);
 

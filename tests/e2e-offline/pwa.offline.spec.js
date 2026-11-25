@@ -104,12 +104,15 @@ test('Chrome reports the app installable, under the production security headers,
   expect(headers['x-content-type-options']).toBe('nosniff');
   expect(headers['permissions-policy']).toContain('camera=(self)');
   await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 30_000 });
-  // A signed-out start (what the installed app opens at start_url "/") is Sign in, with Register one tap away.
+  // A signed-out start (what the installed app opens at start_url "/") is Sign in. There is no self-registration:
+  // staff accounts are created by an administrator.
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Create your account' })).toHaveCount(0);
-  await page.getByRole('link', { name: 'Register' }).click();
-  // The SQLite WASM database starts under this CSP (WebAssembly compile needs 'wasm-unsafe-eval').
-  await expect(page.getByTestId('db-status')).toContainText('Ready · persistent', { timeout: 30_000 });
+  // The SQLite WASM database can start under this CSP: compiling WebAssembly needs 'wasm-unsafe-eval'.
+  expect(await page.evaluate(async () => {
+    const mod = await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+    return mod instanceof WebAssembly.Module;
+  })).toBe(true);
 
   const cdp = await context.newCDPSession(page);
   const manifest = await cdp.send('Page.getAppManifest');
