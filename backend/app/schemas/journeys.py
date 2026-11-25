@@ -5,7 +5,7 @@ from pydantic import Field, field_validator
 
 from app.models import JourneyState
 from app.schemas.common import ReadModel, StrictModel
-from app.schemas.trains import CoachIn, CoachOut, _unique_codes
+from app.schemas.trains import AttendanceStageOut, CoachIn, CoachOut, _unique_codes
 
 
 class JourneyCreate(StrictModel):
@@ -100,6 +100,8 @@ class JourneyOut(ReadModel):
     cancelled_at: datetime | None
     version: int
     coaches: list[CoachOut]
+    # Source, the train's attendance stations (or the five standard stages), End -- fixed once attendance starts.
+    attendance_stages: list[AttendanceStageOut] = []
     updated_at: datetime
     # ---- Train Master feedback configuration and the journey's directions (services/feedback_plan) ----
     feedback_enabled: bool = True

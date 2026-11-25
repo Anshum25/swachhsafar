@@ -272,7 +272,7 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `auto_journeys` | BOOLEAN | not null; journeys planned daily (services/railway.plan_journeys) |
 | `arrival_days` | INTEGER | days after departure it reaches its last station, 0–7; NULL = schedule not read |
 | `return_train_id` | UUID | → trains.id (SET NULL); the train that makes the return trip |
-| `feedback_enabled` | BOOLEAN | not null, default true; passenger feedback collected on this train's journeys (0020) |
+| `feedback_enabled` | BOOLEAN | not null, default true; passenger feedback collected on this train's journeys (0022) |
 | `feedback_daily_target` | INTEGER | 1–500; passenger feedback required per journey day, whole train; NULL = no target |
 | `feedback_coach_daily_target` | INTEGER | 1–100; optional target per coach per journey day (separate from the daily target) |
 | `feedback_min_daily` | INTEGER | optional floor, ≤ the daily target; a day under it is reported "short" |
@@ -294,7 +294,7 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 
 ### train_stops
 
-Every halt of a train's own timetable (migration 0020), in route order. A station the route visits twice is two
+Every halt of a train's own timetable (migration 0022), in route order. A station the route visits twice is two
 rows. The return train has its own rows, read from its own page.
 
 | Column | Type | Keys / rules |
@@ -313,7 +313,7 @@ rows. The return train has its own rows, read from its own page.
 
 ### train_sync_runs
 
-The timetable extraction log: one row per attempt (migration 0020).
+The timetable extraction log: one row per attempt (migration 0022).
 
 | Column | Type | Keys / rules |
 |---|---|---|
@@ -470,7 +470,7 @@ The timetable extraction log: one row per attempt (migration 0020).
 
 ### journey_legs
 
-Each direction of a journey (migration 0020): 1 = outbound with the journey's train, 2 = back with its linked
+Each direction of a journey (migration 0022): 1 = outbound with the journey's train, 2 = back with its linked
 train. Re-snapshotted from the trains' timetables until the journey starts, then kept.
 
 | Column | Type | Keys / rules |
@@ -490,7 +490,7 @@ train. Re-snapshotted from the trains' timetables until the journey starts, then
 
 ### journey_feedback_targets
 
-Passenger feedback a journey needs on each journey day, from Train Master (migration 0020). Submitted / verified /
+Passenger feedback a journey needs on each journey day, from Train Master (migration 0022). Submitted / verified /
 pending are counted from passenger_feedback, never stored. A day that has begun keeps its target.
 
 | Column | Type | Keys / rules |
@@ -650,7 +650,7 @@ pending are counted from passenger_feedback, never stored. A day that has begun 
 | `latitude` | NUMERIC(9, 6) | not null |
 | `longitude` | NUMERIC(9, 6) | not null |
 | `gps_accuracy_m` | NUMERIC(8, 2) |  |
-| `direction` | INTEGER | leg of the feedback day: 1, 2, 3 (both), NULL layover/unknown (0020) |
+| `direction` | INTEGER | leg of the feedback day: 1, 2, 3 (both), NULL layover/unknown (0022) |
 | `train_no` | VARCHAR(15) | the passenger's train: from the valid PNR, else the one train running that day |
 | `coach_source` | VARCHAR(10) | `selected` (coach card) or `pnr` (moved to the coach on the ticket) |
 | `coach_verified` | BOOLEAN | not null; true only when the PNR named this coach |

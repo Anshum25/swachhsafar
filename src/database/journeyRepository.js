@@ -3,6 +3,7 @@
 // Journeys are created and changed by managers through the server (the backend assigns journey IDs
 // and checks `version` for concurrent edits), so this repository ingests server journeys and serves
 // them locally. List state (active/scheduled/history/cancelled) is derived from Asia/Kolkata dates.
+import { stagesOf } from '../utils/attendanceStages.js';
 import { journeyState } from '../utils/businessDate.js';
 import { bool, fromBool, insertStatement, placeholders, upsertStatement } from './sqlHelpers.js';
 
@@ -38,6 +39,7 @@ export function createJourneyRepository(db, { masters, identity }) {
       supervisor_name: j.supervisor_name ?? '', created_by_id: j.created_by_id, status: j.status,
       state: journeyState(j, today), cancel_reason: j.cancel_reason, cancelled_at: j.cancelled_at, version: j.version,
       coaches: coaches.filter((c) => c.journey_id === j.id).map(({ code, classification, position }) => ({ code, classification, position })),
+      attendance_stages: stagesOf(j),
       staff: staff.filter((s) => s.journey_id === j.id).map((s) => ({
         id: s.id, user_id: s.user_id, role_id: s.role_id, name: s.name, emp_id: s.emp_id, allocated_at: s.allocated_at, removed_at: s.removed_at,
       })),
@@ -70,6 +72,8 @@ export function createJourneyRepository(db, { masters, identity }) {
           daywise: bool(j.daywise), inspection_rounds_per_day: j.inspection_rounds_per_day ?? 1,
           before_inspection_enabled: bool(j.before_inspection_enabled ?? true), after_inspection_enabled: bool(j.after_inspection_enabled ?? true),
           supervisor_id: j.supervisor_id, created_by_id: j.created_by_id ?? null,
+          // Written only when the server sends it (servers from before station-wise attendance do not).
+          ...(Array.isArray(j.attendance_stages) && j.attendance_stages.length ? { attendance_stages: JSON.stringify(j.attendance_stages) } : {}),
           status: j.state === 'cancelled' || j.status === 'cancelled' ? 'cancelled' : 'planned',
           cancel_reason: j.cancel_reason ?? null, cancelled_at: j.cancelled_at ?? null, version: j.version ?? 1,
           origin: 'server', sync_status: 'synced', synced_at: now, server_updated_at: j.updated_at ?? null, created_at: now, updated_at: now,

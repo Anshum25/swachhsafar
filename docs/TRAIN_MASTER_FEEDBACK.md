@@ -13,7 +13,7 @@ Train Master ──► RailRadar timetable, each direction from its own train pa
 
 ## 1. Train Master configuration
 
-Each train (`trains`, migration 0020) carries its own settings, edited under **Master data → Trains & coaches**:
+Each train (`trains`, migration 0022) carries its own settings, edited under **Master data → Trains & coaches**:
 
 | Setting | Meaning |
 |---|---|
@@ -155,7 +155,7 @@ Live OTP and PNR checks never run offline; a feedback saved offline is verified 
 
 ## 8. Deployment
 
-1. Deploy the backend; `alembic upgrade head` runs migration **0020** (adds columns and tables; nothing removed).
+1. Deploy the backend; `alembic upgrade head` runs migration **0022** (adds columns and tables; nothing removed).
 2. Install the new timer: `deploy/scripts/install-server.sh` does it, or
    `install -m 644 deploy/systemd/swachhsafar-sync-timetables.{service,timer} /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now swachhsafar-sync-timetables.timer`.
 3. First fill: `sudo -u swachhsafar .venv/bin/python -m app.cli sync-timetables --all` (or **Refresh timetables**

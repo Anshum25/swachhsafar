@@ -5,15 +5,24 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from app.models import InspectionPhase, VerificationStatus
+from app.models.trains import MAX_ATTENDANCE_STATIONS
 from app.schemas.common import Accuracy, AwareDatetime, Captured, CoachCode, Latitude, Longitude, ReadModel, StrictModel
 from app.schemas.security import CaptureSecurity
+
+
+# Source + the most attendance stations a train can configure + End.
+MAX_STAGE = MAX_ATTENDANCE_STATIONS + 2
 
 
 class AttendanceIn(Captured):
     id: uuid.UUID = Field(description="Device-generated UUID; idempotency key")
     journey_id: uuid.UUID
     employee_id: uuid.UUID
-    stage: int = Field(ge=1, le=5, description="1 Source, 2 Enroute 1, 3 Destination, 4 Enroute 2, 5 End")
+    # Position in the journey's attendance stages (JourneyOut.attendance_stages), 1 = Source.
+    stage: int = Field(ge=1, le=MAX_STAGE)
+    # The station of that stage as the device had it. When given it must still be the journey's, so a capture
+    # made against stages the office has since changed is refused rather than recorded at the wrong station.
+    station_code: str | None = Field(default=None, max_length=8)
     photo_media_id: uuid.UUID | None = None
     group_submission_id: uuid.UUID | None = None
     # Face verification result computed on the device (distance to the closest registered descriptor).
@@ -55,14 +64,15 @@ class GroupMember(StrictModel):
     group_photo: bool = False
     # This member's own stage. Progress is per employee, so one group capture can record different
     # stages for different people. Omitted: the group's stage if given, else the member's next pending stage.
-    stage: int | None = Field(default=None, ge=1, le=5)
+    stage: int | None = Field(default=None, ge=1, le=MAX_STAGE)
+    station_code: str | None = Field(default=None, max_length=8)
 
 
 class GroupAttendanceIn(StrictModel):
     group_submission_id: uuid.UUID
     journey_id: uuid.UUID
     # Optional: when omitted, each member is recorded at their own next pending stage.
-    stage: int | None = Field(default=None, ge=1, le=5)
+    stage: int | None = Field(default=None, ge=1, le=MAX_STAGE)
     device_timestamp: AwareDatetime
     latitude: Latitude
     longitude: Longitude
@@ -90,6 +100,8 @@ class AttendanceOut(ReadModel):
     division_id: uuid.UUID
     employee_id: uuid.UUID
     stage: int
+    station_code: str | None = None
+    stage_label: str | None = None
     device_timestamp: datetime
     server_timestamp: datetime
     latitude: float
@@ -124,6 +136,10 @@ class StageCell(StrictModel):
     stage: int
     status: Literal["taken", "next", "locked"]
     attendance_id: uuid.UUID | None = None
+    kind: str | None = None
+    label: str | None = None
+    station_code: str | None = None
+    station_name: str | None = None
 
 
 class StaffAttendanceStatus(StrictModel):

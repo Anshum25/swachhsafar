@@ -12,6 +12,8 @@ from app.models.base import Base, GeoPoint, Timestamps, str_enum, TZDateTime
 
 
 class AttendanceStage(IntEnum):
+    """The original five stages: still the plan of a journey whose train has no station-wise configuration
+    (services/trains.LEGACY_STAGES). A configured journey's stages are its own list (Journey.attendance_stages)."""
     SOURCE = 1
     ENROUTE_1 = 2
     DESTINATION = 3
@@ -59,11 +61,16 @@ class Attendance(CapturedRecord, Base):
     __tablename__ = "attendance"
     __table_args__ = (
         UniqueConstraint("journey_id", "employee_id", "stage"),
-        CheckConstraint("stage BETWEEN 1 AND 5", name="stage_range"),
+        CheckConstraint("stage >= 1", name="stage_positive"),
     )
 
     employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    # Position in the journey's attendance plan (Journey.attendance_stages), 1 = Source.
     stage: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The station and stage name this record was taken at, as the plan had them (migration 0021). NULL on
+    # records taken before, and on legacy stages, which have no station.
+    station_code: Mapped[str | None] = mapped_column(String(8))
+    stage_label: Mapped[str | None] = mapped_column(String(140))
     photo_media_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("media_objects.id"), unique=True)
     group_submission_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     face_distance: Mapped[float | None] = mapped_column(Float)

@@ -7,6 +7,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, Timestamps, TZDateTime, UUIDPk, str_enum
 
+# The most intermediate attendance stations a train can ask for (Source and End come on top).
+MAX_ATTENDANCE_STATIONS = 50
+
 
 class CoachClass(StrEnum):
     AC = "AC"
@@ -23,7 +26,10 @@ class Train(UUIDPk, Timestamps, Base):
         CheckConstraint("inspection_rounds_per_day >= 1 AND inspection_rounds_per_day <= 20", name="rounds_range"),
         CheckConstraint("before_inspection_enabled OR after_inspection_enabled", name="some_phase_enabled"),
         CheckConstraint("arrival_days IS NULL OR (arrival_days >= 0 AND arrival_days <= 7)", name="arrival_days_range"),
-        # ---- passenger feedback configuration (migration 0020) ----
+        CheckConstraint(f"attendance_station_count IS NULL OR "
+                        f"(attendance_station_count >= 1 AND attendance_station_count <= {MAX_ATTENDANCE_STATIONS})",
+                        name="attendance_station_count_range"),
+        # ---- passenger feedback configuration (migration 0022) ----
         CheckConstraint("feedback_daily_target IS NULL OR (feedback_daily_target >= 1 AND feedback_daily_target <= 500)",
                         name="feedback_daily_target_range"),
         CheckConstraint("feedback_coach_daily_target IS NULL OR "
@@ -67,8 +73,16 @@ class Train(UUIDPk, Timestamps, Base):
     # The train that makes the return trip, kept as a train of the same division (journeys link it).
     return_train_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("trains.id", ondelete="SET NULL"))
     return_train: Mapped["Train | None"] = relationship(remote_side="Train.id", foreign_keys=[return_train_id])
+    # ---- station-wise attendance (migration 0021) ----
+    # The stations the train halts at, in running order, as RailRadar's schedule gives them:
+    # [{"code": "ADI", "name": "Ahmedabad Jn"}, ...]. None = not read yet.
+    route_stations: Mapped[list | None] = mapped_column(JSON)
+    # How many intermediate stations attendance is taken at, and which (route codes, kept in route order).
+    # Both None = not configured: journeys use the original five stages (services/trains.LEGACY_STAGES).
+    attendance_station_count: Mapped[int | None] = mapped_column(Integer)
+    attendance_station_codes: Mapped[list | None] = mapped_column(JSON)
 
-    # ---- passenger feedback configuration (migration 0020; app/services/feedback_plan.py) ----
+    # ---- passenger feedback configuration (migration 0022; app/services/feedback_plan.py) ----
     # Whether staff may collect passenger feedback on this train's journeys at all.
     feedback_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
     # Passenger feedback required on each journey day, the whole train together. None = no target.
@@ -87,7 +101,7 @@ class Train(UUIDPk, Timestamps, Base):
     # Configuration status. False: journeys carry no targets for this train (feedback may still be taken).
     feedback_targets_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
 
-    # ---- the timetable read from RailRadar (migration 0020; app/services/timetable.py) ----
+    # ---- the timetable read from RailRadar (migration 0022; app/services/timetable.py) ----
     schedule_status: Mapped[str | None] = mapped_column(String(10))  # ok | failed | rejected; None = never read
     schedule_synced_at: Mapped[datetime | None] = mapped_column(TZDateTime())   # last successful read
     schedule_checked_at: Mapped[datetime | None] = mapped_column(TZDateTime())  # last attempt
@@ -127,7 +141,7 @@ class TrainCoach(UUIDPk, Base):
 
 
 class TrainStop(UUIDPk, Base):
-    """One halt of a train's timetable, in route order (migration 0020). Only the stations the train stops
+    """One halt of a train's timetable, in route order (migration 0022). Only the stations the train stops
     at are kept, under RailRadar's route sequence number, so a station the route visits twice appears twice.
     `arrival_day` / `departure_day` count from the day the train leaves its first station (1): a run past
     midnight keeps its dates."""
@@ -168,7 +182,7 @@ class TrainStop(UUIDPk, Base):
 
 
 class TrainSyncRun(UUIDPk, Base):
-    """One attempt to read a train's timetable: the extraction log (migration 0020). outcome: updated (the
+    """One attempt to read a train's timetable: the extraction log (migration 0022). outcome: updated (the
     timetable changed and was saved), unchanged, failed (RailRadar could not be read; the timetable kept),
     rejected (read, but incomplete or inconsistent; the timetable kept)."""
 

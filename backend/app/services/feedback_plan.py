@@ -230,7 +230,7 @@ def refresh_for_trains(db: Session, train_ids, today: date | None = None) -> int
 
 def backfill(db: Session, today: date | None = None) -> int:
     """Legs and targets for every journey not yet ended that has none (journeys created before migration
-    0020, or by a path that did not plan them). Commits. Returns how many journeys were planned."""
+    0022, or by a path that did not plan them). Commits. Returns how many journeys were planned."""
     today = today or today_ist()
     no_targets = select(JourneyFeedbackTarget.journey_id)
     journeys = _journeys(db, Journey.end_date >= today, Journey.id.not_in(no_targets))

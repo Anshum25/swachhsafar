@@ -114,6 +114,13 @@ def refresh_one(train_id: uuid.UUID, db: Session = Depends(get_db), p: Principal
     return {**result, "timetable": timetable.timetable_out(db, train)}
 
 
+@router.post("/{train_id}/route", response_model=TrainOut)
+def refresh_route(train_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal),
+                  provider: TimetableProvider = Depends(get_timetable_provider)):
+    """Reads the train's stations, in running order, from its RailRadar schedule (for station-wise attendance)."""
+    return svc.refresh_route(db, p, train_id, provider)
+
+
 @coaches_router.get("", response_model=list[CoachOut])
 def list_coaches(train_id: uuid.UUID | None = None, journey_id: uuid.UUID | None = None,
                  db: Session = Depends(get_db), p: Principal = Depends(get_principal)):

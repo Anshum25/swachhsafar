@@ -132,7 +132,7 @@ class PassengerFeedback(GeoPoint, Timestamps, Base):
     completed_at: Mapped[datetime | None] = mapped_column(TZDateTime())
     collected_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    # ---- where the passenger travels (migration 0020) ----
+    # ---- where the passenger travels (migration 0022) ----
     # The leg of the journey the feedback day falls on: 1 outbound, 2 return, 3 both, None layover/unknown.
     direction: Mapped[int | None] = mapped_column(Integer)
     # The passenger's train: from the verified PNR, else the one train running that day (None if unknown).

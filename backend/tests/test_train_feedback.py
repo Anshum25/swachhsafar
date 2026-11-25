@@ -425,8 +425,9 @@ def test_master_and_timetable_changes_leave_history_alone(world, tt, fakes):
     ahead = _plan(world, later["id"])["legs"][0]["stops"]
     assert started[1]["arrival"] == "23:50" and ahead[1]["arrival"] == "23:40"  # under way: the route it is running
     after = world.client.get(f"{API}/feedback/passenger/{fb['id']}", headers=world.h("sup")).json()
-    assert {k: after[k] for k in ("status", "coach_code", "journey_day", "ratings")} == \
-        {k: kept[k] for k in ("status", "coach_code", "journey_day", "ratings")}
+    same = lambda fb: ({k: fb[k] for k in ("status", "coach_code", "journey_day")},  # noqa: E731
+                       sorted((r["question_id"], r["value"]) for r in fb["ratings"]))  # ratings come in no set order
+    assert same(after) == same(kept)
 
 
 # ---- Scenario 10: replays and backfill ---------------------------------------------------------------------------

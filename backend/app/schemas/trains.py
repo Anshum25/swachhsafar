@@ -5,9 +5,24 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from app.models import CoachClass
+from app.models.trains import MAX_ATTENDANCE_STATIONS
 from app.schemas.common import CoachCode, ReadModel, StrictModel
 
 FeedbackDays = Literal["all", "running"]
+
+
+class RouteStationOut(StrictModel):
+    code: str
+    name: str
+
+
+class AttendanceStageOut(StrictModel):
+    """One attendance stage of a journey (services/trains.attendance_plan)."""
+    stage: int
+    kind: str          # source | station | end; legacy stages: source | enroute | destination | end
+    label: str
+    station_code: str | None = None
+    station_name: str | None = None
 
 
 class CoachIn(StrictModel):
@@ -97,6 +112,20 @@ class TrainUpdate(StrictModel):
                 raise ValueError(f"{k} cannot be null")
         return self
 
+    # Station-wise attendance. Both null clears it (journeys go back to the five standard stages); otherwise
+    # exactly `attendance_station_count` distinct stations of the train's route, between its source and end.
+    attendance_station_count: int | None = Field(default=None, ge=1, le=MAX_ATTENDANCE_STATIONS)
+    attendance_station_codes: list[str] | None = Field(default=None, max_length=MAX_ATTENDANCE_STATIONS)
+
+    @field_validator("attendance_station_codes")
+    @classmethod
+    def _distinct_stations(cls, v):
+        if v is not None:
+            v = [str(c).strip().upper() for c in v]
+            if len(v) != len(set(v)):
+                raise ValueError("a station can be selected only once")
+        return v
+
 
 class CoachesReplace(StrictModel):
     coaches: list[CoachIn] = Field(min_length=1, max_length=40)
@@ -121,6 +150,9 @@ class TrainOut(ReadModel):
     after_inspection_enabled: bool
     is_active: bool
     coaches: list[CoachOut]
+    route_stations: list[RouteStationOut] | None = None
+    attendance_station_count: int | None = None
+    attendance_station_codes: list[str] | None = None
     updated_at: datetime
     # ---- route and timetable (RailRadar) ----
     origin_code: str | None = None

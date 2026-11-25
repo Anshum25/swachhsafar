@@ -179,3 +179,25 @@ def test_0018_moves_general_coaches_to_their_own_class(pg):
     with engine.connect() as conn:
         assert {c for (c,) in conn.exec_driver_sql("SELECT DISTINCT classification FROM train_coaches")} == {"AC", "NON_AC"}
     engine.dispose()
+
+
+def test_0020_gives_saved_coaches_the_class_their_code_now_says(pg):
+    server, url_for = pg
+    server.psql("DROP DATABASE IF EXISTS swachh_pre0020 WITH (FORCE);")
+    server.psql("CREATE DATABASE swachh_pre0020;")
+    url = url_for("swachh_pre0020")
+    run_migrations(url, "0019")
+    engine = create_engine(url)
+    train = uuid.uuid4()
+    with engine.begin() as conn:
+        conn.exec_driver_sql("SET session_replication_role = replica")  # coach rows without their train
+        for pos, (code, cls) in enumerate((("J1", "NON_AC"), ("G1", "NON_AC"), ("HB1", "NON_AC"), ("SLRD", "NON_AC"),
+                                           ("DV1", "AC"), ("BHJ", "AC"), ("B1", "AC")), 1):
+            conn.exec_driver_sql(
+                "INSERT INTO train_coaches (id, train_id, code, classification, position) "
+                f"VALUES ('{uuid.uuid4()}', '{train}', '{code}', '{cls}', {pos})")
+    run_migrations(url)
+    with engine.connect() as conn:
+        assert dict(conn.exec_driver_sql("SELECT code, classification FROM train_coaches").all()) == {
+            "J1": "AC", "G1": "AC", "HB1": "AC", "SLRD": "GEN", "DV1": "NON_AC", "BHJ": "AC", "B1": "AC"}
+    engine.dispose()
