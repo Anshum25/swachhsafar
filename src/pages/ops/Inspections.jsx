@@ -217,7 +217,7 @@ function InspectionRecords({ journey: j }) {
     <Panel title="Inspection records">
       <FilterBar>
         <Field label="Coach"><Select value={coach} onChange={filter(setCoach)} placeholder="All coaches" options={j.coaches.map((c) => ({ value: c.code, label: c.code }))} /></Field>
-        <Field label="Day"><Select value={day} onChange={filter(setDay)} placeholder="All days" options={Array.from({ length: j.operational_days }, (_, i) => ({ value: String(i + 1), label: `Day ${i + 1}` }))} /></Field>
+        <Field label="Day"><Select value={day} onChange={filter(setDay)} placeholder="All days" options={Array.from({ length: j.daywise ? j.operational_days : 1 }, (_, i) => ({ value: String(i + 1), label: `Day ${i + 1}` }))} /></Field>
         <Field label="Phase"><Select value={phase} onChange={filter(setPhase)} placeholder="Both" options={Object.entries(PHASES).map(([value, l]) => ({ value, label: l }))} /></Field>
         <Field label="Verification"><Select value={verification} onChange={filter(setVerification)} placeholder="Any" options={VERIFICATION} /></Field>
       </FilterBar>

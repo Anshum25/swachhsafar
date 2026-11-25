@@ -158,9 +158,8 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Train no." hint="e.g. 12951 or 12951 / 12952"><input className="input" required disabled={!!train} value={f.train_no} onChange={set('train_no')} /></Field>
         <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={set('name')} /></Field>
+        <Field label="Operational days" hint="Journey days (feedback runs on these)"><input type="number" min={1} max={30} className="input" value={f.operational_days} onChange={set('operational_days')} /></Field>
         <Field label="Duration (days)"><input type="number" min={0} max={15} className="input" value={f.duration_days} onChange={set('duration_days')} /></Field>
-        <Field label="Operational days"><input type="number" min={1} max={30} className="input" value={f.operational_days} onChange={set('operational_days')} /></Field>
-        <Field label="Inspection rounds / day"><input type="number" min={1} max={20} className="input" value={f.inspection_rounds_per_day} onChange={set('inspection_rounds_per_day')} /></Field>
         {TIMES.map(([k, label]) => (
           <Field key={k} label={label}><input type="time" className="input" value={f[k]} onChange={set(k)} /></Field>
         ))}
@@ -170,6 +169,17 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.after_inspection_enabled} onChange={set('after_inspection_enabled')} /> After inspection</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.daywise} onChange={set('daywise')} /> Day-wise</label>
       </div>
+      {f.daywise ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Number of days"><input type="number" min={1} max={30} required className="input" value={f.operational_days} onChange={set('operational_days')} /></Field>
+          <Field label="Inspections per day"><input type="number" min={1} max={20} required className="input" value={f.inspection_rounds_per_day} onChange={set('inspection_rounds_per_day')} /></Field>
+          <Field label="Total inspections" hint="Days × per day"><input className="input" disabled value={(f.operational_days || 0) * (f.inspection_rounds_per_day || 0)} /></Field>
+        </div>
+      ) : (
+        <Field label="Total inspections" hint="How many inspections to take in all.">
+          <input type="number" min={1} max={20} required className="input sm:w-1/2" value={f.inspection_rounds_per_day} onChange={set('inspection_rounds_per_day')} />
+        </Field>
+      )}
       <Field label="Coaches" hint="Comma separated, e.g. B1, B2, S1, GEN. The class comes from the code (H, A, B, M, G, C, E, J, K, EV … = AC; S, D, F, DV … = Non-AC; GEN, GS, UR, UNR, SLR … = General); write AC, NON-AC or GEN after a code to set it yourself.">
         <textarea className="input h-20 py-3" required value={f.coaches} onChange={set('coaches')} />
       </Field>

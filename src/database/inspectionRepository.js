@@ -22,6 +22,9 @@ const slot = (coach, day, round, phase) => `${coach}|${day}|${round}|${phase}`;
 
 export const enabledPhases = (j) => PHASES.filter((ph) => (ph === 'B' ? j.before_inspection_enabled : j.after_inspection_enabled));
 
+// Day-wise: rounds on each operational day. Otherwise the rounds are the journey's whole count, all on day 1.
+export const inspectionDays = (j) => (j.daywise ? j.operational_days : 1);
+
 export function dayIsOpen(j, day, today) {
   if (j.status === 'cancelled' || today < j.journey_date || today > j.end_date) return false;
   const current = journeyDayFor(j.journey_date, today);
@@ -69,7 +72,7 @@ export function createInspectionRepository(db, { journeys }) {
       const coach = await journeys.coach(journey.id, p.coach_code);
       if (!coach) throw new LocalRuleError('unknown_coach', 'This coach is not part of the journey.');
       const day = requireInt(p.day, 'day', 1, 30);
-      if (day > journey.operational_days) throw new LocalRuleError('day_out_of_range', `Day must be between 1 and ${journey.operational_days}.`);
+      if (day > inspectionDays(journey)) throw new LocalRuleError('day_out_of_range', `Day must be between 1 and ${inspectionDays(journey)}.`);
       if (!dayIsOpen(journey, day, capturedOn)) throw new LocalRuleError('day_not_open', 'Inspection for this day is not open at the capture time.');
       const round = requireInt(p.round, 'round', 1, 20);
       if (round > journey.inspection_rounds_per_day) {
@@ -128,7 +131,7 @@ export function createInspectionRepository(db, { journeys }) {
       const { taken, pending } = await slots(journey.id);
       const out = [];
       for (const coach of journey.coaches) {
-        for (let day = 1; day <= journey.operational_days; day += 1) {
+        for (let day = 1; day <= inspectionDays(journey); day += 1) {
           const open = dayIsOpen(journey, day, today);
           const cells = inspectionCells(journey, coach.code, day, open, taken, pending);
           out.push({

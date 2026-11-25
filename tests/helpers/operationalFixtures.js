@@ -29,7 +29,7 @@ export function journeyOut(id, journeyDate, endDate, extra = {}) {
     id, division_id: IDS.division, train_id: IDS.train, train_no: '12951', train_name: 'Mumbai Rajdhani', linked_train_id: IDS.linkedTrain,
     linked_train_no: '12952', journey_date: journeyDate, outbound_end_date: journeyDate, linked_journey_date: endDate, end_date: endDate,
     start_time: '16:30:00', end_time: '08:30:00', return_start_time: null, return_end_time: null, duration_days: 1, operational_days: 2,
-    daywise: false, inspection_rounds_per_day: 2, before_inspection_enabled: true, after_inspection_enabled: true,
+    daywise: true, inspection_rounds_per_day: 2, before_inspection_enabled: true, after_inspection_enabled: true,
     supervisor_id: IDS.supervisor, supervisor_name: 'Ravi Kumar', created_by_id: IDS.supervisor, state: 'active', cancel_reason: null,
     cancelled_at: null, version: 1, coaches, updated_at: '2026-11-01T00:00:00Z',
     staff: [staffRow(id, 1, IDS.janitor1, 'Sunita Devi'), staffRow(id, 2, IDS.janitor2, 'Mohan Lal')],
@@ -41,7 +41,7 @@ export function journeyOut(id, journeyDate, endDate, extra = {}) {
 export function changesFixture(today = '2026-11-04') {
   const train = (id, no, extra = {}) => ({
     id, division_id: IDS.division, train_no: no, name: `Train ${no}`, duration_days: 1, operational_days: 2, start_time: null, end_time: null,
-    return_start_time: null, return_end_time: null, daywise: false, inspection_rounds_per_day: 2, before_inspection_enabled: true,
+    return_start_time: null, return_end_time: null, daywise: true, inspection_rounds_per_day: 2, before_inspection_enabled: true,
     after_inspection_enabled: true, is_active: true, coaches, updated_at: '2026-10-01T00:00:00Z', ...extra,
   });
   const q = (id, position, extra = {}) => ({

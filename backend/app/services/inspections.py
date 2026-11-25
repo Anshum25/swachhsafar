@@ -22,6 +22,11 @@ def enabled_phases(j: Journey) -> list[InspectionPhase]:
                               (InspectionPhase.AFTER, j.after_inspection_enabled)) if on]
 
 
+def inspection_days(j) -> int:
+    """Day-wise: rounds on each operational day. Otherwise the rounds are the journey's whole count, all on day 1."""
+    return j.operational_days if j.daywise else 1
+
+
 def day_is_open(j: Journey, day: int, today) -> bool:
     current = journey_day_for(j, today)
     return current == day if j.daywise else 1 <= day <= current
@@ -42,8 +47,8 @@ def create(db: Session, p: Principal, body: InspectionIn, *, sync_op_id: uuid.UU
 
     if body.coach_code not in {c.code for c in j.coaches}:
         raise BusinessRuleViolation("Coach is not part of this journey", code="unknown_coach")
-    if body.day > j.operational_days:
-        raise BusinessRuleViolation(f"Day must be between 1 and {j.operational_days}", code="day_out_of_range")
+    if body.day > inspection_days(j):
+        raise BusinessRuleViolation(f"Day must be between 1 and {inspection_days(j)}", code="day_out_of_range")
     if not day_is_open(j, body.day, captured_on):
         raise BusinessRuleViolation("Inspection for this day is not open at the capture time", code="day_not_open")
     if body.round > j.inspection_rounds_per_day:
@@ -124,7 +129,7 @@ def journey_grid(db: Session, p: Principal, journey_id: uuid.UUID) -> list[dict]
     today = today_ist()
     out = []
     for coach in j.coaches:
-        for day in range(1, j.operational_days + 1):
+        for day in range(1, inspection_days(j) + 1):
             open_ = j.status == "planned" and j.journey_date <= today <= j.end_date and day_is_open(j, day, today)
             cells = []
             for rnd in range(1, j.inspection_rounds_per_day + 1):

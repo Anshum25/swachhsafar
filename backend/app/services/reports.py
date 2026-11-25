@@ -76,7 +76,7 @@ def journey_summary(db: Session, p: Principal, journey_id: uuid.UUID) -> dict:
         .having(func.count(distinct(Attendance.stage)) == stage_count).subquery()))
     coaches = db.scalar(select(func.count()).where(JourneyCoach.journey_id == jid))
     phases = int(j.before_inspection_enabled) + int(j.after_inspection_enabled)
-    required = coaches * j.operational_days * j.inspection_rounds_per_day * phases
+    required = coaches * (j.operational_days if j.daywise else 1) * j.inspection_rounds_per_day * phases
     done = db.scalar(select(func.count()).where(Inspection.journey_id == jid))
     fb = dict(db.execute(select(PassengerFeedback.status, func.count()).where(PassengerFeedback.journey_id == jid)
                          .group_by(PassengerFeedback.status)).all())
@@ -134,7 +134,7 @@ def attendance_report(db: Session, p: Principal, *, division_id, date_from: date
 
 def inspection_report(db: Session, p: Principal, *, division_id, date_from: date, date_to: date, coach_wise: bool) -> list[dict]:
     divisions = _divisions(p, division_id)
-    per_coach = Journey.operational_days * Journey.inspection_rounds_per_day * (
+    per_coach = case((Journey.daywise, Journey.operational_days), else_=1) * Journey.inspection_rounds_per_day * (
         cast(Journey.before_inspection_enabled, Integer) + cast(Journey.after_inspection_enabled, Integer))
     done = (select(Inspection.journey_id, Inspection.coach_code, func.count().label("done"),
                    func.count().filter(Inspection.verification_status == VerificationStatus.VERIFIED).label("verified"),

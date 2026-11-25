@@ -43,8 +43,13 @@ def test_report_parity_dataset(world, fakes, db):
     today = today_ist()
 
     # ---- masters: second train, complaint categories, inventory items ----
-    train2 = world.create_train(train_no="12002")
-    train3 = world.create_train(train_no="12003")
+    # Day-wise, so inspections are required on each operational day (the shared fixture expects this).
+    from app.models import Journey, Train
+    db.execute(update(Train).values(daywise=True))
+    db.execute(update(Journey).values(daywise=True))
+    db.commit()
+    train2 = world.create_train(train_no="12002", daywise=True)
+    train3 = world.create_train(train_no="12003", daywise=True)
     j1 = world.journey
     j2 = world.create_journey(staff=["jan2"], train=train2)
     j3 = world.create_journey(staff=["jan"], train=train3)
