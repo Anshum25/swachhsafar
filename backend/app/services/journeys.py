@@ -177,6 +177,8 @@ def _allocate(db: Session, j: Journey, user: User, actor_id: uuid.UUID) -> Staff
 
 
 def create_journey(db: Session, p: Principal, body: JourneyCreate) -> Journey:
+    from app.services import trains as _trains  # trains imports this module
+
     p.require("journeys.manage", body.division_id)
     train = _train(db, body.train_id, body.division_id, "Train")
     if body.linked_train_id is not None:
@@ -206,6 +208,7 @@ def create_journey(db: Session, p: Principal, body: JourneyCreate) -> Journey:
         duration_days=train.duration_days, operational_days=train.operational_days, daywise=train.daywise,
         inspection_rounds_per_day=train.inspection_rounds_per_day,
         before_inspection_enabled=train.before_inspection_enabled, after_inspection_enabled=train.after_inspection_enabled,
+        attendance_stages=_trains.attendance_plan(train),
         supervisor_id=supervisor.id, created_by_id=p.id, status=JourneyStatus.PLANNED, coaches=_coach_rows(coaches),
     )
     db.add(j)
@@ -368,6 +371,8 @@ def _check_version(j: Journey, version: int) -> None:
 
 
 def to_out(j: Journey) -> dict:
+    from app.services import trains as _trains  # trains imports this module
+
     return dict(
         id=j.id, division_id=j.division_id, train_id=j.train_id, train_no=j.train.train_no, train_name=j.train.name,
         linked_train_id=j.linked_train_id, linked_train_no=j.linked_train.train_no if j.linked_train else None,
@@ -379,5 +384,5 @@ def to_out(j: Journey) -> dict:
         supervisor_id=j.supervisor_id, supervisor_name=j.supervisor.name if j.supervisor else None,
         created_by_id=j.created_by_id, auto_created=j.auto_created, charged=j.charged,
         state=journey_state(j), cancel_reason=j.cancel_reason, cancelled_at=j.cancelled_at, version=j.version,
-        coaches=j.coaches, updated_at=j.updated_at,
+        coaches=j.coaches, attendance_stages=_trains.stages_of(j), updated_at=j.updated_at,
     )

@@ -35,6 +35,7 @@ from app.models import (
 from app.security.principal import Principal
 from app.sqlcompat import date_text, hours_between, ist_date_text
 from app.services.journeys import get_journey, journey_state, state_clause
+from app.services.trains import stages_of
 from app.timeutil import IST, today_ist, utcnow
 
 COUNTED = (PassengerFeedbackStatus.VERIFIED, PassengerFeedbackStatus.COMPLETED)
@@ -69,9 +70,10 @@ def journey_summary(db: Session, p: Principal, journey_id: uuid.UUID) -> dict:
     jid = j.id
     staff = db.scalar(select(func.count()).where(StaffAllocation.journey_id == jid, StaffAllocation.removed_at.is_(None)))
     by_stage = dict(db.execute(select(Attendance.stage, func.count()).where(Attendance.journey_id == jid).group_by(Attendance.stage)).all())
+    stage_count = len(stages_of(j))
     full = db.scalar(select(func.count()).select_from(
         select(Attendance.employee_id).where(Attendance.journey_id == jid).group_by(Attendance.employee_id)
-        .having(func.count(distinct(Attendance.stage)) == 5).subquery()))
+        .having(func.count(distinct(Attendance.stage)) == stage_count).subquery()))
     coaches = db.scalar(select(func.count()).where(JourneyCoach.journey_id == jid))
     phases = int(j.before_inspection_enabled) + int(j.after_inspection_enabled)
     required = coaches * j.operational_days * j.inspection_rounds_per_day * phases
@@ -88,7 +90,7 @@ def journey_summary(db: Session, p: Principal, journey_id: uuid.UUID) -> dict:
     inv = db.scalar(select(func.count()).where(InventoryTransaction.journey_id == jid))
     return dict(
         journey_id=jid, state=journey_state(j).value, staff_allocated=staff, attendance_records=sum(by_stage.values()),
-        attendance_by_stage={s: by_stage.get(s, 0) for s in range(1, 6)}, staff_fully_attended=full,
+        attendance_by_stage={s: by_stage.get(s, 0) for s in range(1, stage_count + 1)}, staff_fully_attended=full,
         inspections_required=required, inspections_done=done,
         inspection_completion_pct=round(100 * done / required, 2) if required else None,
         passenger_feedback_counted=sum(fb.get(s, 0) for s in COUNTED),

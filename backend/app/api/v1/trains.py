@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.errors import BusinessRuleViolation
+from app.providers.railradar import TimetableProvider, get_timetable_provider
 from app.schemas.common import Page, PageParams
 from app.schemas.trains import CoachesReplace, CoachOut, TrainCreate, TrainOut, TrainUpdate
 from app.security.principal import Principal, get_principal
@@ -40,6 +41,13 @@ def update_train(train_id: uuid.UUID, body: TrainUpdate, db: Session = Depends(g
 @router.put("/{train_id}/coaches", response_model=TrainOut)
 def replace_coaches(train_id: uuid.UUID, body: CoachesReplace, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return svc.replace_coaches(db, p, train_id, body)
+
+
+@router.post("/{train_id}/route", response_model=TrainOut)
+def refresh_route(train_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal),
+                  provider: TimetableProvider = Depends(get_timetable_provider)):
+    """Reads the train's stations, in running order, from its RailRadar schedule (for station-wise attendance)."""
+    return svc.refresh_route(db, p, train_id, provider)
 
 
 @coaches_router.get("", response_model=list[CoachOut])

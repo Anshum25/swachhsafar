@@ -1,17 +1,19 @@
-// Five-stage staff attendance (1 Source, 2 Enroute 1, 3 Destination, 4 Enroute 2, 5 End).
+// Staff attendance by stage. A journey's stages are its own (journeys.attendance_stages): Source, the
+// train's configured attendance stations in route order, End -- or the original five stages when the train
+// has no station-wise configuration (utils/attendanceStages.js).
 // Rules: the employee must be allocated to the journey, stages are recorded in order, and each stage
 // at most once. Order and uniqueness are also enforced by trg_attendance_stage_order and
 // idx_attendance_slot, so two concurrent captures cannot both succeed.
 import { LocalRuleError } from './errors.js';
 import { requireCaptureWindow, requireDeviceTimestamp, requireGps, requireInt, requireUuid } from './captureRules.js';
 import { insertStatement, placeholders } from './sqlHelpers.js';
-
-export const STAGE_COUNT = 5;
+import { stagesOf } from '../utils/attendanceStages.js';
 
 // A local row in the shape of the backend AttendanceOut, plus where it stands between device and server.
 // Rows stored from a server status grid carry only their slot; their details stay on the server.
 export const attendanceOut = (r) => ({
   id: r.id, journey_id: r.journey_id, division_id: r.division_id, employee_id: r.employee_id, stage: r.stage,
+  station_code: r.station_code ?? null, stage_label: r.stage_label ?? null,
   device_timestamp: r.device_timestamp, server_timestamp: r.server_timestamp, latitude: r.latitude, longitude: r.longitude,
   gps_accuracy_m: r.gps_accuracy_m, photo_media_id: r.photo_media_id, group_submission_id: r.group_submission_id ?? null, identified_by: r.identified_by ?? null, created_by_id: r.recorded_by_id,
   verification_status: r.verification_status, verified_by_id: null, review_remarks: null,
@@ -34,24 +36,22 @@ export function nextStageFor(row, extraDone = () => false) {
 
 const LIVE = "sync_status NOT IN ('rejected', 'conflict')";
 
-// Cell states for one employee. `taken` = acknowledged by the server, `pending` = saved on this device.
-export function attendanceCells(taken, pending) {
-  const has = (s) => taken.has(s) || pending.has(s);
-  let next = null;
-  for (let s = 1; s <= STAGE_COUNT; s += 1) {
-    if (!has(s)) {
-      next = s;
-      break;
-    }
-  }
+// The stage descriptors of a status row's cells (they carry the journey's stage list).
+const planOf = (cells) => cells.map(({ stage, kind = null, label = null, station_code = null, station_name = null }) => ({
+  stage, kind, label, station_code, station_name,
+}));
+
+// Cell states for one employee over the journey's stages. `taken` = acknowledged by the server,
+// `pending` = saved on this device. Each cell keeps its stage's name and station.
+export function attendanceCells(plan, taken, pending) {
+  const next = plan.find((s) => !taken.has(s.stage) && !pending.has(s.stage))?.stage ?? null;
   return {
-    stages: Array.from({ length: STAGE_COUNT }, (_, i) => {
-      const stage = i + 1;
-      if (taken.has(stage)) return { stage, status: 'taken', attendance_id: taken.get(stage) };
-      if (pending.has(stage)) return { stage, status: 'pending', attendance_id: pending.get(stage) };
-      return { stage, status: stage === next ? 'next' : 'locked', attendance_id: null };
+    stages: plan.map((s) => {
+      if (taken.has(s.stage)) return { ...s, status: 'taken', attendance_id: taken.get(s.stage) };
+      if (pending.has(s.stage)) return { ...s, status: 'pending', attendance_id: pending.get(s.stage) };
+      return { ...s, status: s.stage === next ? 'next' : 'locked', attendance_id: null };
     }),
-    completed: next === null && [...pending.keys()].every((s) => taken.has(s)),
+    completed: next === null && [...pending.keys()].every((st) => taken.has(st)),
   };
 }
 
@@ -69,10 +69,17 @@ export function createAttendanceRepository(db, { journeys, masters }) {
       requireUuid(p.id, 'id');
       requireUuid(p.journey_id, 'journey_id');
       requireUuid(p.employee_id, 'employee_id');
-      const stage = requireInt(p.stage, 'stage', 1, STAGE_COUNT);
       const capturedOn = requireDeviceTimestamp(p.device_timestamp, nowMs);
       const gps = requireGps(p);
       const journey = await journeys.get(p.journey_id, today);
+      const plan = stagesOf(journey);
+      const stage = requireInt(p.stage, 'stage', 1, plan.length);
+      const planned = plan[stage - 1];
+      // Backend attendance.create: the station the screen showed must still be this stage's station.
+      if (p.station_code != null && p.station_code !== (planned.station_code ?? '')) {
+        throw new LocalRuleError('attendance_plan_changed',
+          `This journey's attendance stations have changed: stage ${stage} is now ${planned.label}. Capture again.`);
+      }
       requireCaptureWindow(journey, capturedOn);
       if (!(await journeys.isAllocated(journey.id, p.employee_id))) {
         throw new LocalRuleError('not_allocated', 'This employee is not allocated to the journey.');
@@ -130,6 +137,8 @@ export function createAttendanceRepository(db, { journeys, masters }) {
       }
       const row = {
         id: p.id, journey_id: journey.id, division_id: journey.division_id, employee_id: p.employee_id, stage, ...gps,
+        // The station and stage name it was taken at (a legacy stage has no station).
+        ...(planned.station_code ? { station_code: planned.station_code, stage_label: planned.label } : {}),
         device_timestamp: p.device_timestamp, captured_on: capturedOn, photo_media_id: p.photo_media_id ?? null,
         recorded_by_id: actor?.id ?? null,
         // Written only when they carry something, so an ordinary capture inserts the same columns as before.
@@ -145,6 +154,7 @@ export function createAttendanceRepository(db, { journeys, masters }) {
     serverStatements(journey, statusRows, now) {
       return statusRows.flatMap((r) => r.stages.filter((c) => c.status === 'taken' && c.attendance_id).map((c) => insertStatement('attendance_records', {
         id: c.attendance_id, journey_id: journey.id, division_id: journey.division_id, employee_id: r.employee_id, stage: c.stage,
+        ...(c.station_code ? { station_code: c.station_code, stage_label: c.label ?? null } : {}),
         origin: 'server', sync_status: 'synced', synced_at: now, created_at: now, updated_at: now,
       }, { orIgnore: true })));
     },
@@ -181,15 +191,17 @@ export function createAttendanceRepository(db, { journeys, masters }) {
 
     // Same shape as GET /attendance/journeys/{id}/status, plus 'pending' cells for unsynced records.
     async journeyStatus(journeyId) {
-      const [staff, records] = await Promise.all([
+      const [staff, records, [journey]] = await Promise.all([
         journeys.activeStaff(journeyId),
         db.query(`SELECT id, employee_id, stage, sync_status FROM attendance_records WHERE journey_id = ? AND ${LIVE}`, [journeyId]),
+        db.query('SELECT attendance_stages FROM journeys WHERE id = ?', [journeyId]),
       ]);
+      const plan = stagesOf(journey);
       return staff.map((s) => {
         const mine = records.filter((r) => r.employee_id === s.user_id);
         const taken = new Map(mine.filter((r) => r.sync_status === 'synced').map((r) => [r.stage, r.id]));
         const pending = new Map(mine.filter((r) => r.sync_status === 'pending').map((r) => [r.stage, r.id]));
-        return { employee_id: s.user_id, name: s.name, emp_id: s.emp_id, role_id: s.role_id, ...attendanceCells(taken, pending) };
+        return { employee_id: s.user_id, name: s.name, emp_id: s.emp_id, role_id: s.role_id, ...attendanceCells(plan, taken, pending) };
       });
     },
 
@@ -200,7 +212,7 @@ export function createAttendanceRepository(db, { journeys, masters }) {
       return rows.map((r) => {
         const taken = new Map(r.stages.filter((c) => c.status === 'taken').map((c) => [c.stage, c.attendance_id]));
         const mine = new Map(pending.filter((p) => p.employee_id === r.employee_id && !taken.has(p.stage)).map((p) => [p.stage, p.id]));
-        return mine.size ? { ...r, ...attendanceCells(taken, mine) } : r;
+        return mine.size ? { ...r, ...attendanceCells(planOf(r.stages), taken, mine) } : r;
       });
     },
 

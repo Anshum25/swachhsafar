@@ -41,6 +41,7 @@ from app.security.principal import Principal
 from app.services.clients import charge_journey
 from app.services.common import audit, get_or_404
 from app.services.journeys import derive_dates
+from app.services.trains import attendance_plan, set_route
 from app.timeutil import utcnow
 
 PLAN_DAYS = 3
@@ -299,6 +300,7 @@ def _apply_run(train: Train, run: TrainRun) -> None:
     train.origin_code = run.origin_code or train.origin_code
     train.destination_code = run.destination_code or train.destination_code
     train.destination_name = run.destination_name or train.destination_name
+    set_route(train, run.route)
 
 
 def _link_return(db: Session, provider: TimetableProvider, train: Train, run: TrainRun) -> None:
@@ -437,6 +439,7 @@ def plan_journeys(db: Session, *, today: date, client_id: uuid.UUID | None = Non
                 inspection_rounds_per_day=train.inspection_rounds_per_day,
                 before_inspection_enabled=train.before_inspection_enabled,
                 after_inspection_enabled=train.after_inspection_enabled,
+                attendance_stages=attendance_plan(train),
                 supervisor_id=None, created_by_id=None, status=JourneyStatus.PLANNED, auto_created=True,
                 charged=True,
                 coaches=[JourneyCoach(code=c.code, classification=c.classification, position=c.position)

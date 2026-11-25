@@ -136,6 +136,33 @@ class TrainRun:
     run_days: tuple[str, ...] | None
     return_train_no: str | None
     coaches: tuple[Coach, ...]
+    # The stations it halts at, in running order: ((code, name), ...). Empty when the page lists none.
+    route: tuple[tuple[str, str], ...] = ()
+
+
+def route_stations(route: list) -> tuple[tuple[str, str], ...]:
+    """The halting stations of a schedule's `route`, in order, each once. A stop names its station either
+    as a nested object ({"station": {"code", "name"}}) or flat ("stationCode"/"stationName", "code"/"name");
+    stops the train runs through without halting (isHalt false) are left out, as nobody can board there."""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    ordered = sorted((s for s in route if isinstance(s, dict)),
+                     key=lambda s: s.get("sequence") if isinstance(s.get("sequence"), int) else 0)
+    for i, stop in enumerate(ordered):
+        if stop.get("isHalt") is False and 0 < i < len(ordered) - 1:
+            continue
+        nested = stop.get("station") if isinstance(stop.get("station"), dict) else {}
+        code = nested.get("code") or stop.get("stationCode") or stop.get("code")
+        name = nested.get("name") or stop.get("stationName") or stop.get("name")
+        try:
+            code = normalize_code(code) if _text(str(code or "")) else None
+        except RailRadarError:
+            code = None
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        out.append((code, (_text(name) or code)[:120]))
+    return tuple(out)
 
 
 def parse_train_run(html: str, train_no: str) -> TrainRun:
@@ -175,7 +202,7 @@ def parse_train_run(html: str, train_no: str) -> TrainRun:
         departure=hhmm(first.get("departure")), arrival=hhmm(last.get("arrival")),
         arrival_days=max(day(last.get("arrivalDay")) - day(first.get("departureDay")), 0),
         run_days=run_days, return_train_no=back if TRAIN_NO_RE.match(back) and back != train_no else None,
-        coaches=tuple(coaches_from_position(position)))
+        coaches=tuple(coaches_from_position(position)), route=route_stations(route))
 
 
 def parse_train_composition(html: str, train_no: str) -> list[Coach]:
