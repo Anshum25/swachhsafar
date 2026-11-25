@@ -98,7 +98,7 @@ export function createLocalReports(db) {
     const doneOf = new Map(done.map((d) => [`${d.journey_id}:${d.coach_code}`, d]));
     const out = [];
     for (const j of journeys) {
-      const required = j.operational_days * j.inspection_rounds_per_day * (Number(!!j.before_inspection_enabled) + Number(!!j.after_inspection_enabled));
+      const required = (j.daywise ? j.operational_days : 1) * j.inspection_rounds_per_day * (Number(!!j.before_inspection_enabled) + Number(!!j.after_inspection_enabled));
       const rows = coaches.filter((c) => c.journey_id === j.id).map((c) => {
         const d = doneOf.get(`${j.id}:${c.code}`);
         return { coach_code: c.code, required, done: d?.done ?? 0, verified: d?.verified ?? 0, rejected: d?.rejected ?? 0 };

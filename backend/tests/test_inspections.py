@@ -38,10 +38,9 @@ def test_duplicate_and_unknown_coach(world):
     assert r.status_code == 422 and r.json()["error"]["code"] == "unknown_coach"
 
 
-def test_future_day_not_open(world):
+def test_not_daywise_has_one_day(world):
+    # Not day-wise: the rounds are the journey's whole count, all taken against day 1.
     r = inspect(world, day=2)
-    assert r.status_code == 422 and r.json()["error"]["code"] == "day_not_open"
-    r = inspect(world, day=3)
     assert r.status_code == 422 and r.json()["error"]["code"] == "day_out_of_range"
 
 
@@ -77,11 +76,10 @@ def test_grid_and_completion(world):
     assert (b1d1["required"], b1d1["done"], b1d1["day_open"]) == (4, 2, True)
     statuses = {(c["round"], c["phase"]): c["status"] for c in b1d1["cells"]}
     assert statuses == {(1, "B"): "taken", (1, "A"): "taken", (2, "B"): "open", (2, "A"): "open"}
-    d2 = next(g for g in grid if g["coach_code"] == "B1" and g["day"] == 2)
-    assert d2["day_open"] is False and {c["status"] for c in d2["cells"]} == {"locked"}
+    assert not any(g["day"] == 2 for g in grid)
     summary = world.client.get(f"/api/v1/journeys/{world.journey['id']}/summary", headers=world.h("manager")).json()
-    assert summary["inspections_required"] == 2 * 2 * 2 * 2 and summary["inspections_done"] == 2
-    assert summary["inspection_completion_pct"] == 12.5
+    assert summary["inspections_required"] == 2 * 2 * 2 and summary["inspections_done"] == 2  # coaches x rounds x phases
+    assert summary["inspection_completion_pct"] == 25.0
 
 
 def test_daywise_only_current_day(world):

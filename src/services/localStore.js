@@ -365,7 +365,7 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
         perStaff[a.employee_id] = (perStaff[a.employee_id] ?? 0) + 1;
       }
       const phases = Number(j.before_inspection_enabled) + Number(j.after_inspection_enabled);
-      const required = j.coaches.length * j.operational_days * j.inspection_rounds_per_day * phases;
+      const required = j.coaches.length * (j.daywise ? j.operational_days : 1) * j.inspection_rounds_per_day * phases;
       const fb = Object.fromEntries(pf.map((r) => [r.status, r.n]));
       return {
         journey_id: j.id, state: j.state, staff_allocated: staff.length, attendance_records: att.length, attendance_by_stage: byStage,
