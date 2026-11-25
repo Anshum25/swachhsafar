@@ -132,7 +132,7 @@ describe('station-wise attendance (offline store)', () => {
     await db.run('PRAGMA foreign_keys = OFF');
     await db.run(`INSERT INTO attendance_records (id, journey_id, division_id, employee_id, stage, origin, sync_status, created_at, updated_at)
       VALUES ('old-1', 'j', 'd', 'e', 5, 'server', 'synced', 't', 't')`);
-    expect(await runMigrations(db)).toMatchObject({ from: 16, to: 18, applied: [17, 18] });
+    expect(await runMigrations(db)).toMatchObject({ from: 16, to: 19, applied: [17, 18, 19] });
     expect(await db.query("SELECT stage, station_code, stage_label FROM attendance_records WHERE id = 'old-1'"))
       .toEqual([{ stage: 5, station_code: null, stage_label: null }]);
     await db.run(`INSERT INTO attendance_records (id, journey_id, division_id, employee_id, stage, origin, sync_status, created_at, updated_at)
