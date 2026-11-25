@@ -794,4 +794,31 @@ const V15 = {
   },
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15];
+// v16: more coach codes are known (Railway Board Commercial Circular 07 of 2021): Garib Rath G (3A) and J (chair
+// car) and HB, AB are AC; DV, VS, FC are Non-AC; UNR and the SLR / SLRD / SR / SRD / LRD / PWD / LDS coaches are
+// General. Coaches on trains and journeys get the class their code now says, as on the server (backend 0020).
+// The rules are frozen here (src/utils/coaches.js inferClass is the live copy).
+const v16ClassOf = (code) => {
+  const c = String(code ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!c || /^(ENG|LOCO|PC|EOG|PWR|LPR|LUG|LV|PV|VP|VPU|HCP|TM|LR)\d*$/.test(c)) return null;
+  if (/^(GEN|GS|GN|UR|UNR|SLR|SLRD|SR|SRD|LRD|PWD|LDS)\d*$/.test(c)) return 'GEN';
+  if (/^(H|HA|HB|A|AB|B|M|G|C|E|J|K|EA|EV)\d*$/.test(c)) return 'AC';
+  if (/^(S|D|SS|F|FC|DV|VS)\d*$/.test(c)) return 'NON_AC';
+  return null;
+};
+async function v16Corrections(db, table, owner) {
+  const rows = await db.query(`SELECT ${owner} AS owner, code, classification FROM ${table}`);
+  return rows.filter((r) => v16ClassOf(r.code) && v16ClassOf(r.code) !== r.classification).map((r) => ({
+    sql: `UPDATE ${table} SET classification = ? WHERE ${owner} = ? AND code = ?`,
+    params: [v16ClassOf(r.code), r.owner, r.code],
+  }));
+}
+const V16 = {
+  version: 16,
+  name: 'all coach codes',
+  async prepare(db) {
+    return [...await v16Corrections(db, 'train_coaches', 'train_id'), ...await v16Corrections(db, 'journey_coaches', 'journey_id')];
+  },
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16];

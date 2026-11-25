@@ -401,14 +401,19 @@ def _train_page(position):
 def test_coaches_are_read_from_the_coach_position():
     got = coaches_from_position("ENG-SLRD-GEN-GEN-S2-S1-H1-A1-B2-B1-M1-PC-EOG-GEN-LPR")
     assert [(c.code, c.classification) for c in got] == [
-        ("GEN", "GEN"), ("GEN2", "GEN"), ("S2", "NON_AC"), ("S1", "NON_AC"), ("H1", "AC"), ("A1", "AC"),
-        ("B2", "AC"), ("B1", "AC"), ("M1", "AC"), ("GEN3", "GEN")]
-    assert coaches_from_position("ENG-SLR-LPR") == []
+        ("SLRD", "GEN"), ("GEN", "GEN"), ("GEN2", "GEN"), ("S2", "NON_AC"), ("S1", "NON_AC"), ("H1", "AC"),
+        ("A1", "AC"), ("B2", "AC"), ("B1", "AC"), ("M1", "AC"), ("GEN3", "GEN")]
+    # Garib Rath, Anubhuti, mixed AC, Vistadome and the service coaches of other rakes.
+    got = coaches_from_position("LOCO-SLR-G1-G2-J1-K1-HB1-AB1-EV1-DV1-UNR-DL1-PWR-LUG-VPU-HCP-TM-LR-LRD-PWD")
+    assert [(c.code, c.classification) for c in got] == [
+        ("SLR", "GEN"), ("G1", "AC"), ("G2", "AC"), ("J1", "AC"), ("K1", "AC"), ("HB1", "AC"), ("AB1", "AC"),
+        ("EV1", "AC"), ("DV1", "NON_AC"), ("UNR", "GEN"), ("DL1", "NON_AC"), ("LRD", "GEN"), ("PWD", "GEN")]
+    assert coaches_from_position("ENG-LPR-PC-EOG") == []  # service coaches only: nothing to inspect
 
 
 def test_the_train_status_page_gives_the_coaches():
     got = parse_train_composition(_train_page("ENG-SLRD-GEN-S1-B1-LPR"), "12189")
-    assert got == [Coach("GEN", "GEN"), Coach("S1", "NON_AC"), Coach("B1", "AC")]
+    assert got == [Coach("SLRD", "GEN"), Coach("GEN", "GEN"), Coach("S1", "NON_AC"), Coach("B1", "AC")]
     with pytest.raises(RailRadarError) as exc:
         parse_train_composition("<html><title>Just a moment...</title>cf-chl</html>", "12189")
     assert exc.value.kind == "blocked"
