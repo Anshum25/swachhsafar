@@ -1,5 +1,5 @@
-// A journey's attendance stages (backend services/trains.attendance_plan): Source, the train's configured
-// attendance stations in route order, End. A train with no station-wise configuration -- and every journey
+// A journey's attendance stages (backend services/trains.attendance_plan): the train's configured attendance
+// stations in route order, or a configured number of numbered stages. A train with no station-wise configuration -- and every journey
 // synced before it existed -- has the original five stages, so old records keep reading as they did.
 
 export const LEGACY_STAGES = Object.freeze([
@@ -46,10 +46,9 @@ export function stageCaption(s) {
   return LEGACY_SHORT[s.kind] ?? s.label;
 }
 
-// A train's selectable attendance stations: its route between the first and last station.
+// A train's selectable attendance stations: every station of its route, first and last included.
 export function selectableStations(route) {
-  const r = (parse(route) ?? []).filter((s) => s?.code);
-  return r.slice(1, -1);
+  return (parse(route) ?? []).filter((s) => s?.code);
 }
 
 // Codes in route order, each once, only those on the route.
@@ -70,7 +69,7 @@ export function attendanceConfigError({ enabled, count, codes, route }) {
   if (!enabled) return null;
   const available = selectableStations(route).length;
   if (!available) return "Load the train's route to choose stations.";
-  if (n > available) return `The route has only ${available} stations between its source and end.`;
+  if (n > available) return `The route has only ${available} stations.`;
   if (new Set(codes).size !== codes.length) return 'A station can be selected only once.';
   if (inRouteOrder(route, codes).length !== codes.length) return "Selected stations must be on this train's route.";
   if (codes.length !== n) return `Select exactly ${n} stations (${codes.length} selected).`;

@@ -1,5 +1,5 @@
 // Station-wise attendance on the device: a journey's stages come from its train's attendance configuration
-// (JourneyOut.attendance_stages) -- Source, the chosen stations in route order, End -- and work offline
+// (JourneyOut.attendance_stages) -- exactly the chosen stations, in route order -- and work offline
 // exactly as the five standard stages did. Runs on a real local SQLite store.
 import { describe, expect, it } from 'vitest';
 import { IDS, actorFor, attendancePayload, changesFixture, journeyOut, seededStore } from '../helpers/operationalFixtures.js';
@@ -19,9 +19,7 @@ const name = Object.fromEntries(ROUTE.map((r) => [r.code, r.name]));
 // The backend's attendance_plan for these stations.
 function plan(codes) {
   return [
-    { kind: 'source', label: 'Source – Ahmedabad Jn', station_code: 'ADI', station_name: 'Ahmedabad Jn' },
     ...codes.map((c) => ({ kind: 'station', label: name[c], station_code: c, station_name: name[c] })),
-    { kind: 'end', label: 'End – Mumbai Central', station_code: 'BCT', station_name: 'Mumbai Central' },
   ].map((s, i) => ({ stage: i + 1, ...s }));
 }
 
@@ -42,15 +40,15 @@ describe('attendance stages (pure)', () => {
   it('falls back to the five standard stages for journeys without a configuration', () => {
     expect(stagesOf({}).map((s) => s.label)).toEqual(['Source', 'Enroute 1', 'Destination', 'Enroute 2', 'End']);
     expect(stagesOf({ attendance_stages: null })).toBe(LEGACY_STAGES);
-    expect(stagesOf({ attendance_stages: JSON.stringify(plan(['ND'])) })).toHaveLength(3);
+    expect(stagesOf({ attendance_stages: JSON.stringify(plan(['ND'])) })).toHaveLength(1);
     expect(LEGACY_STAGES.map(stageCaption)).toEqual(['Source', 'Enroute', 'DEST', 'Enroute', 'END']);
-    expect(plan(['ND']).map(stageCaption)).toEqual(['Source', 'Nadiad Jn', 'End']);
+    expect(plan(['ADI', 'ND', 'BCT']).map(stageCaption)).toEqual(['Ahmedabad Jn', 'Nadiad Jn', 'Mumbai Central']);
     expect([1, 2, 3].map((i) => stageCaption({ stage: i, kind: 'stage', label: `Stage ${i}` }))).toEqual(['1', '2', '3']);
   });
 
-  it('offers only stations between source and end, and keeps route order', () => {
-    expect(selectableStations(ROUTE).map((s) => s.code)).toEqual(['ND', 'ANND', 'BRC', 'BH', 'ST']);
-    expect(inRouteOrder(ROUTE, ['ST', 'ND', 'BRC', 'ND', 'PUNE', 'ADI'])).toEqual(['ND', 'BRC', 'ST']);
+  it('offers every station of the route, first and last included, in route order', () => {
+    expect(selectableStations(ROUTE).map((s) => s.code)).toEqual(['ADI', 'ND', 'ANND', 'BRC', 'BH', 'ST', 'BCT']);
+    expect(inRouteOrder(ROUTE, ['ST', 'ND', 'BCT', 'BRC', 'ND', 'PUNE', 'ADI'])).toEqual(['ADI', 'ND', 'BRC', 'ST', 'BCT']);
   });
 
   it('validates the Train Master configuration', () => {
@@ -64,7 +62,8 @@ describe('attendance stages (pure)', () => {
     expect(v(0, [])).toMatch(/positive whole number/);
     expect(v(2.5, [])).toMatch(/positive whole number/);
     expect(v(-1, [])).toMatch(/positive whole number/);
-    expect(v(6, [])).toMatch(/only 5 stations/);
+    expect(v(8, [])).toMatch(/only 7 stations/);
+    expect(v(2, ['ADI', 'BCT'])).toBeNull();   // first and last stations can be chosen
     expect(v(2, [], [])).toMatch(/Load the train's route/);
     // Without station-wise attendance only the count is checked; empty = the standard five stages.
     expect(attendanceConfigError({ enabled: false, count: 6, codes: [], route: [] })).toBeNull();
@@ -76,17 +75,17 @@ describe('attendance stages (pure)', () => {
 });
 
 describe('station-wise attendance (offline store)', () => {
-  it.each([[['ND', 'BRC', 'ST']], [['ND', 'ANND', 'BRC', 'BH', 'ST']]])('gives %j exactly that many intermediate stages', async (codes) => {
+  it.each([[['ND', 'BRC', 'ST']], [['ND', 'ANND', 'BRC', 'BH', 'ST']]])('gives %j exactly that many stages, nothing added', async (codes) => {
     const { store } = await configuredStore(codes);
     const row = await status(store);
-    expect(row.stages.map((c) => c.station_code)).toEqual(['ADI', ...codes, 'BCT']);
-    expect(row.stages.map((c) => c.status)).toEqual(['next', ...Array(codes.length + 1).fill('locked')]);
+    expect(row.stages.map((c) => c.station_code)).toEqual(codes);
+    expect(row.stages.map((c) => c.status)).toEqual(['next', ...Array(codes.length - 1).fill('locked')]);
     const j = await store.journeys.get(IDS.journey, '2026-11-04');
-    expect(j.attendance_stages).toHaveLength(codes.length + 2);
+    expect(j.attendance_stages).toHaveLength(codes.length);
   });
 
   it('unlocks every stage in order, per employee, beyond five, and records the station', async () => {
-    const codes = ['ND', 'ANND', 'BRC', 'BH', 'ST'];
+    const codes = ROUTE.map((r) => r.code);   // all seven, first and last included
     const { store, db } = await configuredStore(codes);
     await expect(capture(store, 2)).rejects.toMatchObject({ code: 'stage_order' });
     for (let stage = 1; stage <= 7; stage += 1) {
@@ -99,8 +98,8 @@ describe('station-wise attendance (offline store)', () => {
     expect((await status(store)).stages.every((c) => c.status === 'pending')).toBe(true);
     expect((await status(store, IDS.janitor2)).stages.map((c) => c.status)).toEqual(['next', ...Array(6).fill('locked')]);
     const rows = await db.query('SELECT stage, station_code, stage_label, sync_status FROM attendance_records WHERE employee_id = ? ORDER BY stage', [IDS.janitor1]);
-    expect(rows.map((r) => r.station_code)).toEqual(['ADI', ...codes, 'BCT']);
-    expect(rows[6].stage_label).toBe('End – Mumbai Central');
+    expect(rows.map((r) => r.station_code)).toEqual(codes);
+    expect(rows[6].stage_label).toBe('Mumbai Central');
     // Queued for sync once each: seven operations, no duplicates.
     const queued = await db.query("SELECT entity_id FROM sync_outbox WHERE operation = 'attendance.create'");
     expect(new Set(queued.map((q) => q.entity_id)).size).toBe(7);
@@ -109,8 +108,8 @@ describe('station-wise attendance (offline store)', () => {
 
   it('refuses a capture made against stations the journey no longer has', async () => {
     const { store } = await configuredStore(['ND', 'BRC']);
-    await expect(capture(store, 1, { station_code: 'ND' })).rejects.toMatchObject({ code: 'attendance_plan_changed' });
-    await capture(store, 1, { station_code: 'ADI' });
+    await expect(capture(store, 1, { station_code: 'ADI' })).rejects.toMatchObject({ code: 'attendance_plan_changed' });
+    await capture(store, 1, { station_code: 'ND' });
   });
 
   it('keeps old journeys on the five standard stages', async () => {

@@ -23,9 +23,9 @@ import {
 } from './masters/TrainTimetable.jsx';
 import { PlusIcon } from '../../components/Icons.jsx';
 
-// Train Master > Attendance Configuration: how many intermediate stations attendance is taken at, and which
-// stations of the train's route (RailRadar schedule). Journeys get Source, these stations in route order,
-// and End; a train left unconfigured keeps the five standard stages. Journeys where attendance has started
+// Train Master > Attendance Configuration: how many attendances, and optionally which stations of the train's
+// route (RailRadar schedule, first and last included). Journeys get exactly those stations in route order, or
+// that many numbered stages; a train left unconfigured keeps the five standard stages. Journeys where attendance has started
 // keep the stages they had (backend services/trains.refresh_journey_plans).
 function AttendanceConfig({ train, value, onChange, route, onRoute }) {
   const { api } = useSession();
@@ -55,7 +55,7 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
     <fieldset className="space-y-3 rounded-2xl p-3 ring-1 ring-line">
       <legend className="px-1 text-sm font-semibold text-ink">Attendance Configuration</legend>
       <Field label="Number of attendances"
-        hint={value.enabled ? 'Stations between source and end. Source and End are stages of their own.'
+        hint={value.enabled ? 'Attendance is taken only at the stations you select, in route order.'
           : value.count === '' ? 'Leave empty for the standard five stages.' : `Staff mark attendance ${value.count} times: Stage 1 to Stage ${value.count}.`}>
         <input type="number" min={1} max={MAX_ATTENDANCE} step={1} inputMode="numeric" className="input sm:max-w-40" placeholder="5 (standard)"
           value={value.count} onChange={(e) => onChange({ ...value, count: e.target.value === '' ? '' : Number(e.target.value) })} />
@@ -82,7 +82,6 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
                 </p>
                 <button type="button" className="btn-link text-xs" disabled={loading} onClick={loadRoute}>{loading ? 'Loading…' : 'Reload route'}</button>
               </div>
-              <p className="mb-1 text-xs text-slate-500">Source: {route[0]?.name} · End: {route[route.length - 1]?.name}</p>
               <ul className="grid max-h-64 gap-1 overflow-y-auto rounded-xl p-1 ring-1 ring-slate-200 sm:grid-cols-2" aria-label="Route stations">
                 {stations.map((st, i) => {
                   const on = value.codes.includes(st.code);
@@ -91,7 +90,7 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
                       <label className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${!on && full ? 'opacity-50' : ''}`}>
                         <input type="checkbox" className="h-4.5 w-4.5" checked={on} disabled={!on && full}
                           onChange={(e) => toggle(st.code, e.target.checked)} />
-                        <span className="w-6 shrink-0 text-right text-xs text-slate-400">{i + 2}</span>
+                        <span className="w-6 shrink-0 text-right text-xs text-slate-400">{i + 1}</span>
                         <span className="min-w-0 flex-1 truncate">{st.name}</span>
                         <span className="shrink-0 text-xs text-slate-500">{st.code}</span>
                       </label>

@@ -50,7 +50,7 @@ def _route(train: Train) -> list[dict]:
 
 
 def attendance_plan(train: Train) -> list[dict]:
-    """The attendance stages of a journey of this train: Source, the configured stations in route order, End.
+    """The attendance stages of a journey of this train: the configured stations, in route order, and nothing else.
     With a count but no stations, that many numbered stages (Stage 1 .. Stage N). A train with neither keeps
     the five legacy stages."""
     if not train.attendance_station_count:
@@ -60,16 +60,10 @@ def attendance_plan(train: Train) -> list[dict]:
                 for i in range(1, train.attendance_station_count + 1)]
     route = _route(train)
     names = {r["code"]: r.get("name") or r["code"] for r in route}
-    first = route[0]["code"] if route else train.origin_code
-    last = route[-1]["code"] if route else train.destination_code
     order = {r["code"]: i for i, r in enumerate(route)}
     codes = sorted(train.attendance_station_codes, key=lambda c: order.get(c, len(order)))
-    plan = [dict(kind="source", label=f"Source – {names.get(first, first or 'origin')}",
-                 station_code=first, station_name=names.get(first, first))]
-    plan += [dict(kind="station", label=names.get(c, c), station_code=c, station_name=names.get(c, c)) for c in codes]
-    plan.append(dict(kind="end", label=f"End – {names.get(last, last or 'destination')}",
-                     station_code=last, station_name=names.get(last, last)))
-    return [dict(stage=i, **st) for i, st in enumerate(plan, 1)]
+    return [dict(stage=i, kind="station", label=names.get(c, c), station_code=c, station_name=names.get(c, c))
+            for i, c in enumerate(codes, 1)]
 
 
 def stages_of(j: Journey) -> list[dict]:
@@ -78,9 +72,8 @@ def stages_of(j: Journey) -> list[dict]:
 
 
 def selectable_stations(train: Train) -> list[dict]:
-    """Stations attendance can be configured at: the route between its first and last station (Source and
-    End are stages of their own)."""
-    return _route(train)[1:-1]
+    """Stations attendance can be configured at: every station of the route, first and last included."""
+    return _route(train)
 
 
 def check_attendance_config(train: Train, count: int, codes: list[str]) -> list[str]:
@@ -93,7 +86,7 @@ def check_attendance_config(train: Train, count: int, codes: list[str]) -> list[
     if len(codes) != len(set(codes)):
         raise BusinessRuleViolation("A station can be selected only once", code="duplicate_station")
     if count > len(allowed):
-        raise BusinessRuleViolation(f"The route has only {len(allowed)} stations between its source and end",
+        raise BusinessRuleViolation(f"The route has only {len(allowed)} stations",
                                     code="attendance_count_exceeds_route", details={"available": len(allowed)})
     outside = [c for c in codes if c not in allowed]
     if outside:
