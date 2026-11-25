@@ -13,10 +13,19 @@ import { ActiveBadge, ConfirmDialog, FilterBar, OfflineWriteNote, matches, useMa
 const AUDIENCES = [{ value: 'passenger', label: 'Passenger' }, { value: 'railway', label: 'Railway official' }];
 const blankQuestion = () => ({ text_en: '', text_hi: '', applies_ac: true, applies_non_ac: true, applies_gen: true, required: true, psi_weight: '' });
 
+export const DEFAULT_OPTIONS = ['Poor', 'Average', 'Good', 'Very Good', 'Excellent'];
+
+// Answer labels of an existing bank; a numbered 1–5 bank gets the standard labels, other numbered ones their numbers.
+function optionsOf(bank) {
+  if (bank.option_labels?.length) return [...bank.option_labels];
+  if (bank.scale_min === 1 && bank.scale_max === 5) return [...DEFAULT_OPTIONS];
+  return Array.from({ length: bank.scale_max - bank.scale_min + 1 }, (_, i) => String(bank.scale_min + i));
+}
+
 function fromBank(bank) {
-  if (!bank) return { name: '', audience: 'passenger', scale_min: 1, scale_max: 5, questions: [blankQuestion()] };
+  if (!bank) return { name: '', audience: 'passenger', option_labels: [...DEFAULT_OPTIONS], questions: [blankQuestion()] };
   return {
-    name: `${bank.name} (revised)`.slice(0, 100), audience: bank.audience, scale_min: bank.scale_min, scale_max: bank.scale_max,
+    name: `${bank.name} (revised)`.slice(0, 100), audience: bank.audience, option_labels: optionsOf(bank),
     questions: bank.questions.map((q) => ({ ...q, text_hi: q.text_hi ?? '', psi_weight: q.psi_weight ?? '' })),
   };
 }
@@ -130,10 +139,9 @@ function BankForm({ source, divisionId, division, onClose, onSaved }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Bank name" error={errors.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field label="Audience" error={errors.audience}><Select value={f.audience} onChange={(v) => setF({ ...f, audience: v })} options={AUDIENCES} /></Field>
-        <Field label="Lowest rating" error={errors.scale_min}><input type="number" className="input" value={f.scale_min} onChange={(e) => setF({ ...f, scale_min: Number(e.target.value) })} /></Field>
-        <Field label="Highest rating" error={errors.scale_max}><input type="number" className="input" value={f.scale_max} onChange={(e) => setF({ ...f, scale_max: Number(e.target.value) })} /></Field>
       </div>
-      <p className="text-xs text-slate-500">Each question is answered on the rating scale above. Questions are shown in this order.</p>
+      <OptionsEditor options={f.option_labels} errors={errors} onChange={(option_labels) => setF((x) => ({ ...x, option_labels }))} />
+      <p className="text-xs text-slate-500">Every question is answered by picking one of these options. Questions are shown in this order.</p>
       {general && <p className="text-xs text-red-600">{general}</p>}
       <ol className="space-y-2">
         {f.questions.map((q, i) => (
@@ -155,7 +163,7 @@ function BankQuestions({ bank }) {
       <div className="mb-3 flex flex-wrap gap-2">
         <ActiveBadge active={bank.is_active} />
         <Badge>{label(bank.audience)}</Badge>
-        <Badge>Rating {bank.scale_min}–{bank.scale_max}</Badge>
+        <Badge>{bank.option_labels?.length ? bank.option_labels.join(' · ') : `Rating ${bank.scale_min}–${bank.scale_max}`}</Badge>
         <Badge>{bank.division_id ? 'Division bank' : 'Default bank (all divisions)'}</Badge>
       </div>
       <Table rows={bank.questions} columns={[
@@ -219,7 +227,7 @@ export default function QuestionBanks({ division }) {
             <Table rows={shown} onRowClick={setView} columns={[
               { key: 'name', label: 'Bank', render: (b) => <span className="font-medium">{b.name}</span> },
               { key: 'audience', label: 'Audience', render: (b) => label(b.audience) },
-              { key: 'scale', label: 'Scale', render: (b) => `${b.scale_min}–${b.scale_max}` },
+              { key: 'scale', label: 'Answers', render: (b) => (b.option_labels?.length ? `${b.option_labels.length} options` : `${b.scale_min}–${b.scale_max}`) },
               { key: 'questions', label: 'Questions', render: (b) => b.questions.length },
               { key: 'is_active', label: 'Status', render: (b) => <ActiveBadge active={b.is_active} /> },
               { key: 'actions', label: '', render: (b) => access.canEdit && (

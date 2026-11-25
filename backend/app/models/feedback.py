@@ -40,6 +40,9 @@ class QuestionBank(UUIDPk, Timestamps, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     scale_min: Mapped[int] = mapped_column(Integer, nullable=False)
     scale_max: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Answer choices shown as faces, worst first (e.g. Poor … Excellent). Choice k is stored as rating
+    # scale_min + k, so scores and PSI keep working. NULL = plain numbered scale (older banks).
+    option_labels: Mapped[list[str] | None] = mapped_column(JSONType)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     questions: Mapped[list["Question"]] = relationship(

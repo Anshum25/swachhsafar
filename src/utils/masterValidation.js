@@ -11,9 +11,10 @@ export function validateBank(f) {
   const e = {};
   if (len(f.name) < 3 || len(f.name) > 100) e.name = 'Name must be 3–100 characters.';
   if (f.audience !== 'passenger' && f.audience !== 'railway') e.audience = 'Choose passenger or railway.';
-  if (!isInt(f.scale_min) || !between(f.scale_min, 0, 10)) e.scale_min = 'Lowest rating must be a whole number 0–10.';
-  if (!isInt(f.scale_max) || !between(f.scale_max, 1, 10)) e.scale_max = 'Highest rating must be a whole number 1–10.';
-  if (!e.scale_min && !e.scale_max && f.scale_min >= f.scale_max) e.scale_max = 'Highest rating must be greater than the lowest.';
+  const opts = (f.option_labels ?? []).map((o) => (o ?? '').trim());
+  if (opts.length < 2 || opts.length > 10) e.option_labels = 'Give 2–10 answer options.';
+  else if (opts.some((o) => o.length < 1 || o.length > 30)) e.option_labels = 'Each answer option needs 1–30 characters.';
+  else if (new Set(opts.map((o) => o.toLowerCase())).size !== opts.length) e.option_labels = 'Answer options must all be different.';
   const qs = f.questions ?? [];
   if (qs.length < 1 || qs.length > 20) e.questions = 'A bank needs 1–20 questions.';
   qs.forEach((q, i) => {
@@ -33,7 +34,8 @@ export function validateBank(f) {
 // Request body for POST /feedback/question-banks.
 export function bankPayload(f, divisionId) {
   return {
-    division_id: divisionId ?? null, audience: f.audience, name: f.name.trim(), scale_min: f.scale_min, scale_max: f.scale_max,
+    division_id: divisionId ?? null, audience: f.audience, name: f.name.trim(),
+    option_labels: f.option_labels.map((o) => o.trim()),
     questions: f.questions.map((q) => ({
       text_en: q.text_en.trim(), text_hi: q.text_hi?.trim() || null, applies_ac: !!q.applies_ac, applies_non_ac: !!q.applies_non_ac,
       applies_gen: !!(q.applies_gen ?? q.applies_non_ac), required: !!q.required, psi_weight: q.psi_weight === '' || q.psi_weight == null ? null : Number(q.psi_weight),

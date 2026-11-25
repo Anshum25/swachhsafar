@@ -76,7 +76,7 @@ export function createMasterDataRepository(db) {
     const questions = await questionsFor(rows.map((b) => b.id));
     return rows.map((b) => ({
       id: b.id, division_id: b.division_id, audience: b.audience, name: b.name, scale_min: b.scale_min,
-      scale_max: b.scale_max, is_active: fromBool(b.is_active), questions: questions[b.id] ?? [],
+      scale_max: b.scale_max, option_labels: jsonOrNull(b.option_labels), is_active: fromBool(b.is_active), questions: questions[b.id] ?? [],
       updated_at: b.server_updated_at ?? b.updated_at,
     }));
   }
@@ -137,7 +137,8 @@ export function createMasterDataRepository(db) {
       return [
         upsertStatement('question_banks', {
           id: b.id, division_id: b.division_id ?? null, audience: b.audience, name: b.name, scale_min: b.scale_min,
-          scale_max: b.scale_max, is_active: bool(b.is_active), ...synced(b, now),
+          scale_max: b.scale_max, option_labels: b.option_labels ? JSON.stringify(b.option_labels) : null,
+          is_active: bool(b.is_active), ...synced(b, now),
         }),
         {
           sql: `UPDATE feedback_questions SET is_active = 0 WHERE bank_id = ?${ids.length ? ` AND id NOT IN (${placeholders(ids)})` : ''}`,

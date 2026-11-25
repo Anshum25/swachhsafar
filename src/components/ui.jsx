@@ -252,16 +252,53 @@ export function Timeline({ items, empty = 'No history recorded.' }) {
 }
 
 // One rating question on the bank's scale.
-export function RatingScale({ min, max, value, onChange, label: aria }) {
-  const scale = Array.from({ length: Math.max(0, max - min + 1) }, (_, i) => min + i);
+// Face for choice k of n (0 = worst): the mouth goes from a frown to a smile and the colour from red to green.
+const FACE_COLOURS = ['#e5484d', '#f76b15', '#f5b100', '#9bd12b', '#30a46c'];
+function faceColour(k, n) {
+  if (n <= 1) return FACE_COLOURS[4];
+  return FACE_COLOURS[Math.round((k / (n - 1)) * (FACE_COLOURS.length - 1))];
+}
+
+export function RatingFace({ k, n, selected, className = 'h-11 w-11' }) {
+  const t = n <= 1 ? 1 : k / (n - 1);          // 0 sad … 1 happy
+  const curve = (t - 0.5) * 16;                // mouth control point offset
+  const mouth = Math.abs(curve) < 1.5 ? 'M14 29h12' : `M13 28 Q20 ${28 + curve} 27 28`;
+  const fill = selected ? faceColour(k, n) : '#3f3f46';
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label={aria}>
-      {scale.map((v) => (
-        <button key={v} type="button" onClick={() => onChange(v)} aria-pressed={value === v}
-          className={`h-11 min-w-11 flex-1 rounded-xl text-[15px] font-bold ring-1 transition duration-150 active:scale-95 sm:flex-none ${value === v ? 'bg-brand-700 text-white shadow-[0_4px_10px_rgba(7,89,214,0.25)] ring-brand-700' : 'bg-white text-brand-900 ring-line hover:bg-brand-50'}`}>{v}</button>
+    <svg viewBox="0 0 40 40" className={`${className} transition duration-150 ${selected ? 'scale-110 drop-shadow' : ''}`} aria-hidden="true">
+      <circle cx="20" cy="20" r="18" fill={fill} />
+      {selected && <circle cx="20" cy="20" r="18" fill="url(#face-shine)" />}
+      <defs><radialGradient id="face-shine" cx="0.35" cy="0.3" r="0.7"><stop offset="0" stopColor="#fff" stopOpacity="0.45" /><stop offset="1" stopColor="#fff" stopOpacity="0" /></radialGradient></defs>
+      <circle cx="14" cy="16" r="2.2" fill={selected ? '#1f2937' : '#fff'} />
+      <circle cx="26" cy="16" r="2.2" fill={selected ? '#1f2937' : '#fff'} />
+      <path d={mouth} fill="none" stroke={selected ? '#1f2937' : '#fff'} strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Answer picker. With `options` (a bank's answer labels, worst first) each choice is a face with its label
+// and is stored as min + index; without them the faces are labelled with the numbers min..max.
+export function RatingScale({ min, max, options, value, onChange, label: aria }) {
+  const choices = options?.length
+    ? options.map((text, i) => ({ v: min + i, text }))
+    : Array.from({ length: Math.max(0, max - min + 1) }, (_, i) => ({ v: min + i, text: String(min + i) }));
+  return (
+    <div className="flex justify-between gap-1" role="radiogroup" aria-label={aria}>
+      {choices.map(({ v, text }, i) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v} aria-label={text} onClick={() => onChange(v)}
+          className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 transition active:scale-95">
+          <RatingFace k={i} n={choices.length} selected={value === v} />
+          <span className={`w-full truncate text-center text-xs ${value === v ? 'font-semibold text-ink' : 'text-muted'}`}>{text}</span>
+        </button>
       ))}
     </div>
   );
+}
+
+// Label of a stored rating value: the bank's answer label, or the number out of the scale.
+export function ratingText(value, bank) {
+  if (!bank) return String(value);
+  return bank.option_labels?.[value - bank.scale_min] ?? `${value} / ${bank.scale_max}`;
 }
 
 // Below 640px every row is a card (first column as its title, the rest as label/value pairs), so phones never

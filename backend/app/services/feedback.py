@@ -62,7 +62,7 @@ def create_bank(db: Session, p: Principal, body: QuestionBankCreate) -> Question
     else:
         p.require("questions.manage", body.division_id)
     bank = QuestionBank(division_id=body.division_id, audience=body.audience, name=body.name, scale_min=body.scale_min,
-                        scale_max=body.scale_max, is_active=False,
+                        scale_max=body.scale_max, option_labels=body.option_labels, is_active=False,
                         questions=[Question(position=i, **q.model_dump()) for i, q in enumerate(body.questions, 1)])
     db.add(bank)
     db.flush()

@@ -66,13 +66,16 @@ describe('master-data form validation (mirrors the Pydantic schemas)', () => {
   const q = (extra = {}) => ({ text_en: 'Toilet cleanliness', text_hi: '', applies_ac: true, applies_non_ac: true, required: true, psi_weight: '', ...extra });
 
   it('validates question banks and builds the create payload', () => {
-    expect(validateBank({ name: 'Passenger 2026', audience: 'passenger', scale_min: 1, scale_max: 5, questions: [q()] })).toEqual({});
-    const bad = validateBank({ name: 'P', audience: 'x', scale_min: 5, scale_max: 5, questions: [q({ text_en: 'ok', applies_ac: false, applies_non_ac: false, psi_weight: '150' })] });
-    expect(Object.keys(bad).sort()).toEqual(['audience', 'name', 'q0.applies', 'q0.psi_weight', 'q0.text_en', 'scale_max']);
-    expect(validateBank({ name: 'Bank', audience: 'railway', scale_min: 1, scale_max: 5, questions: [] }).questions).toBeDefined();
-    expect(validateBank({ name: 'Bank', audience: 'railway', scale_min: 1, scale_max: 5, questions: Array.from({ length: 21 }, () => q()) }).questions).toBeDefined();
-    expect(bankPayload({ name: ' Bank ', audience: 'railway', scale_min: 1, scale_max: 5, questions: [q({ text_hi: ' ', psi_weight: '25' })] }, IDS.division)).toEqual({
-      division_id: IDS.division, audience: 'railway', name: 'Bank', scale_min: 1, scale_max: 5,
+    const five = ['Poor', 'Average', 'Good', 'Very Good', 'Excellent'];
+    expect(validateBank({ name: 'Passenger 2026', audience: 'passenger', option_labels: five, questions: [q()] })).toEqual({});
+    const bad = validateBank({ name: 'P', audience: 'x', option_labels: ['Only'], questions: [q({ text_en: 'ok', applies_ac: false, applies_non_ac: false, psi_weight: '150' })] });
+    expect(Object.keys(bad).sort()).toEqual(['audience', 'name', 'option_labels', 'q0.applies', 'q0.psi_weight', 'q0.text_en']);
+    expect(validateBank({ name: 'Bank', audience: 'railway', option_labels: ['Good', ' good '], questions: [q()] }).option_labels).toBeDefined();
+    expect(validateBank({ name: 'Bank', audience: 'railway', option_labels: ['Good', ''], questions: [q()] }).option_labels).toBeDefined();
+    expect(validateBank({ name: 'Bank', audience: 'railway', option_labels: five, questions: [] }).questions).toBeDefined();
+    expect(validateBank({ name: 'Bank', audience: 'railway', option_labels: five, questions: Array.from({ length: 21 }, () => q()) }).questions).toBeDefined();
+    expect(bankPayload({ name: ' Bank ', audience: 'railway', option_labels: [' Bad', 'Fine '], questions: [q({ text_hi: ' ', psi_weight: '25' })] }, IDS.division)).toEqual({
+      division_id: IDS.division, audience: 'railway', name: 'Bank', option_labels: ['Bad', 'Fine'],
       questions: [{ text_en: 'Toilet cleanliness', text_hi: null, applies_ac: true, applies_non_ac: true, applies_gen: true, required: true, psi_weight: 25 }],
     });
   });
