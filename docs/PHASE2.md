@@ -65,3 +65,21 @@ npm run test:e2e:offline    # Chromium, production build, fake Firebase project,
 npm run build               # production build  -> dist/
 npm run build:demo          # demo build        -> dist-demo/
 ```
+
+## Clearing synced data from the phone (device schema v20)
+
+The phone keeps captures only until the server has them (`src/database/localCleanup.js`, run after each
+sync round and each pull, at most every ten minutes). Online, screens read the server and add only this
+device's not-yet-synced records, so a synced copy is only ever used offline.
+
+- Photos, videos and voice notes: the file is deleted once it is uploaded and its record is synced; previews
+  then load it from the server.
+- Synced records: deleted once their journey ended more than a day ago or was cancelled. A running journey
+  keeps them, so offline the app still knows which stages and slots are done.
+- Journeys from the server that ended over a week ago with nothing left on the device; delivered outbox
+  entries after a day; settled conflicts and audit events after 30 days.
+- The database file is compacted (`VACUUM`) when more than a quarter of it is free space.
+
+Pending, rejected and conflicting records, their files and outbox entries are never cleared. v20 relaxes the
+no-delete triggers accordingly: an inventory transaction or a complaint's history can be deleted only once
+it is on the server, an audit event only after 30 days.

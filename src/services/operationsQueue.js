@@ -180,6 +180,8 @@ export function createOperationsQueue({
     const settled = Object.values(results).some((r) => r.status === 'synced' || r.status === 'failed');
     emit({ running: false, authRequired: unauthenticated, lastError: problem?.message ?? null,
       ...(settled ? { revision: state.revision + 1 } : {}) });
+    // Delivered records no longer need their copy on the device.
+    if (settled) await local.cleanup?.();
     await refresh();
     return results;
   }
@@ -205,6 +207,7 @@ export function createOperationsQueue({
       const changes = await api.get('/sync/changes', checkpoint?.cursor ? { since: checkpoint.cursor } : undefined);
       const result = await local.ingestChanges(changes);
       emit({ revision: state.revision + 1 });
+      await local.cleanup?.();
       return { status: result.ok ? 'pulled' : 'partial', ...result };
     } catch (e) {
       await local.syncState.recordCheckpointError(CHANGES_SCOPE, { error: e.message, now: now() });

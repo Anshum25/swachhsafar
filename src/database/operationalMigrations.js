@@ -879,4 +879,27 @@ const V19 = {
   },
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19];
+// v20: the phone clears what it has already delivered (localCleanup.js). Inventory transactions, complaint
+// history and audit events were undeletable on the device; now only what is not yet on the server stays
+// protected: an unsynced inventory transaction, the history of an unsynced complaint, and audit events of
+// the last 30 days.
+const V20 = {
+  version: 20,
+  name: 'clear synced records from the device',
+  statements: [
+    'DROP TRIGGER IF EXISTS trg_inventory_no_delete',
+    `CREATE TRIGGER trg_inventory_no_delete BEFORE DELETE ON inventory_transactions
+      WHEN OLD.sync_status != 'synced'
+      BEGIN SELECT RAISE(ABORT, 'immutable: inventory transactions not yet on the server cannot be deleted'); END`,
+    'DROP TRIGGER IF EXISTS trg_complaint_history_no_delete',
+    `CREATE TRIGGER trg_complaint_history_no_delete BEFORE DELETE ON complaint_history
+      WHEN EXISTS (SELECT 1 FROM complaints c WHERE c.id = OLD.complaint_id AND c.sync_status != 'synced')
+      BEGIN SELECT RAISE(ABORT, 'immutable: complaint history is append-only'); END`,
+    'DROP TRIGGER IF EXISTS trg_audit_events_no_delete',
+    `CREATE TRIGGER trg_audit_events_no_delete BEFORE DELETE ON audit_events
+      WHEN OLD.occurred_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')
+      BEGIN SELECT RAISE(ABORT, 'immutable: audit events are append-only'); END`,
+  ],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20];

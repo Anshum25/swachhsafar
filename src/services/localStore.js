@@ -22,6 +22,7 @@ import { createInventoryRepository } from '../database/inventoryRepository.js';
 import { createMediaStore, dataUrlToBytes } from '../database/mediaStore.js';
 import { createSyncStateRepository } from '../database/syncStateRepository.js';
 import { createSecurityRepository } from '../database/securityRepository.js';
+import { createLocalCleanup } from '../database/localCleanup.js';
 import { authorizeCapture } from './authorization.js';
 import { stagesOf } from '../utils/attendanceStages.js';
 
@@ -89,9 +90,26 @@ export function createLocalStore({ db, files, now = () => new Date(), logger = c
     return row ?? null;
   }
 
+  const cleaner = createLocalCleanup(db, { files });
+  let cleanedAt = 0;
+
   const store = {
     db, outbox, masters, identity, journeys, attendance, inspections, feedback, complaints, inventory, media, syncState, security,
     clock,
+
+    // Clears from the device what the server already has (database/localCleanup.js). Runs after syncing, at
+    // most every ten minutes unless `force`; never throws, a failed cleanup is simply tried next time.
+    async cleanup({ force = false } = {}) {
+      const t = clock();
+      if (!force && t.nowMs - cleanedAt < 10 * 60 * 1000) return null;
+      cleanedAt = t.nowMs;
+      try {
+        return await cleaner.run({ today: t.today, now: t.now });
+      } catch (e) {
+        logger?.warn?.(`[localStore] cleanup failed: ${e.message}`);
+        return null;
+      }
+    },
 
     // Saves an operational record locally. `media`: [{ id, kind, dataUrl } | { id, kind, bytes, mimeType }].
     // `actor`: { id, permissions } of the signed-in user (cached /auth/me). The queued operation belongs
