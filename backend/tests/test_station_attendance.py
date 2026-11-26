@@ -62,7 +62,7 @@ def _journey(world, jid=None):
 def _punch(world, employee, stage, journey=None, by="sup", record_id=None, **extra):
     body = dict(id=record_id or str(uuid.uuid4()), journey_id=(journey or world.journey)["id"],
                 employee_id=str(world.users[employee].id), stage=stage, device_timestamp=now_iso(),
-                latitude=22.3, longitude=73.2, gps_accuracy_m=10.0, **extra)
+                **{"latitude": 22.3, "longitude": 73.2, "gps_accuracy_m": 10.0, **extra})
     body["photo_media_id"] = upload(world.client, world.users[by], world.a.id, "attendance_photo")
     return world.client.post(f"{API}/attendance", headers=world.h(by), json=body), body
 
@@ -215,3 +215,54 @@ def test_switching_from_stations_to_a_plain_count(world, sched):
     _configure(world, 2, ["ND", "BRC"])
     assert _configure(world, 3, []).status_code == 200
     assert [s["label"] for s in _journey(world)["attendance_stages"]] == ["Stage 1", "Stage 2", "Stage 3"]
+
+
+# ---- how far along the route each attendance stays open (migration 0025) ----
+
+def _windows(world):
+    return [(s["station_code"], s["valid_until_code"]) for s in _journey(world)["attendance_stages"]]
+
+
+def test_each_attendance_stays_open_until_the_halt_before_the_next_by_default(world, sched):
+    _load_route(world)
+    assert _configure(world, 2, ["ADI", "BRC"]).status_code == 200
+    assert _windows(world) == [("ADI", "ANND"), ("BRC", "BCT")]
+    stage = _journey(world)["attendance_stages"][0]
+    assert (stage["label"], stage["valid_until_name"]) == ("Ahmedabad Jn", "Anand Jn")
+
+
+def test_the_office_chooses_how_far_an_attendance_stays_open(world, sched):
+    _load_route(world)
+    r = world.client.patch(f"{API}/trains/{world.train['id']}", headers=world.h("manager"), json={
+        "attendance_station_count": 2, "attendance_station_codes": ["ADI", "BRC"],
+        "attendance_valid_until": {"adi": "nd", "BRC": "BH"}})
+    assert r.status_code == 200, r.text
+    assert r.json()["attendance_valid_until"] == {"ADI": "ND", "BRC": "BH"}
+    assert _windows(world) == [("ADI", "ND"), ("BRC", "BH")]
+    # The staff screen still names only the opening station.
+    assert [s["label"] for s in _journey(world)["attendance_stages"]] == ["Ahmedabad Jn", "Vadodara Jn"]
+
+
+@pytest.mark.parametrize("until, code", [
+    ({"ADI": "BRC"}, "valid_until_out_of_range"),     # runs into the next attendance station
+    ({"BRC": "ANND"}, "valid_until_out_of_range"),    # before its own station
+    ({"BRC": "PUNE"}, "valid_until_out_of_range"),    # not on the route
+    ({"ND": "ANND"}, "valid_until_unknown_station"),  # not an attendance station
+])
+def test_invalid_windows_are_refused(world, sched, until, code):
+    _load_route(world)
+    r = world.client.patch(f"{API}/trains/{world.train['id']}", headers=world.h("manager"), json={
+        "attendance_station_count": 2, "attendance_station_codes": ["ADI", "BRC"], "attendance_valid_until": until})
+    assert r.status_code == 422 and r.json()["error"]["code"] == code, r.text
+
+
+def test_changing_the_stations_keeps_only_the_windows_that_still_fit(world, sched):
+    _load_route(world)
+    world.client.patch(f"{API}/trains/{world.train['id']}", headers=world.h("manager"), json={
+        "attendance_station_count": 2, "attendance_station_codes": ["ADI", "BRC"],
+        "attendance_valid_until": {"ADI": "ANND", "BRC": "ST"}})
+    r = _configure(world, 3, ["ADI", "ND", "BRC"])   # ND now comes before ADI's chosen end
+    assert r.status_code == 200 and r.json()["attendance_valid_until"] == {"BRC": "ST"}
+    assert _windows(world) == [("ADI", "ADI"), ("ND", "ANND"), ("BRC", "ST")]
+    r = _configure(world, None, None)
+    assert r.json()["attendance_valid_until"] is None

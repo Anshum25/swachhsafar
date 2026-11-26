@@ -11,7 +11,7 @@ from app.timeutil import today_ist
 from app.schemas.common import PageParams
 from app.schemas.trains import CoachesReplace, CoachIn, TrainCreate, TrainUpdate
 from app.security.principal import Principal
-from app.services import feedback_plan
+from app.services import feedback_plan, route_window
 from app.services.common import audit, commit_or_conflict, diff, flush_or_conflict, paginate
 
 
@@ -62,8 +62,82 @@ def attendance_plan(train: Train) -> list[dict]:
     names = {r["code"]: r.get("name") or r["code"] for r in route}
     order = {r["code"]: i for i, r in enumerate(route)}
     codes = sorted(train.attendance_station_codes, key=lambda c: order.get(c, len(order)))
-    return [dict(stage=i, kind="station", label=names.get(c, c), station_code=c, station_name=names.get(c, c))
+    until = valid_until_of(route, codes, train.attendance_valid_until)
+    return [dict(stage=i, kind="station", label=names.get(c, c), station_code=c, station_name=names.get(c, c),
+                 valid_until_code=until.get(c), valid_until_name=names.get(until.get(c)) if until.get(c) else None,
+                 window=station_window(route, codes, c, until.get(c)))
             for i, c in enumerate(codes, 1)]
+
+
+def station_window(route: list[dict], codes: list[str], code: str, until: str | None) -> dict | None:
+    """The route path the attendance at `code` may be taken on (services/route_window), or None when the
+    stations have no known location."""
+    choices = valid_until_choices(route, codes, code)
+    if not choices or until not in choices:
+        return None
+    start = _first_index(route)[code]
+    return route_window.build_window(route, start, start + choices.index(until))
+
+
+def window_of(j: Journey, planned: dict) -> dict | None:
+    """A stage's window. A station stage planned before windows existed (no "window" key) gets one from the
+    train's current route and configuration."""
+    if "window" in planned or not planned.get("station_code") or j.train is None:
+        return planned.get("window")
+    train = j.train
+    route = _route(train)
+    codes = [c for c in (train.attendance_station_codes or []) if c in _first_index(route)]
+    if planned["station_code"] not in codes:
+        return None
+    until = valid_until_of(route, codes, train.attendance_valid_until).get(planned["station_code"])
+    return station_window(route, codes, planned["station_code"], until)
+
+
+def _first_index(route: list[dict]) -> dict[str, int]:
+    order: dict[str, int] = {}
+    for i, r in enumerate(route):
+        order.setdefault(r["code"], i)
+    return order
+
+
+def valid_until_choices(route: list[dict], codes: list[str], code: str) -> list[str]:
+    """The stations the attendance opening at `code` may stay open until: from that station up to the halt
+    before the next attendance station (the last attendance: to the end of the route), in route order."""
+    order = _first_index(route)
+    if code not in order:
+        return []
+    start = order[code]
+    later = [order[c] for c in codes if c in order and order[c] > start]
+    stop = min(later) if later else len(route)
+    return [r["code"] for r in route[start:stop]]
+
+
+def valid_until_of(route: list[dict], codes: list[str], chosen: dict | None) -> dict[str, str]:
+    """Each attendance station's last station: the office's choice when it still fits the route and the other
+    stations, otherwise the default (the last of its choices)."""
+    out = {}
+    for c in codes:
+        choices = valid_until_choices(route, codes, c)
+        if choices:
+            pick = (chosen or {}).get(c)
+            out[c] = pick if pick in choices else choices[-1]
+    return out
+
+
+def check_valid_until(train: Train, codes: list[str], chosen: dict) -> dict[str, str]:
+    """The office's "valid until" stations, validated against the configured stations. Raises
+    BusinessRuleViolation. Returns only the stations given."""
+    route = _route(train)
+    unknown = [c for c in chosen if c not in codes]
+    if unknown:
+        raise BusinessRuleViolation("A valid-until station is given for a station that is not an attendance station",
+                                    code="valid_until_unknown_station", details={"stations": unknown})
+    for c, until in chosen.items():
+        if until not in valid_until_choices(route, codes, c):
+            raise BusinessRuleViolation(
+                f"The attendance at {c} can stay open only from {c} up to the station before the next attendance "
+                f"station", code="valid_until_out_of_range", details={"station": c, "valid_until": until})
+    return {c: chosen[c] for c in codes if c in chosen}
 
 
 def stages_of(j: Journey) -> list[dict]:
@@ -162,17 +236,27 @@ def update_train(db: Session, p: Principal, train_id: uuid.UUID, body: TrainUpda
     if not (before or after):
         raise BusinessRuleViolation("At least one inspection phase must be enabled")
     replans = False
-    if "attendance_station_count" in updates or "attendance_station_codes" in updates:
+    if {"attendance_station_count", "attendance_station_codes", "attendance_valid_until"} & updates.keys():
         count = updates.get("attendance_station_count", train.attendance_station_count)
         if count is None:
             updates["attendance_station_count"] = updates["attendance_station_codes"] = None
+            updates["attendance_valid_until"] = None
         else:
             updates["attendance_station_count"] = count
             codes = updates.get("attendance_station_codes", train.attendance_station_codes)
             # No stations: `count` numbered stages. Stations: exactly `count` of them, on the route.
-            updates["attendance_station_codes"] = check_attendance_config(train, count, codes) if codes else None
-        replans = (updates["attendance_station_count"], updates["attendance_station_codes"]) != (
-            train.attendance_station_count, train.attendance_station_codes)
+            codes = updates["attendance_station_codes"] = check_attendance_config(train, count, codes) if codes else None
+            if not codes:
+                updates["attendance_valid_until"] = None
+            elif "attendance_valid_until" in updates:
+                updates["attendance_valid_until"] = check_valid_until(train, codes, updates["attendance_valid_until"] or {}) or None
+            elif train.attendance_valid_until:
+                # The stations changed without new windows: keep the choices that still fit, the rest go to default.
+                kept = {c: u for c, u in train.attendance_valid_until.items()
+                        if c in codes and u in valid_until_choices(_route(train), codes, c)}
+                updates["attendance_valid_until"] = kept or None
+        replans = tuple(updates.get(k, getattr(train, k)) for k in ATTENDANCE_CONFIG) != tuple(
+            getattr(train, k) for k in ATTENDANCE_CONFIG)
     audit(db, actor_id=p.id, action="train.update", entity=train, division_id=train.division_id, changes=diff(train, updates))
     old_times = {k: getattr(train, k) for k in JOURNEY_TIMES}
     for k, v in updates.items():
@@ -193,6 +277,9 @@ def update_train(db: Session, p: Principal, train_id: uuid.UUID, body: TrainUpda
     db.commit()
     return train
 
+
+# Train Master settings that shape the attendance stages of its journeys.
+ATTENDANCE_CONFIG = ("attendance_station_count", "attendance_station_codes", "attendance_valid_until")
 
 # Train Master settings that shape the passenger feedback targets of its journeys.
 FEEDBACK_CONFIG = {"feedback_enabled", "feedback_daily_target", "feedback_coach_daily_target", "feedback_min_daily",

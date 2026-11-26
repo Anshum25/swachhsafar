@@ -83,6 +83,8 @@ export const POLICY_FIELDS = [
   { key: 'railway_feedback_limit_per_journey', type: 'int', min: 0, max: 50, label: 'Railway feedback limit per journey', group: 'Railway feedback' },
   { key: 'attendance_photo_required', type: 'bool', label: 'Attendance photo required', group: 'Attendance and inspection' },
   { key: 'attendance_late_grace_days', type: 'int', min: 0, max: 7, label: 'Late attendance grace (days after journey end)', group: 'Attendance and inspection' },
+  { key: 'attendance_route_check', type: 'enum', options: [{ value: 'flag', label: 'Record it for review' }, { value: 'block', label: 'Refuse the attendance' }, { value: 'off', label: 'Do not check' }], label: 'Attendance taken away from its stretch of route (station to valid-until station)', group: 'Attendance and inspection' },
+  { key: 'attendance_route_tolerance_km', type: 'int', min: 1, max: 25, label: 'How far from the route an attendance may be taken (km)', hint: '1–25 · 3 by default; also reaches past the first and last station', group: 'Attendance and inspection' },
   { key: 'inspection_photo_required', type: 'bool', label: 'Inspection photo required', group: 'Attendance and inspection' },
   { key: 'complaint_default_sla_hours', type: 'int', min: 1, max: 1440, label: 'Default complaint SLA (hours)', group: 'Complaints' },
   { key: 'attendance_face_verification', type: 'bool', label: 'Face verification for attendance (blocks attendance when the face does not match)', group: 'Face verification' },

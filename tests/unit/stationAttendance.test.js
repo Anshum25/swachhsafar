@@ -7,7 +7,8 @@ import { createMemoryDb } from '../helpers/memoryDb.js';
 import { MIGRATIONS, runMigrations } from '../../src/database/migrations.js';
 import { nextStageFor } from '../../src/database/attendanceRepository.js';
 import {
-  LEGACY_STAGES, attendanceConfigError, inRouteOrder, selectableStations, stageCaption, stagesOf,
+  LEGACY_STAGES, attendanceConfigError, inRouteOrder, resolveValidUntil, selectableStations, stageCaption, stagesOf,
+  validUntilChoices,
 } from '../../src/utils/attendanceStages.js';
 
 const ROUTE = [
@@ -144,5 +145,23 @@ describe('station-wise attendance (offline store)', () => {
     const cols = (await db.query('PRAGMA table_info(attendance_records)')).map((c) => c.name);
     expect(cols).toEqual(expect.arrayContaining(['station_code', 'stage_label']));
     expect(await db.query('PRAGMA integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+  });
+});
+
+describe('attendance windows (how far along the route each attendance stays open)', () => {
+  const codes = (list) => list.map((s) => s.code);
+
+  it('offers the stations from its own up to the halt before the next attendance station', () => {
+    expect(codes(validUntilChoices(ROUTE, ['ADI', 'BRC'], 'ADI'))).toEqual(['ADI', 'ND', 'ANND']);
+    expect(codes(validUntilChoices(ROUTE, ['ADI', 'BRC'], 'BRC'))).toEqual(['BRC', 'BH', 'ST', 'BCT']);
+    expect(codes(validUntilChoices(ROUTE, ['ADI', 'ND'], 'ADI'))).toEqual(['ADI']);
+    expect(validUntilChoices(ROUTE, ['ADI'], 'PUNE')).toEqual([]);
+  });
+
+  it('keeps a choice that still fits and otherwise defaults to the last choice', () => {
+    expect(resolveValidUntil(ROUTE, ['ADI', 'BRC'], {})).toEqual({ ADI: 'ANND', BRC: 'BCT' });
+    expect(resolveValidUntil(ROUTE, ['ADI', 'BRC'], { ADI: 'ND', BRC: 'BH' })).toEqual({ ADI: 'ND', BRC: 'BH' });
+    // ND became an attendance station, so ADI's window cannot reach ANND any more.
+    expect(resolveValidUntil(ROUTE, ['ADI', 'ND', 'BRC'], { ADI: 'ANND' })).toEqual({ ADI: 'ADI', ND: 'ANND', BRC: 'BCT' });
   });
 });

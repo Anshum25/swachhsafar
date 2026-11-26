@@ -13,10 +13,10 @@ from app.schemas.common import PageParams
 from app.schemas.operations import AttendanceIn, GroupAttendanceIn, ReviewIn
 from app.security.principal import Principal
 from app.services import security
-from app.services import media
+from app.services import media, route_window
 from app.services.common import audit, check_replay, get_or_404, paginate
 from app.services.journeys import check_capture_window, get_journey, is_allocated
-from app.services.trains import stages_of
+from app.services.trains import stages_of, window_of
 from app.services.policy import get_policy
 from app.timeutil import utcnow
 
@@ -126,6 +126,30 @@ def _stage_of(j: Journey, stage: int) -> dict:
     return stages[stage - 1]
 
 
+def check_route(j: Journey, planned: dict, policy, body: AttendanceIn) -> dict | None:
+    """Where the fix is against the stage's stretch of the route (services/route_window). Raises when the
+    division blocks attendance outside it; None when the division does not check or the stage has no station."""
+    if policy.attendance_route_check == "off" or not planned.get("station_code"):
+        return None
+    result = route_window.check(window_of(j, planned), body.latitude, body.longitude, body.gps_accuracy_m,
+                                policy.attendance_route_tolerance_km)
+    if policy.attendance_route_check == "block" and result["status"] not in ("inside", "unknown"):
+        raise BusinessRuleViolation(outside_message(planned, result), code="outside_route_window",
+                                    details={"stage": planned["stage"], **result})
+    return result
+
+
+def outside_message(planned: dict, result: dict) -> str:
+    """Why a fix is outside an attendance's stretch of route (the phone says the same: src/utils/routeWindow.js)."""
+    start, end = planned.get("station_name") or planned["label"], planned.get("valid_until_name") or planned["label"]
+    if result["status"] == "before":
+        return f"This attendance opens at {start}. You are about {result['off_route_km']:g} km before it."
+    if result["status"] == "after":
+        return f"This attendance was open until {end}. You are about {result['off_route_km']:g} km past it."
+    return (f"This attendance can be taken between {start} and {end}. You are about "
+            f"{result['off_route_km']:g} km from the train's route there.")
+
+
 def _may_submit_for(p: Principal, j: Journey, employee_id: uuid.UUID) -> bool:
     return employee_id == p.id or j.supervisor_id == p.id or p.has("attendance.review", j.division_id)
 
@@ -167,13 +191,16 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
     # is still required whenever the face check is what proved identity.
     evidence = security.check_capture(db, p, policy, body, kind="attendance",
                                       liveness_required=verified_by == "face" and policy.face_liveness_required)
+    route = check_route(j, planned, policy, body)
+    if route and route["status"] not in ("inside", "unknown"):
+        evidence["risk_flags"] = [*(evidence["risk_flags"] or []), "outside_route_window"]
     photo_id = media.claim(db, body.photo_media_id, MediaKind.ATTENDANCE_PHOTO,
                            j.division_id, p.id,
                            required=policy.attendance_photo_required or verified_by in ("face", "group_photo"),
                            label="Attendance photo")
     record = Attendance(**body.model_dump(exclude={"photo_media_id", "security", "gps_timestamp", "group_photo", "liveness_proof",
                                                    "station_code"}),
-                        station_code=planned["station_code"], stage_label=planned["label"],
+                        station_code=planned["station_code"], stage_label=planned["label"], route_check=route,
                         **evidence, photo_media_id=photo_id, division_id=j.division_id, identified_by=verified_by,
                         created_by_id=p.id, payload_hash=digest, sync_op_id=sync_op_id)
     db.add(record)
@@ -304,7 +331,7 @@ def journey_status(db: Session, p: Principal, journey_id: uuid.UUID) -> list[dic
     for a in allocations:
         done = taken.get(a.user_id, {})
         nxt = next((s["stage"] for s in plan if s["stage"] not in done), None)
-        cells = [dict(s, status="taken" if s["stage"] in done else ("next" if s["stage"] == nxt else "locked"),
+        cells = [dict({k: v for k, v in s.items() if k != "window"}, status="taken" if s["stage"] in done else ("next" if s["stage"] == nxt else "locked"),
                       attendance_id=done.get(s["stage"])) for s in plan]
         out.append(dict(employee_id=a.user_id, name=a.user.name, emp_id=a.user.emp_id, role_id=a.role_id,
                         stages=cells, completed=nxt is None))

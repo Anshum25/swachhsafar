@@ -265,6 +265,10 @@ All IDs are UUIDs (stored as `CHAR(32)` on SQLite, `UUID` on PostgreSQL) except 
 | `before_inspection_enabled` | BOOLEAN | not null |
 | `after_inspection_enabled` | BOOLEAN | not null |
 | `is_active` | BOOLEAN | not null |
+| `route_stations` | JSON | [{code, name}] halts in running order (RailRadar); NULL = not read (0021) |
+| `attendance_station_count` | INTEGER | 1–50; NULL = the five standard stages (0021) |
+| `attendance_station_codes` | JSON | attendance stations, route codes in route order (0021) |
+| `attendance_valid_until` | JSON | {opening code: last code} how far each attendance stays open; missing = until the halt before the next attendance station (0025) |
 | `origin_code` | VARCHAR(8) | station it starts at (RailRadar) |
 | `destination_code` | VARCHAR(8) | station it ends at |
 | `destination_name` | VARCHAR(120) |  |
@@ -530,6 +534,7 @@ pending are counted from passenger_feedback, never stored. A day that has begun 
 |---|---|---|
 | `employee_id` | UUID | → users.id not null |
 | `stage` | INTEGER | not null |
+| `route_check` | JSON | {status: inside/before/after/off_route/unknown, off_route_km, along_km} against the stage's stretch of route; NULL = not checked (0026) |
 | `photo_media_id` | UUID | → media_objects.id unique |
 | `group_submission_id` | UUID |  |
 | `face_distance` | FLOAT |  |

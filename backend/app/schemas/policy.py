@@ -18,6 +18,13 @@ class PolicySettings(StrictModel):
     railway_feedback_limit_per_journey: int = Field(default=2, ge=0, le=50)
     attendance_photo_required: bool = True
     attendance_late_grace_days: int = Field(default=1, ge=0, le=7)
+    # Station-wise attendance: is the fix on the stretch of route the attendance is open for (from its
+    # station to its "valid until" station, services/route_window)? "flag" records it for review, "block"
+    # refuses the attendance. Not "block" by default: station locations come from open data and a few are
+    # off, so a division turns blocking on once it has seen its trains pass.
+    attendance_route_check: Literal["off", "flag", "block"] = "flag"
+    # How far from the route (and past its first and last station) a fix may be, on top of its accuracy.
+    attendance_route_tolerance_km: int = Field(default=3, ge=1, le=25)
     inspection_photo_required: bool = True
     complaint_default_sla_hours: int = Field(default=72, ge=1, le=24 * 60)
     # Face verification of attendance (off by default). The device compares the attendance photo with the
