@@ -57,6 +57,28 @@ export function inRouteOrder(route, codes) {
   return [...new Set(codes)].filter((c) => order.has(c)).sort((a, b) => order.get(a) - order.get(b));
 }
 
+// How far along the route each attendance stays open (backend services/trains.valid_until_choices): from its
+// own station up to the halt before the next attendance station; the last one, to the end of the route.
+export function validUntilChoices(route, codes, code) {
+  const stations = selectableStations(route);
+  const start = stations.findIndex((s) => s.code === code);
+  if (start < 0) return [];
+  const index = (c) => stations.findIndex((s) => s.code === c);
+  const later = codes.map(index).filter((i) => i > start);
+  return stations.slice(start, later.length ? Math.min(...later) : stations.length);
+}
+
+// Each selected station's window end: the office's choice while it still fits, else the default (the last choice).
+export function resolveValidUntil(route, codes, chosen = {}) {
+  const out = {};
+  for (const code of codes) {
+    const choices = validUntilChoices(route, codes, code);
+    if (!choices.length) continue;
+    out[code] = choices.some((s) => s.code === chosen?.[code]) ? chosen[code] : choices[choices.length - 1].code;
+  }
+  return out;
+}
+
 // The most attendances a train can ask for (backend MAX_ATTENDANCE_STATIONS).
 export const MAX_ATTENDANCE = 50;
 

@@ -21,12 +21,34 @@ import { FACE_MODEL } from '../../face/faceMatch.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
 import { nextStageFor } from '../../database/attendanceRepository.js';
 import { stageCaption, stageInfo, stageLabel, stagesOf } from '../../utils/attendanceStages.js';
+import { isOutside, outsideMessage, stageRouteCheck } from '../../utils/routeWindow.js';
 
 // A status cell with its stage's name and station. Cells from a server that predates station-wise
 // attendance carry only the stage number, so they take the journey's stage descriptor.
 const describe = (stages, cell) => (cell.label ? cell : { ...stageInfo(stages, cell.stage), ...cell, label: stageInfo(stages, cell.stage).label });
 // Only sent when the stage has a station, so a journey on the five legacy stages submits what it always did.
 const stationField = (st) => (st?.station_code ? { station_code: st.station_code } : {});
+
+// Is the fix on the stretch of route this stage is open for (its station to its valid-until station)? Read
+// from the journey's own stage list, which carries the window offline. null: not checked.
+function routeCheckFor(journey, stage, gps, policy) {
+  if (!gps || !policy) return null;
+  const info = stageInfo(stagesOf(journey), stage);
+  const check = stageRouteCheck(info, gps, policy);
+  return check && { ...check, info, blocked: check.mode === 'block' && isOutside(check) };
+}
+
+function RouteNote({ check, name }) {
+  if (!isOutside(check)) return null;
+  const who = name ? `${name}: ` : '';
+  return check.blocked
+    ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">{who}{outsideMessage(check.info, check)}</p>
+    : <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">{who}{outsideMessage(check.info, check)} It will be recorded for review.</p>;
+}
+
+const ROUTE_STATUS = { inside: 'On its stretch of route', before: 'Before its station', after: 'Past its valid-until station',
+  off_route: 'Away from the route', unknown: 'Not checked (station locations unknown)' };
+const routeCheckText = (c) => (c ? `${ROUTE_STATUS[c.status] ?? c.status}${c.status !== 'unknown' && c.status !== 'inside' && c.off_route_km != null ? ` · ${c.off_route_km} km away` : ''}` : null);
 
 // Stage mark (reference: green check = taken, purple camera = capture now, grey lock = not open yet);
 // amber = saved on this device, waiting to sync.
@@ -77,6 +99,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
   // Liveness is a property of the face photo, so a capture proved by fingerprint is not asked for it --
   // matching the server, which only requires it of a capture verified by face.
   const liveOk = fingerOk || !cameraOn || liveness === 'passed';
+  const route = routeCheckFor(journey, target.stage, gps, policy.data);
 
   async function submit(e) {
     e.preventDefault();
@@ -100,7 +123,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
 
   return (
     <Dialog open title={`${target.staff.name} · ${target.info.label}`} onClose={onClose} onSubmit={submit}
-      footer={<SubmitBar busy={busy} disabled={!gps || (photoNeeded && !photo) || policy.loading || !faceOk || !liveOk || !gate.allowed} label="Mark attendance" onCancel={onClose} flush />}>
+      footer={<SubmitBar busy={busy} disabled={!gps || (photoNeeded && !photo) || policy.loading || !faceOk || !liveOk || !gate.allowed || route?.blocked} label="Mark attendance" onCancel={onClose} flush />}>
       <div className="space-y-3">
         <p className="text-center text-xs font-medium text-muted">{target.staff.emp_id} · Stage {target.stage} of {target.total} · {journey.train_no}</p>
         {cameraOn ? (
@@ -117,6 +140,7 @@ function CaptureDialog({ target, journey, onClose, onDone }) {
                 onDone={(r) => { setLiveness(r.liveness); setPhoto(r.photo); }} />
         ) : <PhotoCapture value={photo} onChange={setPhoto} required stamp={stampLines({ ...gps, address })} />}
         <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
+        <RouteNote check={route} />
         <FingerprintButton check={finger} name={target.staff.name} />
         <FaceCheckNote check={face} name={target.staff.name} />
         <FingerprintCheckNote check={finger} name={target.staff.name} />
@@ -200,7 +224,10 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
   // recognised is marked at THEIR OWN next stage -- nothing to choose, nothing to press. There is no
   // ordinary-photo fallback with staff named by hand: only faces the camera recognises are marked.
   const recognised = new Map((group?.members ?? []).map((r) => [r.employee_id, r]));
-  const autoMembers = members.filter((m) => recognised.has(m.employee_id));
+  // One fix for everyone, but each person is at their own stage, so each has their own stretch of route.
+  const routes = new Map(members.map((m) => [m.employee_id, routeCheckFor(journey, m.stage, gps, policy.data)]));
+  const blocked = (m) => !!routes.get(m.employee_id)?.blocked;
+  const autoMembers = members.filter((m) => recognised.has(m.employee_id) && !blocked(m));
   const autoReady = mode === 'photo' && gps && group?.ready && autoMembers.length > 0 && !policy.loading && gate.allowed;
   useEffect(() => {
     if (!autoReady || busy || done) return;
@@ -208,7 +235,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
     // `submit` closes over this render's values, which are the ones `autoReady` was computed from.
   }, [autoReady]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ready = mode === 'each' && gps && chosen.length && !policy.loading && gate.allowed
+  const ready = mode === 'each' && gps && chosen.length && !policy.loading && gate.allowed && !chosen.some(blocked)
       && (!cameraOn || chosen.every((m) => live[m.employee_id] === 'passed'))
       && (!(photoRequired || cameraOn) || chosen.every((m) => photos[m.employee_id]))
       && (!faceOn || chosen.every((m) => faces[m.employee_id]?.status === 'matched'));
@@ -284,6 +311,7 @@ function GroupDialog({ journey, rows, local, onClose, onDone }) {
         <form onSubmit={submit} className="space-y-3">
           <p className="text-xs text-muted">Each person is recorded at their own next stage.</p>
           <GpsCapture value={gps} onChange={setGps} auto onAddress={setAddress} map />
+          {(mode === 'photo' ? members : chosen).map((m) => <RouteNote key={m.employee_id} check={routes.get(m.employee_id)} name={`${m.name} (${m.info.label})`} />)}
           {mode === 'photo' ? (
             <>
               <GroupPhotoCapture key={profiles.length} candidates={candidates} profiles={profiles}
@@ -447,6 +475,7 @@ function AttendanceDetail({ record, stages, staffName, onClose, onChanged }) {
           ['Captured (device)', record.device_timestamp ? fmtDateTime(record.device_timestamp) : null],
           ['Received (server)', record.server_timestamp ? fmtDateTime(record.server_timestamp) : null],
           ['GPS', gpsText(record)],
+          ['Route check', routeCheckText(record.route_check)],
           ['Capture method', methodOf(record)],
           ['Group capture', record.group_submission_id ? `${record.group_submission_id.slice(0, 8)} (one photo, several staff)` : null],
           ['Recorded by', record.created_by_id ? staffName(record.created_by_id) : null],

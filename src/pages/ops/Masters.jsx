@@ -4,7 +4,9 @@ import { DivisionPicker, divisionLabel, useDivision } from '../../app/division.j
 import { useSave } from './masters/common.jsx';
 import { coachText, parseCoaches } from '../../utils/coaches.js';
 import CoachBreakdown from '../../components/CoachBreakdown.jsx';
-import { MAX_ATTENDANCE, attendanceConfigError, inRouteOrder, selectableStations } from '../../utils/attendanceStages.js';
+import {
+  MAX_ATTENDANCE, attendanceConfigError, inRouteOrder, resolveValidUntil, selectableStations, validUntilChoices,
+} from '../../utils/attendanceStages.js';
 import QuestionBanks from './masters/QuestionBanks.jsx';
 import { Categories, Departments } from './masters/ComplaintMasters.jsx';
 import InventoryItems from './masters/InventoryItems.jsx';
@@ -102,8 +104,54 @@ function AttendanceConfig({ train, value, onChange, route, onRoute }) {
           )}
         </>
       )}
+      {value.enabled && value.windows && stations.length > 0 && (
+        <AttendanceWindows route={route} codes={value.codes} until={value.until} onChange={(until) => onChange({ ...value, until })} />
+      )}
       {problem && <p className="text-xs font-medium text-amber-700" role="status">{problem}</p>}
     </fieldset>
+  );
+}
+
+// Train Master > Attendance Configuration > Attendance window: for each selected station, the station it opens
+// at (the one selected) and how far along the route it stays open. Only the opening station is shown to staff.
+function AttendanceWindows({ route, codes, until, onChange }) {
+  const ordered = inRouteOrder(route, codes);
+  const resolved = resolveValidUntil(route, ordered, until);
+  const stations = selectableStations(route);
+  const nameOf = (code) => stations.find((s) => s.code === code)?.name ?? code;
+  // The window's two ends whose location the server does not know (route_stations[].located === false).
+  const unlocated = (code, end) => [...new Set([code, end])].filter((c) => stations.find((s) => s.code === c)?.located === false);
+  if (!ordered.length) return null;
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-slate-600">Attendance window</p>
+      <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-muted">
+            <tr><th className="px-2 py-1.5 font-medium">Attendance</th><th className="px-2 py-1.5 font-medium">Opens at</th><th className="px-2 py-1.5 font-medium">Valid until</th></tr>
+          </thead>
+          <tbody>
+            {ordered.map((code, i) => (
+              <tr key={code} className="border-t border-slate-100">
+                <td className="whitespace-nowrap px-2 py-1.5">Attd {i + 1}</td>
+                <td className="px-2 py-1.5">{nameOf(code)} <span className="text-xs text-slate-500">{code}</span>
+                  {unlocated(code, resolved[code]).length > 0 && (
+                    <span className="block text-xs text-amber-700">Location not known for {unlocated(code, resolved[code]).join(', ')}: checked from the nearest known station.</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  <select className="input min-w-40" aria-label={`Attd ${i + 1} valid until`} value={resolved[code] ?? ''}
+                    onChange={(e) => onChange({ ...until, [code]: e.target.value })}>
+                    {validUntilChoices(route, ordered, code).map((st) => <option key={st.code} value={st.code}>{st.name} ({st.code})</option>)}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1 text-xs text-muted">Each attendance can be taken from its station until the station chosen here, never past the next attendance station.</p>
+    </div>
   );
 }
 
@@ -126,6 +174,8 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
   const [att, setAtt] = useState({
     enabled: !!train?.attendance_station_codes?.length, count: train?.attendance_station_count ?? '',
     codes: train?.attendance_station_codes ?? [],
+    // Windows are offered only when this train came from a server that keeps them (not an older cached copy).
+    windows: !!train && 'attendance_valid_until' in train, until: train?.attendance_valid_until ?? {},
   });
   const attError = attendanceConfigError({ ...att, route });
 
@@ -142,6 +192,9 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
     const attendance = att.count === ''
       ? (configured ? { attendance_station_count: null, attendance_station_codes: null } : {})
       : { attendance_station_count: Number(att.count), attendance_station_codes: att.enabled ? inRouteOrder(route, att.codes) : null };
+    if (att.windows && att.count !== '' && att.enabled) {
+      attendance.attendance_valid_until = resolveValidUntil(route, inRouteOrder(route, att.codes), att.until);
+    }
     save.run(async () => {
       if (train) {
         await api.patch(`/trains/${train.id}`, { ...fields, ...attendance });

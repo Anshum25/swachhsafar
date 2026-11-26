@@ -8,6 +8,7 @@ import { LocalRuleError } from './errors.js';
 import { requireCaptureWindow, requireDeviceTimestamp, requireGps, requireInt, requireUuid } from './captureRules.js';
 import { insertStatement, placeholders } from './sqlHelpers.js';
 import { stagesOf } from '../utils/attendanceStages.js';
+import { isOutside, outsideMessage, stageRouteCheck } from '../utils/routeWindow.js';
 
 // A local row in the shape of the backend AttendanceOut, plus where it stands between device and server.
 // Rows stored from a server status grid carry only their slot; their details stay on the server.
@@ -81,6 +82,12 @@ export function createAttendanceRepository(db, { journeys, masters }) {
           `This journey's attendance stations have changed: stage ${stage} is now ${planned.label}. Capture again.`);
       }
       requireCaptureWindow(journey, capturedOn);
+      // Backend attendance.check_route: a station stage is taken on its stretch of route. Checked here
+      // offline against the window the journey carries; "flag" leaves it to the server to record.
+      const route = stageRouteCheck(planned, gps, policy);
+      if (route?.mode === 'block' && isOutside(route)) {
+        throw new LocalRuleError('outside_route_window', outsideMessage(planned, route), { stage, ...route });
+      }
       if (!(await journeys.isAllocated(journey.id, p.employee_id))) {
         throw new LocalRuleError('not_allocated', 'This employee is not allocated to the journey.');
       }

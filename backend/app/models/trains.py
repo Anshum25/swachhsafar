@@ -81,6 +81,10 @@ class Train(UUIDPk, Timestamps, Base):
     # Both None = not configured: journeys use the original five stages (services/trains.LEGACY_STAGES).
     attendance_station_count: Mapped[int | None] = mapped_column(Integer)
     attendance_station_codes: Mapped[list | None] = mapped_column(JSON)
+    # How far along the route each attendance stays open (migration 0025): {opening code: last station code},
+    # e.g. {"ADI": "SAU"} keeps the Ahmedabad attendance open until Sanand. A station without an entry stays
+    # open until the halt before the next attendance station (the last one, to the end of the route).
+    attendance_valid_until: Mapped[dict | None] = mapped_column(JSON)
 
     # ---- passenger feedback configuration (migration 0022; app/services/feedback_plan.py) ----
     # Whether staff may collect passenger feedback on this train's journeys at all.

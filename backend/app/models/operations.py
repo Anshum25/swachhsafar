@@ -71,6 +71,9 @@ class Attendance(CapturedRecord, Base):
     # records taken before, and on legacy stages, which have no station.
     station_code: Mapped[str | None] = mapped_column(String(8))
     stage_label: Mapped[str | None] = mapped_column(String(140))
+    # Where the fix was against the stage's route window, as the server worked it out (migration 0026):
+    # {status: inside|before|after|off_route|unknown, off_route_km, along_km}. NULL when not checked.
+    route_check: Mapped[dict | None] = mapped_column(JSONType)
     photo_media_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("media_objects.id"), unique=True)
     group_submission_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     face_distance: Mapped[float | None] = mapped_column(Float)

@@ -1,0 +1,169 @@
+{
+ "tolerance_km": 3,
+ "window": {
+  "path": [
+   [
+    23.025515,
+    72.601516,
+    0.0
+   ],
+   [
+    22.694106,
+    72.855718,
+    45.13
+   ],
+   [
+    22.561307,
+    72.965733,
+    63.72
+   ]
+  ],
+  "from_code": "ADI",
+  "to_code": "ANND"
+ },
+ "single": {
+  "path": [
+   [
+    23.025515,
+    72.601516,
+    0.0
+   ]
+  ],
+  "from_code": "ADI",
+  "to_code": "ADI"
+ },
+ "cases": [
+  {
+   "name": "at the opening station",
+   "window": "window",
+   "latitude": 23.025515,
+   "longitude": 72.601516,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "inside",
+    "off_route_km": 0.0,
+    "along_km": 0.0
+   }
+  },
+  {
+   "name": "between two stations",
+   "window": "window",
+   "latitude": 22.859811,
+   "longitude": 72.728617,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "inside",
+    "off_route_km": 0.0,
+    "along_km": 22.6
+   }
+  },
+  {
+   "name": "at the valid-until station",
+   "window": "window",
+   "latitude": 22.561307,
+   "longitude": 72.965733,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "inside",
+    "off_route_km": 0.0,
+    "along_km": 63.7
+   }
+  },
+  {
+   "name": "further on, at Vadodara",
+   "window": "window",
+   "latitude": 22.310756,
+   "longitude": 73.181065,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "after",
+    "off_route_km": 35.59,
+    "along_km": 63.7
+   }
+  },
+  {
+   "name": "behind the opening station, at Sanand",
+   "window": "window",
+   "latitude": 23.024216,
+   "longitude": 72.384749,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "before",
+    "off_route_km": 22.18,
+    "along_km": 0.0
+   }
+  },
+  {
+   "name": "well beside the route",
+   "window": "window",
+   "latitude": 22.809811,
+   "longitude": 72.848617,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "off_route",
+    "off_route_km": 6.83,
+    "along_km": 34.2
+   }
+  },
+  {
+   "name": "just past the tolerance with a precise fix",
+   "window": "window",
+   "latitude": 22.859811,
+   "longitude": 72.768617,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "off_route",
+    "off_route_km": 3.35,
+    "along_km": 24.9
+   }
+  },
+  {
+   "name": "just past the tolerance, within it given the fix's accuracy",
+   "window": "window",
+   "latitude": 22.859811,
+   "longitude": 72.768617,
+   "accuracy_m": 900,
+   "expected": {
+    "status": "inside",
+    "off_route_km": 3.35,
+    "along_km": 24.9
+   }
+  },
+  {
+   "name": "single-station window, nearby",
+   "window": "single",
+   "latitude": 23.035515,
+   "longitude": 72.601516,
+   "accuracy_m": 20,
+   "expected": {
+    "status": "inside",
+    "off_route_km": 1.11,
+    "along_km": 0.0
+   }
+  },
+  {
+   "name": "single-station window, far",
+   "window": "single",
+   "latitude": 23.024216,
+   "longitude": 72.384749,
+   "accuracy_m": 20,
+   "expected": {
+    "status": "off_route",
+    "off_route_km": 22.18,
+    "along_km": 0.0
+   }
+  },
+  {
+   "name": "no window",
+   "window": null,
+   "latitude": 23.025515,
+   "longitude": 72.601516,
+   "accuracy_m": 10,
+   "expected": {
+    "status": "unknown",
+    "off_route_km": null,
+    "along_km": null
+   }
+  }
+ ]
+}

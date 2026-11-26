@@ -102,6 +102,8 @@ class AttendanceOut(ReadModel):
     stage: int
     station_code: str | None = None
     stage_label: str | None = None
+    # services/route_window.check: where the fix was against the stage's stretch of the route.
+    route_check: dict | None = None
     device_timestamp: datetime
     server_timestamp: datetime
     latitude: float
@@ -140,6 +142,8 @@ class StageCell(StrictModel):
     label: str | None = None
     station_code: str | None = None
     station_name: str | None = None
+    valid_until_code: str | None = None
+    valid_until_name: str | None = None
 
 
 class StaffAttendanceStatus(StrictModel):

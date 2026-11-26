@@ -95,7 +95,7 @@ describe('master-data form validation (mirrors the Pydantic schemas)', () => {
       passenger_feedback_per_coach_day: '', railway_feedback_limit_per_journey: '2', attendance_photo_required: true, attendance_late_grace_days: 1,
       inspection_photo_required: true, complaint_default_sla_hours: 72, attendance_face_verification: false, face_match_threshold: '0.5',
       attendance_fingerprint_verification: false, fingerprint_match_score: '40', face_liveness_required: true,
-      attendance_group_photo: false,
+      attendance_group_photo: false, attendance_route_check: 'flag', attendance_route_tolerance_km: '3',
       gps_enforced: true, gps_block_app: false, gps_max_accuracy_m: '100', gps_max_age_seconds: '120',
       gps_timeout_seconds: '20', gps_max_speed_kmh: '250', vpn_policy: 'block', offline_session_hours: '24',
       stray: 'x' };

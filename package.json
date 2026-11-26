@@ -9,8 +9,8 @@
     "build:demo": "cross-env VITE_DEMO_MODE=true vite build --outDir dist-demo --emptyOutDir",
     "preview": "vite preview --port 4173 --strictPort",
     "preview:lan": "cross-env PREVIEW_HTTPS=1 vite preview --host --port 4173 --strictPort",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node scripts/vitest.mjs run",
+    "test:watch": "node scripts/vitest.mjs",
     "test:e2e:offline": "playwright test -c playwright.offline.config.js",
     "generate-pwa-assets": "pwa-assets-generator"
   },

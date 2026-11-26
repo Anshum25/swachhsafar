@@ -14,6 +14,16 @@ FeedbackDays = Literal["all", "running"]
 class RouteStationOut(StrictModel):
     code: str
     name: str
+    # Whether the station's location is known (app/data/station_locations.json); attendance windows are
+    # checked from the nearest located station when it is not.
+    located: bool | None = None
+
+
+class RouteWindowOut(StrictModel):
+    """The stretch of route an attendance may be taken on (services/route_window.build_window)."""
+    path: list[list[float]]   # [[latitude, longitude, km from the first point], ...]
+    from_code: str
+    to_code: str
 
 
 class AttendanceStageOut(StrictModel):
@@ -23,6 +33,10 @@ class AttendanceStageOut(StrictModel):
     label: str
     station_code: str | None = None
     station_name: str | None = None
+    # Station stages only: the last station of the route at which this attendance can still be taken.
+    valid_until_code: str | None = None
+    valid_until_name: str | None = None
+    window: RouteWindowOut | None = None
 
 
 class CoachIn(StrictModel):
@@ -116,6 +130,13 @@ class TrainUpdate(StrictModel):
     # exactly `attendance_station_count` distinct stations of the train's route (first and last included).
     attendance_station_count: int | None = Field(default=None, ge=1, le=MAX_ATTENDANCE_STATIONS)
     attendance_station_codes: list[str] | None = Field(default=None, max_length=MAX_ATTENDANCE_STATIONS)
+    # {opening station code: last station code it stays open at}; stations left out use the default window.
+    attendance_valid_until: dict[str, str] | None = Field(default=None, max_length=MAX_ATTENDANCE_STATIONS)
+
+    @field_validator("attendance_valid_until")
+    @classmethod
+    def _upper_codes(cls, v):
+        return None if v is None else {str(k).strip().upper(): str(c).strip().upper() for k, c in v.items()}
 
     @field_validator("attendance_station_codes")
     @classmethod
@@ -153,7 +174,16 @@ class TrainOut(ReadModel):
     route_stations: list[RouteStationOut] | None = None
     attendance_station_count: int | None = None
     attendance_station_codes: list[str] | None = None
+    attendance_valid_until: dict[str, str] | None = None
     updated_at: datetime
+
+    @field_validator("route_stations", mode="before")
+    @classmethod
+    def _located(cls, v):
+        from app.services.route_window import location_of
+        if not isinstance(v, list):
+            return v
+        return [dict(r, located=location_of(r.get("code")) is not None) if isinstance(r, dict) else r for r in v]
     # ---- route and timetable (RailRadar) ----
     origin_code: str | None = None
     origin_name: str | None = None
