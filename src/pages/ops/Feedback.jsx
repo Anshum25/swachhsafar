@@ -462,7 +462,7 @@ function PassengerFlow({ id }) {
         {fb.status === 'draft' && (fb.pnr_status === 'invalid' || fb.otp_status === 'locked') && (
           <ErrorNote error={{ message: fb.pnr_status === 'invalid' ? 'PNR is not valid for this journey. This feedback cannot be counted.' : 'Too many wrong OTP attempts. OTP verification is locked.' }} />
         )}
-        {collector && fb.status === 'verified' && (questions.loading || !bank ? <Loading label="Loading questions…" /> : questions.error ? <ErrorNote error={questions.error} /> : (
+        {collector && fb.status === 'verified' && (questions.error ? <ErrorNote error={questions.error} onRetry={questions.reload} /> : questions.loading || !questions.data || !bank ? <Loading label="Loading questions…" /> : (
           <form className="space-y-4" onSubmit={(e) => {
             e.preventDefault();
             if (stage !== 'comments') { setStage('comments'); return; }

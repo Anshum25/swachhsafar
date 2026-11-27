@@ -9,7 +9,7 @@ from datetime import date
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from app.errors import BusinessRuleViolation, Conflict
+from app.errors import BusinessRuleViolation
 from app.models import (
     Attendance,
     Inspection,
@@ -26,7 +26,7 @@ from app.models import (
 )
 from app.models.org import RoleId
 from app.security.principal import Principal
-from app.services.reports import COUNTED, _bank_for, _divisions, _journeys_in, _range
+from app.services.reports import COUNTED, _bank_for, _divisions, _journeys_in, _psi_weights, _range
 from app.services.trains import stages_of
 
 MAX_JOURNEYS = 400
@@ -132,8 +132,6 @@ def psi_statement(db: Session, p: Principal, *, division_id, date_from: date, da
     divisions = _divisions(p, division_id)
     journeys = _journeys(db, p, division_id, date_from, date_to, train_id)
     bank = _bank_for(db, divisions, "passenger", bank_id)
-    if bank is not None and (not bank.questions or any(q.psi_weight is None for q in bank.questions)):
-        raise Conflict("PSI weights are not configured for this question bank", code="psi_not_configured")
     ids = [j.id for j in journeys]
     staff = _staff(db, ids)
     legs = defaultdict(list)
@@ -151,7 +149,7 @@ def psi_statement(db: Session, p: Principal, *, division_id, date_from: date, da
                 .group_by(PassengerFeedback.journey_id, PassengerFeedback.coach_code, PassengerFeedback.journey_day,
                           PassengerFeedbackRating.question_id)):
             sums[(jid, coach, day, qid)] = (float(total), int(n))
-    weights = {q.id: float(q.psi_weight) for q in bank.questions} if bank is not None else {}
+    weights = _psi_weights(bank)[0] if bank is not None else {}  # equal when the bank's are not all set
     span = float(bank.scale_max - bank.scale_min) if bank is not None else 1.0
 
     def psi(acc: dict) -> float | None:
