@@ -42,9 +42,9 @@ def test_detail_reports(world, fakes, db):
     insp = _ok(c.get(f"{API}/reports/inspection-list", headers=hm, params=q))
     assert [(i["coach_code"], i["phase"], i["comments"]) for i in insp["items"]] == [("B1", "A", "Clean")]
     assert insp["items"][0]["photo_media_id"]
-
     # PSI needs weights, exactly like the PSI report.
-    assert c.get(f"{API}/reports/psi-statement", headers=hm, params=q).status_code == 409
+    # no PSI weights set: every question counts equally, the statement is still produced
+    assert c.get(f"{API}/reports/psi-statement", headers=hm, params=q).status_code == 200
     db.execute(update(Question).where(Question.bank_id == uuid.UUID(world.passenger_bank["id"])).values(psi_weight=1))
     db.commit()
     psi = _ok(c.get(f"{API}/reports/psi-statement", headers=hm, params=q))
