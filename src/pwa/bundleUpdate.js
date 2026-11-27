@@ -15,9 +15,10 @@
 //     does not change and the SQLite database and media in OPFS stay exactly where they are. (This is why
 //     the app is not simply pointed at the live site with server.url: that changes the origin, and every
 //     phone would silently lose its local database.)
-//  3. Nothing is applied mid-shift. A new bundle is staged with next() and takes effect on the next cold
-//     start, so a reload never happens under someone holding the phone in the middle of a journey. Only a
-//     release marked `mandatory` on the server applies at once.
+//  3. Nothing is applied mid-shift. A bundle found when the app has just been opened (nobody has touched it
+//     yet, no dialog open: freshStart.js) is switched to at once, so closing and reopening the app is all an
+//     update takes. One found while someone is working is staged with next() and takes effect the next time
+//     the app is opened. A release marked `mandatory` on the server applies at once.
 import { serverUrl } from '../services/serverOrigin.js';
 import { getDeviceId } from '../security/device.js';
 import { isNativeApp } from '../security/native.js';
@@ -124,13 +125,14 @@ export async function checkBundleUpdate({
   };
 }
 
-// Download and stage a bundle. `mandatory` applies it at once (and reloads the WebView); otherwise it is
-// staged for the next cold start, so no one loses a form they are filling in.
+// Download a bundle and switch to it: at once when `now` (the app was just opened) or the release is
+// `mandatory`, which reloads the WebView; otherwise it is staged for the next cold start, so no one loses a
+// form they are filling in. Returns { applied, immediate, bundleId }.
 //
 // The checksum is passed to the updater, which refuses a download that does not match it. That matters:
 // this is the one path by which the app runs code it did not ship with, and the hash is what ties those
 // bytes back to the build the server published.
-export async function applyBundleUpdate(update, { onProgress = null } = {}) {
+export async function applyBundleUpdate(update, { onProgress = null, now = false } = {}) {
   const updater = plugin();
   if (!updater || !update) return { applied: false, reason: 'unavailable' };
 
@@ -150,12 +152,12 @@ export async function applyBundleUpdate(update, { onProgress = null } = {}) {
       checksum: update.sha256,
     });
     if (!bundle?.id) throw new Error('updater returned no bundle id');
-    if (update.mandatory) {
+    if (update.mandatory || now) {
       await updater.set({ id: bundle.id });
-      return { applied: true, immediate: true };
+      return { applied: true, immediate: true, bundleId: bundle.id };
     }
     await updater.next({ id: bundle.id });
-    return { applied: true, immediate: false };
+    return { applied: true, immediate: false, bundleId: bundle.id };
   } catch (e) {
     // A download or checksum failure must not be retried every time the app is opened on a connection
     // that is already struggling.
@@ -167,5 +169,18 @@ export async function applyBundleUpdate(update, { onProgress = null } = {}) {
     } catch {
       /* listener already gone */
     }
+  }
+}
+
+// Switch to a bundle staged earlier (reloads the WebView). Used when the app comes back to a fresh start
+// after a long time in the background, so the update does not wait for a full relaunch.
+export async function switchToBundle(bundleId) {
+  const updater = plugin();
+  if (!updater || !bundleId) return false;
+  try {
+    await updater.set({ id: bundleId });
+    return true;
+  } catch {
+    return false;
   }
 }

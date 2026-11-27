@@ -124,7 +124,7 @@ describe('downloading and staging', () => {
   it('stages the bundle for the next cold start rather than applying it now', async () => {
     const update = await check(async () => answer(OFFER));
     const result = await applyBundleUpdate(update);
-    expect(result).toEqual({ applied: true, immediate: false });
+    expect(result).toEqual({ applied: true, immediate: false, bundleId: 'bundle-abc' });
     expect(updater.next).toHaveBeenCalledWith({ id: 'bundle-abc' });
     expect(updater.set).not.toHaveBeenCalled();
   });
@@ -132,7 +132,17 @@ describe('downloading and staging', () => {
   it('applies at once only when the server marked the release mandatory', async () => {
     const update = await check(async () => answer({ ...OFFER, mandatory: true }));
     const result = await applyBundleUpdate(update);
-    expect(result).toEqual({ applied: true, immediate: true });
+    expect(result).toEqual({ applied: true, immediate: true, bundleId: 'bundle-abc' });
+    expect(updater.set).toHaveBeenCalledWith({ id: 'bundle-abc' });
+    expect(updater.next).not.toHaveBeenCalled();
+  });
+
+  // Just opened, nobody using it yet (freshStart.js): the new bundle is switched to at once, so closing and
+  // reopening the app is all an update takes.
+  it('switches at once when the app has just been opened', async () => {
+    const update = await check(async () => answer(OFFER));
+    const result = await applyBundleUpdate(update, { now: true });
+    expect(result).toEqual({ applied: true, immediate: true, bundleId: 'bundle-abc' });
     expect(updater.set).toHaveBeenCalledWith({ id: 'bundle-abc' });
     expect(updater.next).not.toHaveBeenCalled();
   });

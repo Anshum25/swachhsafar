@@ -1,48 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { clearAppCache } from '../../src/pwa/clearCache.js';
+import { describe, expect, it } from 'vitest';
 import { MASTER_SECTIONS, sectionOf, visibleSections } from '../../src/pages/ops/masters/sections.js';
 import { canManageRole, serverFieldErrors, userChanges, validateUserFields } from '../../src/pages/ops/masters/UserDialogs.jsx';
-
-function fakeWindow({ online = true, cacheKeys = ['workbox-precache-v2', 'runtime'] } = {}) {
-  const deleted = [];
-  const unregistered = [];
-  const win = {
-    navigator: {
-      onLine: online,
-      serviceWorker: { getRegistrations: async () => [{ unregister: async () => unregistered.push(1) }] },
-    },
-    caches: { keys: async () => cacheKeys, delete: async (k) => deleted.push(k) },
-    sessionStorage: { clear: vi.fn() },
-    localStorage: { clear: vi.fn() },
-    location: { reload: vi.fn() },
-  };
-  return { win, deleted, unregistered };
-}
-
-describe('clearAppCache', () => {
-  it('removes cached app files and the service worker, then reloads', async () => {
-    const { win, deleted, unregistered } = fakeWindow();
-    const out = await clearAppCache({ win });
-    expect(deleted).toEqual(['workbox-precache-v2', 'runtime']);
-    expect(unregistered).toHaveLength(1);
-    expect(out).toEqual({ caches: 2, workers: 1 });
-    expect(win.location.reload).toHaveBeenCalledOnce();
-  });
-
-  it('never touches the sign-in, form drafts or records', async () => {
-    const { win } = fakeWindow();
-    await clearAppCache({ win });
-    expect(win.localStorage.clear).not.toHaveBeenCalled();
-    expect(win.sessionStorage.clear).not.toHaveBeenCalled();
-  });
-
-  it('refuses offline, when the files could not be downloaded again', async () => {
-    const { win, deleted } = fakeWindow({ online: false });
-    await expect(clearAppCache({ win })).rejects.toThrow(/internet/);
-    expect(deleted).toEqual([]);
-    expect(win.location.reload).not.toHaveBeenCalled();
-  });
-});
 
 describe('master data sections', () => {
   it('lists all eleven subsections for a full administrator, gated ones hidden otherwise', () => {

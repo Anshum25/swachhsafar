@@ -1,54 +1,17 @@
-// Installed-app UI: the install banner, the "new version" banner, and the Android app's own update notice.
+// Installed-app UI: the install banner, the "new version" notices, and the Android app's own update notice.
+//
+// Updates apply by themselves (src/pwa/freshStart.js): opening the app loads the newest version, and one
+// found while someone is working loads the next time the app is opened. The notices only say so; there is
+// nothing to tap, except Download for the rare release that needs a new APK.
 import { useEffect, useState } from 'react';
 import { useQueueState } from '../app/session.jsx';
-import { dismissInstall, installDismissed, installInstructions, isStandalone, promptInstall, pwa, usePwa } from '../pwa/pwaState.js';
+import { dismissInstall, installDismissed, installInstructions, isStandalone, promptInstall, usePwa } from '../pwa/pwaState.js';
 import { checkAppUpdate } from '../pwa/appUpdate.js';
-import { applyBundleUpdate, checkBundleUpdate } from '../pwa/bundleUpdate.js';
+import { applyBundleUpdate, checkBundleUpdate, switchToBundle } from '../pwa/bundleUpdate.js';
+import { applyWhenFresh, safeToApplyUpdate, watchFreshStart } from '../pwa/freshStart.js';
 import { isNativeApp } from '../security/native.js';
-import { clearAppCache } from '../pwa/clearCache.js';
-import { useNetworkStatus } from '../hooks/useNetworkStatus.js';
 
-// Offered with every "new version" notice: when an update does not seem to take, clearing this device's cached
-// app files and reloading fetches the newest version fresh. Records on this device and the sign-in are kept
-// (src/pwa/clearCache.js). Asks first, and needs the network.
-export function ClearCacheButton({ className = 'rounded-lg px-3 py-1.5 font-semibold text-white underline decoration-white/60 hover:bg-white/10' }) {
-  const online = useNetworkStatus();
-  const [asking, setAsking] = useState(false);
-  const [state, setState] = useState({ busy: false, error: null });
-  async function run() {
-    setState({ busy: true, error: null });
-    try {
-      await clearAppCache();
-    } catch (e) {
-      setState({ busy: false, error: e.message });
-    }
-  }
-  return (
-    <>
-      <button type="button" className={className} disabled={!online} onClick={() => setAsking(true)} data-testid="clear-cache"
-        title={online ? 'Remove cached app files and reload' : 'Needs internet'}>
-        Clear cache
-      </button>
-      {asking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/45 p-4 text-left" onClick={() => !state.busy && setAsking(false)}>
-          <div role="dialog" aria-modal="true" aria-label="Clear app cache" className="w-full max-w-sm rounded-[20px] bg-white p-5 text-sm text-slate-700 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mb-2 text-[17px] font-bold text-ink">Clear app cache?</h2>
-            <p>This removes the app files stored on this device and reloads, so the newest version is downloaded fresh.</p>
-            <p className="mt-2 font-medium text-emerald-800">Your records (including unsynced ones), your sign-in and form drafts are kept.</p>
-            <p className="mt-2">Save any open form first.</p>
-            {state.error && <p className="mt-2 font-medium text-red-700" role="alert">{state.error}</p>}
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button type="button" className="btn-secondary h-12" disabled={state.busy} onClick={() => setAsking(false)}>Cancel</button>
-              <button type="button" className="btn-primary h-12" disabled={state.busy || !online} onClick={run} data-testid="clear-cache-confirm">
-                {state.busy ? 'Clearing…' : 'Clear and reload'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
+const NEXT_OPEN = 'is downloaded and loads the next time you open the app.';
 
 // Shown at most once per 30 days while the app is not installed: an Install button when the browser
 // offers installation (Chrome / Edge on Android), otherwise how to install from this browser's menu.
@@ -82,6 +45,7 @@ export function InstallBanner() {
   );
 }
 
+// Web app: a new version found while the app is in use (registerServiceWorker.js) is already downloaded.
 export function UpdateBanner() {
   const { updateReady } = usePwa();
   const { pending } = useQueueState();
@@ -89,10 +53,9 @@ export function UpdateBanner() {
   return (
     <div className="flex flex-wrap items-center gap-3 bg-sky-700 px-4 py-2 text-sm text-white sm:px-6" role="status" data-testid="update-banner">
       <span className="flex-1">
-        A new version of Swachh Safar is ready. {pending ? `Your ${pending} unsynced record(s) are stored on this device and are kept.` : ''} Save any open form first.
+        A new version of Swachh Safar {NEXT_OPEN}
+        {pending ? ` Your ${pending} unsynced record(s) are stored on this device and are kept.` : ''}
       </span>
-      <button type="button" className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800" onClick={pwa.update}>Update now</button>
-      <ClearCacheButton />
     </div>
   );
 }
@@ -101,29 +64,46 @@ export function UpdateBanner() {
 // logic and fixes all live in the bundle -- so it is asked first, and the APK question below only matters
 // for the few releases that change native code.
 //
-// The download runs by itself, in the background, and the bundle is staged for the next cold start: no
-// prompt, nothing to agree to, and nothing reloads while a form is open. The banner appears only once a
-// bundle is ready, and says what will happen rather than asking for permission to do it.
+// The download runs by itself, in the background. Found when the app has just been opened, the new bundle is
+// switched to at once; found while someone is working, it is staged and switched to the next time the app is
+// opened (or comes back after a long time in the background). No prompt, nothing to agree to, and nothing
+// reloads while a form is open. Checked on start, when the connection returns, and on resume.
 function useBundleUpdate() {
   const [state, setState] = useState(null);   // { bundleId, version } once staged
   useEffect(() => {
     if (!isNativeApp()) return undefined;
+    watchFreshStart();
     let cancelled = false;
+    let busy = false;
+    let staged = null;
+    let lastCheck = 0;
     const look = async () => {
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-      const update = await checkBundleUpdate();
-      if (cancelled || !update) return;
-      const result = await applyBundleUpdate(update);
-      // `immediate` means the updater has already reloaded the WebView, so there is nothing to announce.
-      if (!cancelled && result.applied && !result.immediate) {
+      if (busy || staged || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+      busy = true;
+      lastCheck = Date.now();
+      try {
+        const update = await checkBundleUpdate();
+        if (cancelled || !update) return;
+        // `immediate`: the updater has already reloaded the WebView into the new bundle.
+        const result = await applyBundleUpdate(update, { now: safeToApplyUpdate() });
+        if (cancelled || !result.applied || result.immediate) return;
+        staged = result.bundleId;
         setState({ bundleId: update.bundleId, version: update.version });
+        applyWhenFresh(() => switchToBundle(staged));
+      } finally {
+        busy = false;
       }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastCheck > 15 * 60 * 1000) look();
     };
     look();
     window.addEventListener('online', look);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
       window.removeEventListener('online', look);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
   return state;
@@ -136,10 +116,9 @@ export function BundleUpdateBanner() {
   return (
     <div className="flex flex-wrap items-center gap-3 bg-sky-700 px-4 py-2 text-sm text-white sm:px-6" role="status" data-testid="bundle-update-banner">
       <span className="flex-1">
-        Swachh Safar {staged.version} is downloaded and starts the next time you open the app.
+        Swachh Safar {staged.version} {NEXT_OPEN}
         {pending ? ` Your ${pending} unsynced record(s) are stored on this device and are kept.` : ''}
       </span>
-      <ClearCacheButton />
     </div>
   );
 }
@@ -185,13 +164,12 @@ export function AppUpdateBanner() {
     <div className="flex flex-wrap items-center gap-3 bg-sky-700 px-4 py-2 text-sm text-white sm:px-6" role="status" data-testid="apk-update-banner">
       <span className="flex-1">{updateText(update)}</span>
       <a href={update.url} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800">Download</a>
-      <ClearCacheButton />
     </div>
   );
 }
 
-// Signed-out variant (login screen): no queue context is needed, and there is no open form to lose.
-// Without it, a device holding an older cached login screen is never told that a newer one is ready.
+// Signed-out variant (login screen): no queue context is needed. Without it, a device holding an older
+// cached login screen would not be told that a newer one is on its way.
 export function LoginUpdateBanner() {
   const { updateReady } = usePwa();
   const appUpdate = useAppUpdate();
@@ -202,16 +180,13 @@ export function LoginUpdateBanner() {
       <div className="relative z-20 mb-3 flex w-full max-w-md items-center gap-3 rounded-2xl bg-sky-700 px-4 py-2.5 text-sm text-white shadow" role="status" data-testid="apk-update-banner">
         <span className="flex-1">{updateText(appUpdate)}</span>
         <a href={appUpdate.url} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800">Download</a>
-        <ClearCacheButton />
       </div>
     );
   }
   if (!updateReady) return null;
   return (
     <div className="relative z-20 mb-3 flex w-full max-w-md items-center gap-3 rounded-2xl bg-sky-700 px-4 py-2.5 text-sm text-white shadow" role="status" data-testid="update-banner">
-      <span className="flex-1">A new version of Swachh Safar is ready.</span>
-      <button type="button" className="rounded-lg bg-white px-3 py-1.5 font-semibold text-sky-800" onClick={pwa.update}>Update now</button>
-      <ClearCacheButton />
+      <span className="flex-1">A new version of Swachh Safar {NEXT_OPEN}</span>
     </div>
   );
 }

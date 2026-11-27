@@ -1,6 +1,7 @@
 // Application update with unsynced data on the device: a record captured offline is still waiting for the
-// server when a new service worker version is published. The update must be offered (not forced), must
-// keep the record through activation and reload, and the record must then be delivered exactly once.
+// server when a new service worker version is published. While the app is in use the update waits (nothing
+// is swapped under the user, and there is no button to tap); closing and reopening the app loads it by
+// itself. The record must survive the update and then be delivered exactly once.
 //
 // The "new version" is published like a deploy does: the served serviceWorker.js on disk changes (the same
 // build plus a marker that answers a message), so the browser's own update check finds a byte-different
@@ -42,7 +43,7 @@ const swVersion = (page) => page.evaluate(() => new Promise((resolve) => {
   setTimeout(() => resolve('v1'), 1500); // the original worker does not answer
 }));
 
-test('a new version is offered, keeps the unsynced record, and the record is delivered once', async () => {
+test('a new version loads by itself when the app is reopened, keeps the unsynced record, and the record is delivered once', async () => {
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
   const context = await chromium.launchPersistentContext(dir, {
     ...pixel, baseURL: BASE, geolocation: { latitude: 28.6139, longitude: 77.209, accuracy: 15 }, permissions: ['geolocation'],
@@ -75,17 +76,20 @@ test('a new version is offered, keeps the unsynced record, and the record is del
   await dialog.getByRole('button', { name: 'Mark attendance' }).click();
   await expect(page.getByRole('listitem', { name: 'Sunita Devi stage 1 Source pending sync' })).toBeVisible();
 
-  // ---- a new version is published: it waits, and the banner says the unsynced record is kept ----
+  // ---- a new version is published while the app is in use: it waits, already downloaded ----
   writeFileSync(SW_FILE, swOriginal + V2_MARKER);
   await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
   const banner = page.getByTestId('update-banner');
   await expect(banner).toBeVisible();
+  await expect(banner).toContainText('loads the next time you open the app');
   await expect(banner).toContainText('1 unsynced record(s) are stored on this device and are kept');
-  expect(await swVersion(page)).toBe('v1'); // not forced: the running page keeps its version
+  await expect(banner.getByRole('button')).toHaveCount(0);   // nothing to tap, no "clear cache"
+  expect(await swVersion(page)).toBe('v1'); // not swapped under the user
 
-  await banner.getByRole('button', { name: 'Update now' }).click();
-  await page.waitForEvent('load');
-  await expect.poll(() => swVersion(page), { timeout: 20_000 }).toBe('v2');
+  // ---- the app is closed and opened again: the new version loads by itself ----
+  await page.reload();
+  await expect.poll(() => swVersion(page), { timeout: 30_000 }).toBe('v2');
+  await expect(page.getByTestId('update-banner')).toHaveCount(0);
 
   // ---- after the update: the record is still on the device and still pending ----
   await page.goto('/#/attendance');

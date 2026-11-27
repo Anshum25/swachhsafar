@@ -7,7 +7,8 @@
 // a new version cannot affect records waiting to sync.
 //
 // Lifecycle: the first install activates at once. A later version waits until the page asks for it
-// (SKIP_WAITING, sent when the user taps "Update"), so a running page keeps the chunks it was built with;
+// (SKIP_WAITING, sent when the app is at a fresh start: just opened, nobody using it yet -- see
+// src/pwa/freshStart.js), so a page in use keeps the chunks it was built with;
 // cleanupOutdatedCaches then removes only caches of older precache versions.
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
