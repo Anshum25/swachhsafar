@@ -259,7 +259,7 @@ def journey_report(db: Session, p: Principal, *, division_id, date_from: date, d
         coaches = list(j.coaches)
         ac, nac = _coach_split(coaches)
         n_staff = len(staff.get(j.id, []))
-        out.append(dict(sr=i, journey_id=j.id, train=_train_label(j), train_name=_train_name(j), ac=ac, nac=nac,
+        out.append(dict(sr=i, journey_id=j.id, train_id=j.train_id, train=_train_label(j), train_name=_train_name(j), ac=ac, nac=nac,
                         journey_date=j.journey_date, end_date=j.end_date, staff=n_staff,
                         attendance_done=int(att.get(j.id, 0)), attendance_expected=n_staff * len(stages_of(j)),
                         feedback_done=int(fb.get(j.id, 0)),

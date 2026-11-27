@@ -18,11 +18,7 @@ const TABS = [
   { value: 'psi-statement', label: 'PSI statement' },
   { value: 'attendance-summary', label: 'Attendance summary' },
   { value: 'journey-report', label: 'Journey report' },
-  { value: 'attendance', label: 'Attendance' },
-  { value: 'journeys', label: 'Journeys' },
   { value: 'inspections', label: 'Inspections' },
-  { value: 'feedback', label: 'Feedback' },
-  { value: 'targets', label: 'Feedback targets' },
   { value: 'verification', label: 'PNR / OTP' },
   { value: 'timetables', label: 'Timetables' },
   { value: 'psi', label: 'PSI' },
@@ -307,10 +303,17 @@ function Report({ tab, q }) {
 }
 
 export default function Reports() {
-  const { can } = useSession();
   const division = useDivision();
-  const tabs = TABS.filter((t) => t.value !== 'journeys' || can('journeys.read') || can('journeys.read_all'));
+  const tabs = TABS;
   const [tab, setTab] = useState('inspection-list');
+  const [drill, setDrill] = useState({ trainId: '', n: 0 });
+  // A figure in the journey report opens the matching report for that journey's train and dates.
+  const open = (kind, { trainId, from: f, to: t }) => {
+    setFrom(f);
+    setTo(t);
+    setDrill((d) => ({ trainId, n: d.n + 1 }));
+    setTab(kind);
+  };
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(today());
   const q = { date_from: from, date_to: to, division_id: division.divisionId };
@@ -324,7 +327,7 @@ export default function Reports() {
         </div>
       </Panel>
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
-      <Panel>{STATEMENT_TABS.includes(tab) ? <WorkStatement kind={tab} q={q} key={tab} /> : <Report tab={tab} q={q} key={tab} />}</Panel>
+      <Panel>{STATEMENT_TABS.includes(tab) ? <WorkStatement kind={tab} q={q} key={`${tab}-${drill.n}`} initialTrain={drill.trainId} onOpen={open} /> : <Report tab={tab} q={q} key={tab} />}</Panel>
     </>
   );
 }
