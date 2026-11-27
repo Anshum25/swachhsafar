@@ -11,8 +11,13 @@ import {
 } from '../../components/ui.jsx';
 import { daysAgo, today } from '../../utils/capture.js';
 import { classLabel } from '../../utils/coaches.js';
+import { ExportButtons, STATEMENT_TABS, WorkStatement, listGrid } from './WorkStatements.jsx';
 
 const TABS = [
+  { value: 'inspection-list', label: 'Inspection list' },
+  { value: 'psi-statement', label: 'PSI statement' },
+  { value: 'attendance-summary', label: 'Attendance summary' },
+  { value: 'journey-report', label: 'Journey report' },
   { value: 'attendance', label: 'Attendance' },
   { value: 'journeys', label: 'Journeys' },
   { value: 'inspections', label: 'Inspections' },
@@ -44,8 +49,9 @@ function downloadCsv(name, columns, rows) {
 function ReportTable({ name, rows, columns, rowKey }) {
   return (
     <>
-      <div className="mb-2 flex justify-end">
-        <button type="button" className="btn-link text-xs" onClick={() => downloadCsv(name, columns, rows)} disabled={!rows.length}>Export CSV</button>
+      <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+        <ExportButtons name={name} disabled={!rows.length} grid={() => listGrid(name.replace(/^swachh-safar-/, '').replace(/-/g, ' ').toUpperCase(), columns, rows)} />
+        <button type="button" className="btn-link text-xs" onClick={() => downloadCsv(name, columns, rows)} disabled={!rows.length}>CSV</button>
       </div>
       <Table rowKey={rowKey} rows={rows} columns={columns.map((c) => ({ key: c.key, label: c.label, render: c.render ?? (c.value ? (r) => c.value(r) : undefined) }))} />
     </>
@@ -304,7 +310,7 @@ export default function Reports() {
   const { can } = useSession();
   const division = useDivision();
   const tabs = TABS.filter((t) => t.value !== 'journeys' || can('journeys.read') || can('journeys.read_all'));
-  const [tab, setTab] = useState('attendance');
+  const [tab, setTab] = useState('inspection-list');
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(today());
   const q = { date_from: from, date_to: to, division_id: division.divisionId };
@@ -318,7 +324,7 @@ export default function Reports() {
         </div>
       </Panel>
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
-      <Panel><Report tab={tab} q={q} key={tab} /></Panel>
+      <Panel>{STATEMENT_TABS.includes(tab) ? <WorkStatement kind={tab} q={q} key={tab} /> : <Report tab={tab} q={q} key={tab} />}</Panel>
     </>
   );
 }
