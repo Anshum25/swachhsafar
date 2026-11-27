@@ -66,9 +66,9 @@ export function outsideMessage(stage, result) {
   return `This attendance can be taken between ${start} and ${end}. You are about ${n} km from the train's route there.`;
 }
 
-// The division's setting, read the way the server reads it (PolicySettings defaults: flag, 3 km).
+// The division's setting, read the way the server reads it (PolicySettings defaults: block, 3 km).
 export function routeCheckPolicy(policy) {
-  const mode = ['off', 'flag', 'block'].includes(policy?.attendance_route_check) ? policy.attendance_route_check : 'flag';
+  const mode = ['off', 'flag', 'block'].includes(policy?.attendance_route_check) ? policy.attendance_route_check : 'block';
   const tolerance = Number.isFinite(policy?.attendance_route_tolerance_km) ? policy.attendance_route_tolerance_km : 3;
   return { mode, toleranceKm: tolerance };
 }

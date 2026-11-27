@@ -13,8 +13,8 @@ describe('route window check', () => {
   }
 
   it('reads the division policy with the server defaults', () => {
-    expect(routeCheckPolicy({})).toEqual({ mode: 'flag', toleranceKm: 3 });
-    expect(routeCheckPolicy({ attendance_route_check: 'block', attendance_route_tolerance_km: 5 })).toEqual({ mode: 'block', toleranceKm: 5 });
+    expect(routeCheckPolicy({})).toEqual({ mode: 'block', toleranceKm: 3 });
+    expect(routeCheckPolicy({ attendance_route_check: 'flag', attendance_route_tolerance_km: 5 })).toEqual({ mode: 'flag', toleranceKm: 5 });
   });
 
   it('checks only station stages, and not when the division turned it off', () => {

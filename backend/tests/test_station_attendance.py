@@ -55,6 +55,13 @@ def _configure(world, count, codes):
                               json={"attendance_station_count": count, "attendance_station_codes": codes})
 
 
+# Station fixes (app/data/station_locations.json), for attendances that must be taken on their own stretch
+# of route -- from the attendance's station through the next attendance station.
+_AT = {code: {"latitude": lat, "longitude": lon} for code, (lat, lon) in {
+    "ND": (22.694106, 72.855718), "BRC": (22.310756, 73.181065), "ST": (21.206568, 72.840793),
+}.items()}
+
+
 def _journey(world, jid=None):
     return world.client.get(f"{API}/journeys/{jid or world.journey['id']}", headers=world.h("manager")).json()
 
@@ -143,8 +150,10 @@ def test_each_employee_progresses_through_the_configured_stages(world, sched):
                       json={"user_ids": [str(world.jan2.id)]})
     r, _ = _punch(world, "jan", 2)
     assert r.json()["error"]["code"] == "stage_order"
-    for stage in range(1, 4):
-        r, _ = _punch(world, "jan", stage)
+    # Each attendance is taken at its own station: the default fix is Vadodara, which is nowhere near
+    # Surat, and the division refuses an attendance outside its stretch of route.
+    for stage, at in enumerate([_AT["ND"], _AT["BRC"], _AT["ST"]], 1):
+        r, _ = _punch(world, "jan", stage, **at)
         assert r.status_code == 201, r.text
     assert r.json()["station_code"] == "ST" and r.json()["stage_label"] == "Surat"
     r, _ = _punch(world, "jan", 4)
@@ -223,12 +232,13 @@ def _windows(world):
     return [(s["station_code"], s["valid_until_code"]) for s in _journey(world)["attendance_stages"]]
 
 
-def test_each_attendance_stays_open_until_the_halt_before_the_next_by_default(world, sched):
+def test_each_attendance_stays_open_through_the_next_attendance_station_by_default(world, sched):
     _load_route(world)
     assert _configure(world, 2, ["ADI", "BRC"]).status_code == 200
-    assert _windows(world) == [("ADI", "ANND"), ("BRC", "BCT")]
+    # ADI's window reaches BRC itself, so the whole leg between the two attendances is covered.
+    assert _windows(world) == [("ADI", "BRC"), ("BRC", "BCT")]
     stage = _journey(world)["attendance_stages"][0]
-    assert (stage["label"], stage["valid_until_name"]) == ("Ahmedabad Jn", "Anand Jn")
+    assert (stage["label"], stage["valid_until_name"]) == ("Ahmedabad Jn", "Vadodara Jn")
 
 
 def test_the_office_chooses_how_far_an_attendance_stays_open(world, sched):
@@ -244,7 +254,7 @@ def test_the_office_chooses_how_far_an_attendance_stays_open(world, sched):
 
 
 @pytest.mark.parametrize("until, code", [
-    ({"ADI": "BRC"}, "valid_until_out_of_range"),     # runs into the next attendance station
+    ({"ADI": "BH"}, "valid_until_out_of_range"),      # runs past the next attendance station
     ({"BRC": "ANND"}, "valid_until_out_of_range"),    # before its own station
     ({"BRC": "PUNE"}, "valid_until_out_of_range"),    # not on the route
     ({"ND": "ANND"}, "valid_until_unknown_station"),  # not an attendance station
@@ -263,6 +273,6 @@ def test_changing_the_stations_keeps_only_the_windows_that_still_fit(world, sche
         "attendance_valid_until": {"ADI": "ANND", "BRC": "ST"}})
     r = _configure(world, 3, ["ADI", "ND", "BRC"])   # ND now comes before ADI's chosen end
     assert r.status_code == 200 and r.json()["attendance_valid_until"] == {"BRC": "ST"}
-    assert _windows(world) == [("ADI", "ADI"), ("ND", "ANND"), ("BRC", "ST")]
+    assert _windows(world) == [("ADI", "ND"), ("ND", "BRC"), ("BRC", "ST")]
     r = _configure(world, None, None)
     assert r.json()["attendance_valid_until"] is None

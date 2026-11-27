@@ -19,10 +19,12 @@ class PolicySettings(StrictModel):
     attendance_photo_required: bool = True
     attendance_late_grace_days: int = Field(default=1, ge=0, le=7)
     # Station-wise attendance: is the fix on the stretch of route the attendance is open for (from its
-    # station to its "valid until" station, services/route_window)? "flag" records it for review, "block"
-    # refuses the attendance. Not "block" by default: station locations come from open data and a few are
-    # off, so a division turns blocking on once it has seen its trains pass.
-    attendance_route_check: Literal["off", "flag", "block"] = "flag"
+    # station through the next attendance station, services/route_window)? "block" refuses the attendance,
+    # "flag" only records it for review. "block" by default: an attendance marked somewhere the train never
+    # was is not worth recording. Station locations come from open data, so a stage whose stations have no
+    # location checks as "unknown" and is never refused -- missing data cannot lock anyone out, and a
+    # division whose trains run where the data is wrong relaxes this to "flag".
+    attendance_route_check: Literal["off", "flag", "block"] = "block"
     # How far from the route (and past its first and last station) a fix may be, on top of its accuracy.
     attendance_route_tolerance_km: int = Field(default=3, ge=1, le=25)
     inspection_photo_required: bool = True

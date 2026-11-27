@@ -59,6 +59,11 @@ function useUsers(divisionId, roleId) {
   return useResource(divisionId && canIn('users.read', divisionId) ? '/users' : null, { division_id: divisionId, role_id: roleId, status: 'active', page_size: 200 });
 }
 
+// A leg's heading inside the journey form, so the outbound and return dates and times are not one flat grid.
+const Legend = ({ children }) => (
+  <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</p>
+);
+
 function JourneyForm({ journey, divisionId, onClose, onSaved, onConflict }) {
   const { ops } = useSession();
   const editing = !!journey;
@@ -71,6 +76,8 @@ function JourneyForm({ journey, divisionId, onClose, onSaved, onConflict }) {
     start_time: journey?.start_time?.slice(0, 5) ?? '',
     end_time: journey?.end_time?.slice(0, 5) ?? '',
     linked_journey_date: journey?.linked_journey_date ?? '',
+    return_start_time: journey?.return_start_time?.slice(0, 5) ?? '',
+    return_end_time: journey?.return_end_time?.slice(0, 5) ?? '',
     end_date: journey?.end_date ?? '',
     supervisor_id: journey?.supervisor_id ?? '',
     staff_ids: [],
@@ -85,7 +92,10 @@ function JourneyForm({ journey, divisionId, onClose, onSaved, onConflict }) {
     setBusy(true);
     setError(null);
     try {
-      const times = { start_time: opt(form.start_time), end_time: opt(form.end_time) };
+      // Left blank, a time is not sent at all: the server then keeps what the journey has, and on a new
+      // journey falls back to the train's timetable (services/journeys.create_journey).
+      const times = { start_time: opt(form.start_time), end_time: opt(form.end_time),
+        return_start_time: opt(form.return_start_time), return_end_time: opt(form.return_end_time) };
       const saved = editing
         ? await ops.journeys.update(journey, {
           journey_date: form.journey_date, ...times, linked_journey_date: opt(form.linked_journey_date), end_date: opt(form.end_date),
@@ -115,11 +125,19 @@ function JourneyForm({ journey, divisionId, onClose, onSaved, onConflict }) {
             options={(trains.data?.items ?? []).map((t) => ({ value: t.id, label: `${t.train_no} · ${t.name}` }))} />
         </Field>
       )}
+      {/* Each leg is dated and timed on its own: the outbound runs journey_date/start_time to end_time,
+          the return runs linked_journey_date/return_start_time to end_date/return_end_time. */}
+      <Legend>Outbound</Legend>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Journey date"><input type="date" className="input" required value={form.journey_date} onChange={(e) => set('journey_date')(e.target.value)} /></Field>
-        <Field label="Return date" hint="Default: from train duration"><input type="date" className="input" value={form.linked_journey_date} onChange={(e) => set('linked_journey_date')(e.target.value)} /></Field>
         <Field label="Start time"><input type="time" className="input" value={form.start_time} onChange={(e) => set('start_time')(e.target.value)} /></Field>
         <Field label="End time"><input type="time" className="input" value={form.end_time} onChange={(e) => set('end_time')(e.target.value)} /></Field>
+      </div>
+      <Legend>Return</Legend>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Return date" hint="Default: from train duration"><input type="date" className="input" value={form.linked_journey_date} onChange={(e) => set('linked_journey_date')(e.target.value)} /></Field>
+        <Field label="Return start time" hint="Default: from the train's timetable"><input type="time" className="input" value={form.return_start_time} onChange={(e) => set('return_start_time')(e.target.value)} /></Field>
+        <Field label="Return end time" hint="Default: from the train's timetable"><input type="time" className="input" value={form.return_end_time} onChange={(e) => set('return_end_time')(e.target.value)} /></Field>
         <Field label="End date" hint="Default: from train duration"><input type="date" className="input" value={form.end_date} onChange={(e) => set('end_date')(e.target.value)} /></Field>
       </div>
       {!editing && (

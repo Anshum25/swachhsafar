@@ -58,14 +58,15 @@ export function inRouteOrder(route, codes) {
 }
 
 // How far along the route each attendance stays open (backend services/trains.valid_until_choices): from its
-// own station up to the halt before the next attendance station; the last one, to the end of the route.
+// own station through the next attendance station; the last one, to the end of the route. The next
+// attendance station is included so an attendance stays open over the whole leg between the two.
 export function validUntilChoices(route, codes, code) {
   const stations = selectableStations(route);
   const start = stations.findIndex((s) => s.code === code);
   if (start < 0) return [];
   const index = (c) => stations.findIndex((s) => s.code === c);
   const later = codes.map(index).filter((i) => i > start);
-  return stations.slice(start, later.length ? Math.min(...later) : stations.length);
+  return stations.slice(start, later.length ? Math.min(...later) + 1 : stations.length);
 }
 
 // Each selected station's window end: the office's choice while it still fits, else the default (the last choice).

@@ -101,14 +101,19 @@ def _first_index(route: list[dict]) -> dict[str, int]:
 
 
 def valid_until_choices(route: list[dict], codes: list[str], code: str) -> list[str]:
-    """The stations the attendance opening at `code` may stay open until: from that station up to the halt
-    before the next attendance station (the last attendance: to the end of the route), in route order."""
+    """The stations the attendance opening at `code` may stay open until: from that station through the next
+    attendance station (the last attendance: to the end of the route), in route order.
+
+    The next attendance station is included, so an attendance stays open over the whole leg between the two
+    -- a staff member anywhere between Burhanpur and Khirkiya can still mark the Burhanpur attendance. The
+    two legs therefore overlap at that station, which is intended: arriving at the next station is the
+    moment its own attendance opens, not the moment the previous one is already too late."""
     order = _first_index(route)
     if code not in order:
         return []
     start = order[code]
     later = [order[c] for c in codes if c in order and order[c] > start]
-    stop = min(later) if later else len(route)
+    stop = min(later) + 1 if later else len(route)
     return [r["code"] for r in route[start:stop]]
 
 

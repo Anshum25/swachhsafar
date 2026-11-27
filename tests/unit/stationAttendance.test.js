@@ -151,17 +151,18 @@ describe('station-wise attendance (offline store)', () => {
 describe('attendance windows (how far along the route each attendance stays open)', () => {
   const codes = (list) => list.map((s) => s.code);
 
-  it('offers the stations from its own up to the halt before the next attendance station', () => {
-    expect(codes(validUntilChoices(ROUTE, ['ADI', 'BRC'], 'ADI'))).toEqual(['ADI', 'ND', 'ANND']);
+  it('offers the stations from its own through the next attendance station', () => {
+    expect(codes(validUntilChoices(ROUTE, ['ADI', 'BRC'], 'ADI'))).toEqual(['ADI', 'ND', 'ANND', 'BRC']);
     expect(codes(validUntilChoices(ROUTE, ['ADI', 'BRC'], 'BRC'))).toEqual(['BRC', 'BH', 'ST', 'BCT']);
-    expect(codes(validUntilChoices(ROUTE, ['ADI', 'ND'], 'ADI'))).toEqual(['ADI']);
+    // Back to back attendance stations: the window is the single leg between them.
+    expect(codes(validUntilChoices(ROUTE, ['ADI', 'ND'], 'ADI'))).toEqual(['ADI', 'ND']);
     expect(validUntilChoices(ROUTE, ['ADI'], 'PUNE')).toEqual([]);
   });
 
   it('keeps a choice that still fits and otherwise defaults to the last choice', () => {
-    expect(resolveValidUntil(ROUTE, ['ADI', 'BRC'], {})).toEqual({ ADI: 'ANND', BRC: 'BCT' });
+    expect(resolveValidUntil(ROUTE, ['ADI', 'BRC'], {})).toEqual({ ADI: 'BRC', BRC: 'BCT' });
     expect(resolveValidUntil(ROUTE, ['ADI', 'BRC'], { ADI: 'ND', BRC: 'BH' })).toEqual({ ADI: 'ND', BRC: 'BH' });
-    // ND became an attendance station, so ADI's window cannot reach ANND any more.
-    expect(resolveValidUntil(ROUTE, ['ADI', 'ND', 'BRC'], { ADI: 'ANND' })).toEqual({ ADI: 'ADI', ND: 'ANND', BRC: 'BCT' });
+    // ND became an attendance station, so ADI's window now ends there rather than at ANND.
+    expect(resolveValidUntil(ROUTE, ['ADI', 'ND', 'BRC'], { ADI: 'ANND' })).toEqual({ ADI: 'ND', ND: 'BRC', BRC: 'BCT' });
   });
 });

@@ -58,23 +58,23 @@ def test_each_station_stage_carries_its_window_and_status_cells_do_not(two_stati
     assert all(s["located"] for s in train["route_stations"])
 
 
-def test_outside_the_window_is_recorded_for_review_by_default(two_stations):
+def test_outside_the_window_is_refused_by_default(two_stations):
     world = two_stations
     r, _ = _punch(world, "jan", 1, **_at(BRC))      # Attd 1 runs Ahmedabad to Nadiad; this is Vadodara
-    assert r.status_code == 201, r.text
-    assert r.json()["route_check"]["status"] == "after"
-    r, _ = _punch(world, "jan", 2, **_at(BRC))
-    assert r.json()["route_check"] == {"status": "inside", "off_route_km": 0.0, "along_km": 0.0}
-
-
-def test_a_division_can_refuse_attendance_outside_the_window(two_stations):
-    world = two_stations
-    _policy(world, attendance_route_check="block")
-    r, _ = _punch(world, "jan", 1, **_at(BRC))
     assert r.status_code == 422 and r.json()["error"]["code"] == "outside_route_window", r.text
     assert "open until Nadiad Jn" in r.json()["error"]["message"]
     r, _ = _punch(world, "jan", 1, **_at(ADI))
     assert r.status_code == 201 and r.json()["route_check"]["status"] == "inside"
+    r, _ = _punch(world, "jan", 2, **_at(BRC))
+    assert r.json()["route_check"] == {"status": "inside", "off_route_km": 0.0, "along_km": 0.0}
+
+
+def test_a_division_can_relax_the_check_to_a_flag(two_stations):
+    world = two_stations
+    _policy(world, attendance_route_check="flag")
+    r, _ = _punch(world, "jan", 1, **_at(BRC))
+    assert r.status_code == 201, r.text
+    assert r.json()["route_check"]["status"] == "after"
 
 
 def test_a_division_can_turn_the_check_off(two_stations):
