@@ -36,12 +36,14 @@ test.beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'swachh-update-')); });
 test.afterAll(() => { try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }); } catch { /* Windows lock */ } });
 test.afterAll(() => expect(server.cspViolations).toEqual([]));
 
+// null while the page is reloading itself into the new version (the evaluation is cut off by the navigation).
 const swVersion = (page) => page.evaluate(() => new Promise((resolve) => {
+  if (!navigator.serviceWorker.controller) { resolve(null); return; }
   const ch = new MessageChannel();
   ch.port1.onmessage = (e) => resolve(e.data);
   navigator.serviceWorker.controller.postMessage('e2e-version', [ch.port2]);
   setTimeout(() => resolve('v1'), 1500); // the original worker does not answer
-}));
+})).catch(() => null);
 
 test('a new version loads by itself when the app is reopened, keeps the unsynced record, and the record is delivered once', async () => {
   const { defaultBrowserType, ...pixel } = devices['Pixel 7'];
