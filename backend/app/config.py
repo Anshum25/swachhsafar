@@ -117,6 +117,15 @@ class Settings(BaseSettings):
             raise ValueError("OTP_PEPPER must be a random secret of at least 32 characters")
         return v
 
+    @field_validator("pnr_provider", mode="before")
+    @classmethod
+    def _pnr_provider_alias(cls, v):
+        # "enabled" / "on" / "true" read as railradar (RailRadar first, RapidAPI fallback; RapidAPI alone when
+        # RAILRADAR_PNR_AUTHORIZATION is unset), so a hand-edited env file does not stop the API from starting.
+        if isinstance(v, str) and v.strip().lower() in {"enabled", "enable", "on", "true", "yes", "1"}:
+            return "railradar"
+        return v.strip().lower() if isinstance(v, str) else v
+
     @field_validator("feedback_master_otp")
     @classmethod
     def _master_otp_format(cls, v: SecretStr | None) -> SecretStr | None:

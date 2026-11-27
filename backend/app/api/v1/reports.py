@@ -15,6 +15,7 @@ from app.schemas.reports import (
     InspectionRow,
     InventoryRow,
     Overview,
+    PsiQuestions,
     PsiRow,
 )
 from app.security.principal import Principal, get_principal
@@ -48,10 +49,23 @@ def feedback(audience: Literal["passenger", "railway"], date_from: date, date_to
                                journey_id=journey_id, bank_id=bank_id)
 
 
-@router.get("/psi", response_model=list[PsiRow], responses={409: {"description": "PSI weights not configured"}})
+@router.get("/psi", response_model=list[PsiRow])
 def psi(date_from: date, date_to: date, division_id: uuid.UUID | None = None, bank_id: uuid.UUID | None = None,
         db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return svc.psi_report(db, p, division_id=division_id, date_from=date_from, date_to=date_to, bank_id=bank_id)
+
+
+@router.get("/psi/questions", response_model=PsiQuestions | None)
+def psi_questions(date_from: date, date_to: date, division_id: uuid.UUID | None = None, bank_id: uuid.UUID | None = None,
+                  db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """PSI for the period, question by question (null when no passenger question bank is in use)."""
+    return svc.psi_questions_report(db, p, division_id=division_id, date_from=date_from, date_to=date_to, bank_id=bank_id)
+
+
+@router.get("/feedback-sheet")
+def feedback_sheet(journey_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """A journey's completed passenger feedback, coach by journey day, as the coach sheet shows it."""
+    return svc.feedback_sheet(db, p, journey_id=journey_id)
 
 
 @router.get("/complaints", response_model=ComplaintReport)

@@ -150,7 +150,7 @@ def test_report_parity_dataset(world, fakes, db):
         queries += [
             ("/reports/attendance", {**base, "group_by": "employee"}), ("/reports/attendance", {**base, "group_by": "journey"}),
             ("/reports/inspections", {**base, "coach_wise": "false"}), ("/reports/inspections", {**base, "coach_wise": "true"}),
-            ("/reports/feedback/passenger", base), ("/reports/feedback/railway", base), ("/reports/psi", base),
+            ("/reports/feedback/passenger", base), ("/reports/feedback/railway", base), ("/reports/psi", base), ("/reports/psi/questions", base),
             ("/reports/complaints", base), ("/reports/inventory", base), ("/reports/inventory", {**base, "division_id": a}),
         ]
     reports = []

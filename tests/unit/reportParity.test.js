@@ -32,8 +32,8 @@ describe('report parity with the backend (same data)', () => {
   it('the fixture covers every report and a non-trivial dataset', () => {
     const paths = new Set(fixture.reports.map((r) => r.path));
     expect([...paths].sort()).toEqual(['/reports/attendance', '/reports/complaints', '/reports/feedback/passenger', '/reports/feedback/railway',
-      '/reports/inspections', '/reports/inventory', '/reports/psi']);
-    expect(fixture.reports.length).toBe(30);
+      '/reports/inspections', '/reports/inventory', '/reports/psi', '/reports/psi/questions']);
+    expect(fixture.reports.length).toBe(33);
   });
 
   for (const r of fixture.reports) {

@@ -147,6 +147,16 @@ class PassengerFeedback(GeoPoint, Timestamps, Base):
     pnr_journey_date: Mapped[date | None] = mapped_column(Date)      # boarding date on the ticket
     boarding_code: Mapped[str | None] = mapped_column(String(8))     # boarding station on the ticket
     alighting_code: Mapped[str | None] = mapped_column(String(8))    # reserved up to
+    # The ticket as the PNR check found it, one field per column (pnr_details keeps the provider's whole answer).
+    # The passenger line is the one in the coach the feedback is on. Set by verify_pnr, NULL until then.
+    pnr_train_name: Mapped[str | None] = mapped_column(String(60))
+    pnr_class: Mapped[str | None] = mapped_column(String(5))            # 2A, SL, CC ...
+    pnr_booking_status: Mapped[str | None] = mapped_column(String(40))  # e.g. CNF/A1/17/SL
+    pnr_coach: Mapped[str | None] = mapped_column(String(10))
+    pnr_berth_no: Mapped[int | None] = mapped_column(Integer)
+    pnr_berth_code: Mapped[str | None] = mapped_column(String(4))       # LB, MB, UB, SL, SU ...
+    pnr_chart_prepared: Mapped[bool | None] = mapped_column(Boolean)
+    pnr_source: Mapped[str | None] = mapped_column(String(12))          # railradar / rapidapi
 
     ratings: Mapped[list["PassengerFeedbackRating"]] = relationship(cascade="all, delete-orphan")
 

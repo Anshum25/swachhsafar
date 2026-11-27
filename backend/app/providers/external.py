@@ -221,7 +221,7 @@ class SmsRejected(ProviderUnavailable):
 
 class DisabledPnrProvider:
     def lookup(self, pnr: str) -> PnrResult:
-        raise ProviderUnavailable("PNR verification is not configured")
+        raise ProviderUnavailable("PNR verification is switched off on the server (PNR_PROVIDER=disabled)")
 
 
 class DisabledSmsProvider:

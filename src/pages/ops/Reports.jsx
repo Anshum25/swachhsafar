@@ -7,7 +7,7 @@ import { useQueueState, useResource, useSession } from '../../app/session.jsx';
 import { DivisionPicker, divisionLabel, useDivision } from '../../app/division.jsx';
 import { responseCacheKey } from '../../services/localFirstApi.js';
 import {
-  Badge, DataState, Field, PageHeader, Panel, STATE_TONE, Segmented, Stat, Table, Tabs, fmtDate, fmtDateTime, label,
+  Badge, DataState, Field, PageHeader, Panel, STATE_TONE, Segmented, Select, Stat, Table, Tabs, fmtDate, fmtDateTime, label,
 } from '../../components/ui.jsx';
 import { daysAgo, today } from '../../utils/capture.js';
 import { classLabel } from '../../utils/coaches.js';
@@ -22,6 +22,7 @@ const TABS = [
   { value: 'verification', label: 'PNR / OTP' },
   { value: 'timetables', label: 'Timetables' },
   { value: 'psi', label: 'PSI' },
+  { value: 'sheet', label: 'Coach sheet' },
   { value: 'complaints', label: 'Complaints' },
   { value: 'inventory', label: 'Inventory' },
 ];
@@ -197,8 +198,112 @@ function TimetablesBody({ data, name }) {
   );
 }
 
+// PSI of the period question by question. The contributions add up to the PSI; the questions losing the
+// most points come first, so the weakest service areas are at the top.
+function PsiQuestionsBody({ data, name }) {
+  const rows = [...data.questions].sort((a, b) => (b.points_lost ?? -1) - (a.points_lost ?? -1) || a.position - b.position);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <Stat label="PSI" value={pct(data.psi)} />
+        <Stat label="Responses" value={data.responses} tone="slate" />
+        <Stat label="Weights" value={data.weighting === 'configured' ? 'Set' : 'Equal'} tone="slate"
+          hint={data.weighting === 'configured' ? 'From Question Banks' : 'Not every question has a PSI weight'} />
+      </div>
+      <ReportTable name={name} rowKey={(r) => r.question_id} rows={rows} columns={[
+        { key: 'position', label: '#' }, { key: 'text_en', label: 'Question' }, { key: 'responses', label: 'Responses' },
+        { key: 'average', label: `Average (${data.scale_min}–${data.scale_max})`, value: (r) => r.average?.toFixed(2) ?? '—' },
+        { key: 'score', label: 'Score', value: (r) => pct(r.score) },
+        { key: 'weight', label: 'Weight', value: (r) => `${num(r.weight)}${r.weight_share != null ? ` (${r.weight_share.toFixed(1)}%)` : ''}` },
+        { key: 'contribution', label: 'Adds to PSI', value: (r) => (r.contribution == null ? '—' : r.contribution.toFixed(2)) },
+        { key: 'points_lost', label: 'Points lost', value: (r) => (r.points_lost == null ? '—' : r.points_lost.toFixed(2)) },
+      ]} />
+    </div>
+  );
+}
+
+// One feedback in the coach sheet, in the layout of the old Passenger Feedback Report.
+const sheetLines = (e) => [
+  `PSI-${e.psi == null ? '—' : Math.round(e.psi)} (${e.scores.map((q) => `q${q.position}:${q.score ?? '—'}`).join(' / ')})`,
+  `Time-${fmtDateTime(e.time)}`,
+  e.pnr ? `PNR- ${e.pnr}-${label(e.pnr_status)}${e.pnr_berth_no != null ? `/${e.pnr_berth_no}` : ''}${e.pnr_coach ? `/${e.pnr_coach}` : ''}` : 'PNR- none (general coach)',
+  e.pnr_booking_status || e.train_no ? `Details - ${[e.train_name, e.train_no].filter(Boolean).join(' - ')}${e.pnr_booking_status ? ` / ${e.pnr_booking_status}` : ''}` : null,
+  `Location - ${e.latitude}, ${e.longitude}`,
+  `${e.passenger_name} M. ${e.mobile_masked}`,
+].filter(Boolean);
+
+function SheetEntry({ e }) {
+  const [head, ...rest] = sheetLines(e);
+  return (
+    <div className="border-b border-slate-100 py-2 last:border-0">
+      <p className="font-semibold text-ink">{head}</p>
+      {rest.map((line) => (
+        <p key={line} className="text-slate-600">
+          {line}
+          {line.startsWith('Location') && (
+            <a className="btn-link ml-2 text-xs" target="_blank" rel="noreferrer"
+              href={`https://www.google.com/maps?q=${e.latitude},${e.longitude}`}>Map</a>
+          )}
+        </p>
+      ))}
+      {e.coach_source === 'pnr' && <Badge tone="brand">Coach taken from ticket</Badge>}
+    </div>
+  );
+}
+
+const SHEET_CSV = [
+  { key: 'coach', label: 'Coach' }, { key: 'day', label: 'Day' }, { key: 'psi', label: 'PSI' },
+  { key: 'scores', label: 'Scores', value: (e) => e.scores.map((q) => `q${q.position}:${q.score ?? ''}`).join(' / ') },
+  { key: 'total', label: 'Total' }, { key: 'time', label: 'Time', value: (e) => fmtDateTime(e.time) },
+  { key: 'pnr', label: 'PNR' }, { key: 'pnr_status', label: 'PNR status' }, { key: 'pnr_booking_status', label: 'Ticket' },
+  { key: 'train_no', label: 'Train' }, { key: 'train_name', label: 'Train name' },
+  { key: 'location', label: 'Location', value: (e) => `${e.latitude}, ${e.longitude}` },
+  { key: 'passenger_name', label: 'Passenger' }, { key: 'mobile_masked', label: 'Mobile' },
+];
+
+// Coach x journey day grid of completed passenger feedback (GET /reports/feedback-sheet).
+function SheetBody({ data, name }) {
+  const days = Array.from({ length: data.days }, (_, i) => i + 1);
+  const rows = data.rows.filter((r) => r.responses);
+  const exportRows = rows.flatMap((r) => days.flatMap((d) => (r.days[d] ?? []).map((e) => ({ ...e, coach: r.coach_code, day: `D${d}` }))));
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-semibold text-ink">
+        {data.train_no} ({data.train_name}){data.linked_train_no ? ` - ${data.linked_train_no} (${data.linked_train_name})` : ''} ({fmtDate(data.journey_date)} to {fmtDate(data.end_date)})
+      </p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <Stat label="PSI" value={pct(data.psi)} /><Stat label="Feedback" value={data.responses} tone="slate" /><Stat label="Total" value={data.total} tone="slate" />
+      </div>
+      {data.weighting.includes('equal') && <p className="text-xs text-slate-500">Not every question has a PSI weight, so all questions count equally.</p>}
+      <div className="mb-2 flex justify-end">
+        <button type="button" className="btn-link text-xs" onClick={() => downloadCsv(name, SHEET_CSV, exportRows)} disabled={!exportRows.length}>Export CSV</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs uppercase text-muted">
+              <th className="p-2">Coach</th>{days.map((d) => <th key={d} className="p-2">D{d}</th>)}<th className="p-2">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.coach_code} className="border-b border-slate-200 align-top">
+                <td className="p-2 font-semibold">{r.coach_code}</td>
+                {days.map((d) => <td key={d} className="p-2">{(r.days[d] ?? []).map((e) => <SheetEntry key={e.id} e={e} />)}</td>)}
+                <td className="p-2 font-semibold">{r.total}<p className="text-xs font-normal text-muted">PSI {pct(r.psi)}</p></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function Body({ tab, data, opts, name }) {
   if (tab === 'targets') return <TargetsBody data={data} name={name} />;
+  if (tab === 'sheet') return <SheetBody data={data} name={name} />;
+  if (tab === 'psi' && opts.psiBy === 'question') return <PsiQuestionsBody data={data} name={name} />;
   if (tab === 'verification') return <VerificationBody data={data} name={name} />;
   if (tab === 'timetables') return <TimetablesBody data={data} name={name} />;
   if (tab === 'attendance') {
@@ -248,7 +353,7 @@ function Body({ tab, data, opts, name }) {
 
 const EMPTY = {
   attendance: 'No attendance in this period.', journeys: 'No journeys in this period.', inspections: 'No inspections in this period.',
-  feedback: 'No feedback in this period.', psi: 'No PSI data in this period.', complaints: 'No complaints in this period.', inventory: 'No inventory movement in this period.',
+  feedback: 'No feedback in this period.', sheet: 'No completed passenger feedback on this journey.', psi: 'No PSI data in this period.', complaints: 'No complaints in this period.', inventory: 'No inventory movement in this period.',
   targets: 'No journey day in this period has a Train Master feedback target.', verification: 'No passenger feedback in this period.',
   timetables: 'No trains in Train Master.',
 };
@@ -260,22 +365,27 @@ function Report({ tab, q }) {
   const [coachWise, setCoachWise] = useState(false);
   const [view, setView] = useState('device');
   const [targetsBy, setTargetsBy] = useState('train');
+  const [psiBy, setPsiBy] = useState('journey');
+  const [sheetJourney, setSheetJourney] = useState('');
+  const sheetJourneys = useResource(tab === 'sheet' ? '/journeys' : null, { division_id: q.division_id, date_from: q.date_from, date_to: q.date_to, page_size: 200 });
   const path = {
     attendance: '/reports/attendance', journeys: '/journeys', inspections: '/reports/inspections', feedback: `/reports/feedback/${audience}`,
-    psi: '/reports/psi', complaints: '/reports/complaints', inventory: '/reports/inventory',
+    psi: psiBy === 'question' ? '/reports/psi/questions' : '/reports/psi', sheet: sheetJourney ? '/reports/feedback-sheet' : null, complaints: '/reports/complaints', inventory: '/reports/inventory',
     targets: '/reports/feedback-targets', verification: '/reports/feedback-verification', timetables: '/reports/timetable-sync',
   }[tab];
-  const query = tab === 'attendance' ? { ...q, group_by: groupBy }
+  const query = tab === 'sheet' ? { journey_id: sheetJourney }
+    : tab === 'attendance' ? { ...q, group_by: groupBy }
     : tab === 'inspections' ? { ...q, coach_wise: coachWise }
       : tab === 'targets' ? { ...q, group_by: targetsBy }
         : tab === 'timetables' ? { division_id: q.division_id }
           : tab === 'journeys' ? { division_id: q.division_id, date_from: q.date_from, date_to: q.date_to, page_size: 200 } : q;
   const res = useResource(path, query);
-  const snapshot = useSnapshot(path, query, res.source === 'local' && path.startsWith('/reports/'));
+  const snapshot = useSnapshot(path, query, res.source === 'local' && !!path?.startsWith('/reports/'));
   const shown = view === 'server' && snapshot ? { ...res, data: snapshot.data, source: 'snapshot', cachedAt: snapshot.cachedAt } : res;
-  const isEmpty = (d) => (Array.isArray(d) ? !d.length : d.rows ? !d.rows.length : d.trains ? !d.trains.length
-    : d.pnr ? !Object.values(d.pnr).some((v) => typeof v === 'number' && v > 0) : d.items ? !d.items.length : !d.total);
-  const name = `swachh-safar-${tab}${tab === 'feedback' ? `-${audience}` : ''}-${q.date_from}-to-${q.date_to}${shown.source === 'local' ? '-device-only' : ''}`;
+  const isEmpty = (d) => (d == null || Array.isArray(d) ? !d.length : d.rows ? !d.rows.length : d.trains ? !d.trains.length
+    : d.pnr ? !Object.values(d.pnr).some((v) => typeof v === 'number' && v > 0) : d.items ? !d.items.length
+      : d.questions && 'weighting' in d ? !d.responses : d.rows && 'days' in d ? !d.responses : !d.total);
+  const name = `swachh-safar-${tab}${tab === 'feedback' ? `-${audience}` : ''}${tab === 'psi' && psiBy === 'question' ? '-questions' : ''}-${q.date_from}-to-${q.date_to}${shown.source === 'local' ? '-device-only' : ''}`;
 
   return (
     <>
@@ -286,6 +396,16 @@ function Report({ tab, q }) {
         {tab === 'targets' && <Segmented label="Group by" value={targetsBy} onChange={setTargetsBy} options={[
           { value: 'train', label: 'Train-wise' }, { value: 'day', label: 'Journey day' }, { value: 'coach', label: 'Coach-wise' },
           { value: 'direction', label: 'Direction' }, { value: 'date', label: 'Date-wise' }]} />}
+        {tab === 'sheet' && (
+          <div className="w-full sm:max-w-md">
+            <Field label="Journey">
+              <Select value={sheetJourney} onChange={setSheetJourney} placeholder="Choose a journey"
+                options={(sheetJourneys.data?.items ?? []).map((j) => ({ value: j.id, label: `${j.train_no} ${j.train_name ?? ''} · ${fmtDate(j.journey_date)}` }))} />
+            </Field>
+          </div>
+        )}
+        {tab === 'psi' && <Segmented label="Group by" value={psiBy} onChange={setPsiBy} options={[
+          { value: 'journey', label: 'Journey-wise' }, { value: 'question', label: 'Question-wise' }]} />}
         {snapshot && (
           <Segmented label="Figures" value={view} onChange={setView}
             options={[{ value: 'device', label: 'This device' }, { value: 'server', label: `Last server report (${fmtDateTime(snapshot.cachedAt)})` }]} />
@@ -295,9 +415,9 @@ function Report({ tab, q }) {
       {tab === 'feedback' && audience === 'railway' && shown.source === 'local' && (
         <p className="mb-3 text-xs text-slate-500">Verification states are those last received from the server. “Status unknown” records were synchronized but their status has not been received on this device; “Not synced” records are not on the server yet.</p>
       )}
-      <DataState res={{ ...shown, stale: false }} isEmpty={isEmpty} empty={EMPTY[tab]}>
-        {(data) => <Body tab={tab} data={data} opts={{ groupBy, coachWise }} name={name} />}
-      </DataState>
+      {path && <DataState res={{ ...shown, stale: false }} isEmpty={isEmpty} empty={EMPTY[tab]}>
+        {(data) => <Body tab={tab} data={data} opts={{ groupBy, coachWise, psiBy }} name={name} />}
+      </DataState>}
     </>
   );
 }

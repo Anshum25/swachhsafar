@@ -6,7 +6,8 @@ from app.models import Question
 from app.timeutil import today_ist
 from tests.conftest import run_migrations
 from tests.factories import now_iso, upload
-from tests.test_feedback import ratings, verified_feedback
+from app.providers.external import PnrPassenger, PnrResult
+from tests.test_feedback import ratings, start, verified_feedback
 
 API = "/api/v1"
 
@@ -68,13 +69,57 @@ def test_feedback_report_and_psi(world, fakes, db):
     assert rep["total"] == 2 and rep["by_status"] == {"completed": 2} and (rep["scale_min"], rep["scale_max"]) == (1, 5)
     assert [q["average"] for q in rep["questions"]] == [4.0, 2.0, None]
 
-    r = world.client.get(f"{API}/reports/psi", params=params, headers=world.h("manager"))
-    assert r.status_code == 409 and r.json()["error"]["code"] == "psi_not_configured"
-    db.execute(update(Question).where(Question.bank_id == uuid.UUID(world.passenger_bank["id"])).values(psi_weight=1))
+    # no weights set: every question counts equally. (4-1)/4 = 0.75 and (2-1)/4 = 0.25; question 3 has no
+    # responses -> excluded
+    [row] = world.client.get(f"{API}/reports/psi", params=params, headers=world.h("manager")).json()
+    assert row["responses"] == 2 and row["psi"] == 50.0
+    qs = world.client.get(f"{API}/reports/psi/questions", params=params, headers=world.h("manager")).json()
+    assert (qs["weighting"], qs["responses"], qs["psi"]) == ("equal", 2, 50.0)
+    assert [(q["score"], q["weight_share"], q["contribution"], q["points_lost"]) for q in qs["questions"]] == [
+        (75.0, 50.0, 37.5, 12.5), (25.0, 50.0, 12.5, 37.5), (None, None, None, None)]
+
+    bank = uuid.UUID(world.passenger_bank["id"])
+    for position, weight in ((1, 3), (2, 1), (3, 1)):
+        db.execute(update(Question).where(Question.bank_id == bank, Question.position == position).values(psi_weight=weight))
     db.commit()
     [row] = world.client.get(f"{API}/reports/psi", params=params, headers=world.h("manager")).json()
-    # (4-1)/4 = 0.75 and (2-1)/4 = 0.25 with equal weights; question 3 has no responses -> excluded
-    assert row["responses"] == 2 and row["psi"] == 50.0
+    assert row["psi"] == 62.5  # (3 * 0.75 + 1 * 0.25) / 4
+    qs = world.client.get(f"{API}/reports/psi/questions", params=params, headers=world.h("manager")).json()
+    assert (qs["weighting"], qs["psi"]) == ("configured", 62.5)
+    assert [q["contribution"] for q in qs["questions"]] == [56.25, 6.25, None]
+
+    # half the weights set: equal weights again, not a mix
+    db.execute(update(Question).where(Question.bank_id == bank, Question.position == 3).values(psi_weight=None))
+    db.commit()
+    assert world.client.get(f"{API}/reports/psi", params=params, headers=world.h("manager")).json()[0]["psi"] == 50.0
+
+
+def test_feedback_sheet_and_stored_ticket(world, fakes):
+    _complete(world, fakes, "1111111111", "9111111111", [5, 3])
+    _complete(world, fakes, "2222222222", "9222222222", [3, 1])
+    # a full ticket line, as RailRadar / RapidAPI return it: the PNR check stores it field by field
+    fakes[2].results["3333333333"] = PnrResult(
+        found=True, train_number="12001", train_name="MOOK MATI EXP", coach_ids=frozenset({"B1"}), journey_class="3A",
+        chart_status="Chart Prepared", source="rapidapi",
+        passengers=(PnrPassenger(serial=1, status="CNF", coach="B1", berth_no=17, berth_code="SL", status_text=None),))
+    fb = start(world, pnr="3333333333", mobile="9333333333").json()
+    r = world.client.post(f"{API}/feedback/passenger/{fb['id']}/verify-pnr", headers=world.h("sup")).json()
+    assert (r["pnr_status"], r["pnr_train_name"], r["pnr_class"], r["pnr_booking_status"], r["pnr_coach"],
+            r["pnr_berth_no"], r["pnr_berth_code"], r["pnr_chart_prepared"], r["pnr_source"]) == (
+        "valid", "MOOK MATI EXP", "3A", "CNF/B1/17/SL", "B1", 17, "SL", True, "rapidapi")
+
+    sheet = world.client.get(f"{API}/reports/feedback-sheet", params={"journey_id": world.journey["id"]},
+                             headers=world.h("manager")).json()
+    assert sheet["responses"] == 2 and sheet["weighting"] == ["equal"]  # the third is not completed yet
+    b1 = next(row for row in sheet["rows"] if row["coach_code"] == "B1")
+    first, second = b1["days"]["1"]
+    # PSI of one feedback: ratings 5 and 3 on 1-5 -> (1.0 + 0.5) / 2; total = the ratings given
+    assert (first["psi"], [q["score"] for q in first["scores"]], first["total"]) == (75.0, [1.0, 0.5], 8)
+    assert (second["psi"], second["total"]) == (25.0, 4)
+    assert first["mobile_masked"] == "91XXXXXX11" and "mobile" not in first
+    assert (b1["responses"], b1["total"], b1["psi"]) == (2, 12, 50.0) and sheet["psi"] == 50.0
+    assert world.client.get(f"{API}/reports/feedback-sheet", params={"journey_id": world.journey["id"]},
+                            headers=world.h("jan")).status_code in (403, 404)
 
 
 def test_dashboard_and_complaint_report(world):

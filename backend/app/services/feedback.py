@@ -301,7 +301,9 @@ def verify_pnr(db: Session, p: Principal, provider: PnrProvider, feedback_id: uu
         result = pnr_cache.lookup(db, provider, fb.pnr)  # stored answer while fresh, else RailRadar -> RapidAPI
     except ProviderUnavailable as exc:
         _record_outage(db, p, fb, "feedback.passenger.pnr_unavailable", exc)
-        raise ServiceUnavailable("PNR service unavailable; feedback remains pending", code="pnr_unavailable") from exc
+        # the provider's reason (never the PNR or the key) so the collector can tell "switched off" from "down"
+        raise ServiceUnavailable(f"PNR service unavailable: {str(exc)[:200]}. Feedback remains pending",
+                                 code="pnr_unavailable") from exc
 
     match = match_pnr(j, fb, result, policy)
     reason = match["reason"]
@@ -313,6 +315,7 @@ def verify_pnr(db: Session, p: Principal, provider: PnrProvider, feedback_id: uu
         fb.pnr_journey_date = result.journey_date
         fb.boarding_code = result.boarding_code or result.from_code
         fb.alighting_code = result.alighting_code
+        _store_ticket(fb, result)
     if reason:
         fb.pnr_status = PnrStatus.INVALID
         fb.status = PassengerFeedbackStatus.VOID
@@ -439,6 +442,28 @@ def _move_coach(db: Session, j: Journey, fb: PassengerFeedback, code: str, polic
         fb.coach_class = coach.classification  # ratings come later, on the questions of the right class
     fb.coach_code, fb.coach_source = coach.code, "pnr"
     return None
+
+
+def ticket_line(result, coach_code: str | None):
+    """The ticket's passenger line for this feedback: the one in the feedback's coach, else the first line still
+    on the ticket (a PNR carries several passengers but no names)."""
+    live = [x for x in result.passengers if not x.cancelled]
+    return next((x for x in live if x.coach and _norm(x.coach) == _norm(coach_code or "")), None) or next(iter(live), None)
+
+
+def _store_ticket(fb: PassengerFeedback, result) -> None:
+    """The ticket in its own columns (alongside pnr_details): train name, class, chart, and the passenger line's
+    status, coach and berth, e.g. CNF/A1/17/SL."""
+    line = ticket_line(result, fb.coach_code)
+    fb.pnr_train_name = (result.train_name or "")[:60] or None
+    fb.pnr_class = (result.journey_class or "")[:5] or None
+    fb.pnr_chart_prepared = result.chart_prepared if result.chart_status else None
+    fb.pnr_source = (result.source or "")[:12] or None
+    fb.pnr_coach = (line.coach or "")[:10] or None if line else None
+    fb.pnr_berth_no = line.berth_no if line else None
+    fb.pnr_berth_code = (line.berth_code or "")[:4] or None if line else None
+    status = "/".join(str(x) for x in (line.status, line.coach, line.berth_no, line.berth_code) if x) if line else ""
+    fb.pnr_booking_status = status[:40] or None
 
 
 def _pnr_details(result, match: dict) -> dict:
