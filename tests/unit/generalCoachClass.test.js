@@ -26,7 +26,7 @@ const classes = async (db, table) => Object.fromEntries((await db.query(`SELECT 
 describe('v15: General coaches are a class of their own on the phone', () => {
   it('moves general coaches to GEN and asks them what Non-AC coaches were asked', async () => {
     const db = await v14Db();
-    expect(await runMigrations(db)).toMatchObject({ from: 14, to: 21, applied: [15, 16, 17, 18, 19, 20, 21] });
+    expect(await runMigrations(db)).toMatchObject({ from: 14, to: 22, applied: [15, 16, 17, 18, 19, 20, 21, 22] });
     // B2 typed as NON_AC and S2 as AC are corrected; BHJ and X'1 say nothing, so they keep what was chosen.
     const want = { B1: 'AC', S1: 'NON_AC', GEN: 'GEN', GEN2: 'GEN', UR1: 'GEN', B2: 'AC', S2: 'NON_AC', BHJ: 'AC', "X'1": 'NON_AC' };
     expect(await classes(db, 'journey_coaches')).toEqual(want);
@@ -49,7 +49,7 @@ describe('v15: General coaches are a class of their own on the phone', () => {
     await db.close();
 
     const again = await createMemoryDb({ filename });
-    expect(await getSchemaVersion(again)).toBe(21);
+    expect(await getSchemaVersion(again)).toBe(22);
     await again.run('PRAGMA foreign_keys = OFF');
     await again.run("INSERT INTO train_coaches (train_id, code, classification, position) VALUES ('t1', 'GEN4', 'GEN', 9)");
     await expect(again.run("INSERT INTO train_coaches (train_id, code, classification, position) VALUES ('t1', 'X1', 'FIRST', 10)"))
@@ -113,7 +113,7 @@ describe('every Indian Railways coach code (Commercial Circular 07 of 2021)', ()
     for (const [code, cls, pos] of [['J1', 'NON_AC', 1], ['G1', 'NON_AC', 2], ['SLRD', 'NON_AC', 3], ['DV1', 'AC', 4], ['BHJ', 'AC', 5]]) {
       await db.run('INSERT INTO journey_coaches (journey_id, code, classification, position) VALUES (?, ?, ?, ?)', ['j1', code, cls, pos]);
     }
-    expect(await runMigrations(db)).toMatchObject({ from: 15, to: 21, applied: [16, 17, 18, 19, 20, 21] });
+    expect(await runMigrations(db)).toMatchObject({ from: 15, to: 22, applied: [16, 17, 18, 19, 20, 21, 22] });
     expect(await classes(db, 'journey_coaches')).toEqual({ J1: 'AC', G1: 'AC', SLRD: 'GEN', DV1: 'NON_AC', BHJ: 'AC' });
   });
 });

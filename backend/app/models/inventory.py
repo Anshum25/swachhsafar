@@ -45,6 +45,9 @@ class InventoryTransaction(Base):
     journey_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("journeys.id"), nullable=False)
     item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inventory_items.id"), nullable=False)
     coach_code: Mapped[str | None] = mapped_column(String(10))
+    # The janitor (journey staff) who received an issue or handed back a return; NULL when stock went to a
+    # coach or to the journey as a whole.
+    recipient_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     txn_type: Mapped[InventoryTxnType] = mapped_column(str_enum(InventoryTxnType, 8), nullable=False)
     quantity: Mapped[float] = mapped_column(Numeric(12, 3, asdecimal=False), nullable=False)
     remarks: Mapped[str | None] = mapped_column(String(300))

@@ -370,6 +370,23 @@ describe('inventory', () => {
       VALUES ('x', ?, ?, ?, 'B1', 'return', 5, 'litre', 't', 't')`, [IDS.journey, IDS.division, IDS.item])).rejects.toThrow(/return_exceeds_issue/);
   });
 
+  it('issues to a janitor, who can hand back only what was issued to them', async () => {
+    const { db, store } = await seededStore();
+    const toJanitor = (txn_type, quantity, who = IDS.janitor1) => txn(txn_type, quantity, { coach_code: null, recipient_id: who });
+    await store.capture(toJanitor('issue', 3));
+    await store.capture(toJanitor('issue', 2, IDS.janitor2));
+    await store.capture(txn('issue', 5));
+    await expect(store.capture(toJanitor('return', 3.5))).rejects.toMatchObject({ code: 'return_exceeds_issue' });
+    await store.capture(toJanitor('return', 1));
+    // Not on this journey's staff: refused before anything is saved.
+    await expect(store.capture(toJanitor('issue', 1, IDS.outsider))).rejects.toMatchObject({ code: 'unknown_recipient' });
+    expect((await store.inventory.balance(IDS.journey)).map((b) => [b.coach_code, b.recipient_id, b.issued, b.returned])).toEqual(
+      expect.arrayContaining([['B1', null, 5, 0], [null, IDS.janitor1, 3, 1], [null, IDS.janitor2, 2, 0]]));
+    // The return limit is per janitor in the database too.
+    await expect(db.run(`INSERT INTO inventory_transactions (id, journey_id, division_id, item_id, coach_code, recipient_id, txn_type, quantity, unit, created_at, updated_at)
+      VALUES ('y', ?, ?, ?, NULL, ?, 'return', 2.5, 'litre', 't', 't')`, [IDS.journey, IDS.division, IDS.item, IDS.janitor2])).rejects.toThrow(/return_exceeds_issue/);
+  });
+
   it('keeps transaction history immutable', async () => {
     const { db, store } = await seededStore();
     await store.capture(txn('issue', 3));

@@ -154,25 +154,26 @@ test('operational screens capture and keep records with the network disconnected
   // Inventory: issue 10 litres of Phenyl to coach B1, then return 4 (immutable transactions, confirmed first)
   await page.goto('/#/inventory');
   await page.getByRole('button', { name: /12951/ }).click();
+  // One form for every coach: the item once, a quantity per coach, one confirmation.
   for (const [action, quantity] of [['Issue', '10'], ['Return', '4']]) {
     await page.getByRole('button', { name: action, exact: true }).click();
     dialog = page.getByRole('dialog', { name: `${action} inventory` });
     await dialog.getByRole('combobox', { name: /^Item/ }).selectOption({ label: 'Phenyl (litre)' });
-    await dialog.getByRole('combobox', { name: /^Coach/ }).selectOption({ label: 'B1' });
-    await dialog.getByRole('spinbutton').fill(quantity);
-    await dialog.getByRole('button', { name: `Review ${action.toLowerCase()}` }).click();
+    await dialog.getByRole('textbox', { name: 'B1 quantity' }).fill(quantity);
+    await dialog.getByRole('button', { name: `${action} ${quantity} litre · 1 coach` }).click();
     await page.getByRole('dialog', { name: `Confirm ${action.toLowerCase()}` }).getByRole('button', { name: `Record ${action.toLowerCase()}` }).click();
-    await toast(page, `${action} saved on this device`);
+    await toast(page, 'Saved on this device');
   }
   await expect(page.getByRole('row', { name: /Phenyl.*B1/ }).first()).toContainText('6'); // consumed = 10 − 4
-  // A return larger than what is outstanding is refused before anything is saved.
+  // A return larger than what is outstanding is refused before anything is saved; a return lists only what
+  // is outstanding (B1 here).
   await page.getByRole('button', { name: 'Return', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Return inventory' });
   await dialog.getByRole('combobox', { name: /^Item/ }).selectOption({ label: 'Phenyl (litre)' });
-  await dialog.getByRole('combobox', { name: /^Coach/ }).selectOption({ label: 'B1' });
-  await dialog.getByRole('spinbutton').fill('7');
-  await expect(dialog.getByText('A return cannot exceed the quantity issued.')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Review return' })).toBeDisabled();
+  await expect(dialog.getByRole('textbox', { name: /quantity$/ })).toHaveCount(1);
+  await dialog.getByRole('textbox', { name: 'B1 quantity' }).fill('7');
+  await expect(dialog.getByText('At most 6')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Return', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(queueBadge(page)).toHaveText(/7 pending/);
 

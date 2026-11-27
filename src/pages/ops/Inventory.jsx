@@ -2,13 +2,17 @@
 //
 // Transactions are immutable and recorded through the operations queue ('inventory.record', a
 // /sync/batch operation), so they work offline. The local repository refuses a return larger than the
-// quantity issued for the same journey, item and coach, as the server does; balances are always derived
-// from the ledger, never edited.
+// quantity issued for the same journey, item, coach and janitor, as the server does; balances are always
+// derived from the ledger, never edited.
+//
+// One form covers a whole round: pick the item once, then every coach (or every janitor on the journey) is
+// listed with its own quantity, a "same for all" shortcut fills them in one go, and one confirmation records
+// a transaction for each row that has a quantity.
 import { useState } from 'react';
 import { useResource, useSession } from '../../app/session.jsx';
 import { useNotify } from '../../app/Layout.jsx';
 import JourneyPicker from '../../components/JourneyPicker.jsx';
-import { outcomeToast, savedLocally } from '../../components/Capture.jsx';
+import { savedLocally } from '../../components/Capture.jsx';
 import {
   Badge, ConfirmDialog, DataState, Dialog, Empty, ErrorNote, Field, Loading, PageHeader, Pager, Panel, STATE_TONE, Segmented, Select,
   SubmitBar, SyncState, Table, fmtDateTime, label,
@@ -17,66 +21,168 @@ import { canAct } from '../../services/authorization.js';
 
 const qty = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
 
-// Outstanding (issued − returned) for an item and coach, from the balance rows.
-export const outstandingOf = (balance, itemId, coachCode) => {
-  const row = (balance ?? []).find((r) => r.item_id === itemId && (r.coach_code ?? null) === (coachCode || null));
+// Outstanding (issued − returned) for an item and coach (and janitor), from the balance rows.
+export const outstandingOf = (balance, itemId, coachCode, recipientId = null) => {
+  const row = (balance ?? []).find((r) => r.item_id === itemId && (r.coach_code ?? null) === (coachCode || null)
+    && (r.recipient_id ?? null) === (recipientId || null));
   return row ? row.issued - row.returned : 0;
 };
+
+// The people stock can be handed to: the supervisor and the journey's current staff.
+export const journeyPeople = (j) => {
+  const seen = new Set();
+  return [...(j.supervisor_id ? [{ user_id: j.supervisor_id, name: j.supervisor_name, supervisor: true }] : []),
+    ...(j.staff ?? []).filter((s) => !s.removed_at)]
+    .filter((p) => p.user_id && !seen.has(p.user_id) && seen.add(p.user_id));
+};
+
+// The rows of the form: { key, label, coach_code, recipient_id }.
+export function targetsFor(j, mode) {
+  if (mode === 'janitor') {
+    return journeyPeople(j).map((p) => ({
+      key: `p:${p.user_id}`, label: `${p.name ?? 'Staff'}${p.supervisor ? ' (supervisor)' : ''}`, coach_code: null, recipient_id: p.user_id,
+    }));
+  }
+  return [{ key: 'journey', label: 'Whole journey', coach_code: null, recipient_id: null },
+    ...j.coaches.map((c) => ({ key: `c:${c.code}`, label: c.code, coach_code: c.code, recipient_id: null }))];
+}
 
 function MovementForm({ journey, type, balance, onClose, onDone }) {
   const { queue } = useSession();
   const notify = useNotify();
   const items = useResource('/inventory/items', { division_id: journey.division_id, active: true });
-  const [form, setForm] = useState({ item_id: '', coach_code: '', quantity: '', remarks: '' });
+  const [mode, setMode] = useState('coach');
+  const [itemId, setItemId] = useState('');
+  const [amounts, setAmounts] = useState({});      // row key -> quantity text
+  const [same, setSame] = useState('');
+  const [remarks, setRemarks] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const item = (items.data ?? []).find((i) => i.id === form.item_id);
-  const quantity = Number(form.quantity);
-  const open = outstandingOf(balance, form.item_id, form.coach_code);
-  const tooMuch = type === 'return' && form.item_id && quantity > open + 1e-9;
-  const valid = item && Number.isFinite(quantity) && quantity > 0 && quantity <= 1_000_000 && !tooMuch;
+  const item = (items.data ?? []).find((i) => i.id === itemId);
+  const returning = type === 'return';
+  const unit = item?.unit ?? '';
+
+  const open = (t) => outstandingOf(balance, itemId, t.coach_code, t.recipient_id);
+  // A return only lists what has something outstanding to give back.
+  const rows = targetsFor(journey, mode).filter((t) => !returning || !itemId || open(t) > 1e-9);
+  const parsed = rows.map((t) => {
+    const raw = String(amounts[t.key] ?? '').trim();
+    const n = Number(raw);
+    const error = !raw ? null
+      : !Number.isFinite(n) || n <= 0 || n > 1_000_000 ? 'Enter a quantity above 0'
+        : returning && n > open(t) + 1e-9 ? `At most ${qty(open(t))}` : null;
+    return { ...t, raw, n, error };
+  });
+  const chosen = parsed.filter((r) => r.raw && !r.error);
+  const invalid = parsed.some((r) => r.error);
+  const total = chosen.reduce((sum, r) => sum + r.n, 0);
+  const valid = item && chosen.length > 0 && !invalid;
+  const noun = mode === 'janitor' ? (chosen.length === 1 ? 'janitor' : 'janitors') : (chosen.length === 1 ? 'coach' : 'coaches');
+
+  const setAmount = (key, v) => setAmounts((a) => ({ ...a, [key]: v }));
+  const fillAll = () => setAmounts(Object.fromEntries(rows.map((t) => [t.key, same])));
+  const fillOutstanding = () => setAmounts(Object.fromEntries(rows.map((t) => [t.key, qty(open(t))])));
+  const switchMode = (m) => { setMode(m); setAmounts({}); };
 
   async function record() {
     setBusy(true);
-    const outcome = await queue.submit({
-      type: 'inventory.record',
-      // backend TxnIn (unknown fields are refused)
-      payload: {
-        id: crypto.randomUUID(), journey_id: journey.id, item_id: form.item_id, coach_code: form.coach_code || null,
-        txn_type: type, quantity, remarks: form.remarks.trim() || null,
-      },
-    });
+    const failed = [];
+    let saved = 0;
+    let pending = 0;
+    for (const r of chosen) {
+      const outcome = await queue.submit({
+        type: 'inventory.record',
+        // backend TxnIn (unknown fields are refused)
+        payload: {
+          id: crypto.randomUUID(), journey_id: journey.id, item_id: itemId, coach_code: r.coach_code,
+          ...(r.recipient_id ? { recipient_id: r.recipient_id } : {}),
+          txn_type: type, quantity: r.n, remarks: remarks.trim() || null,
+        },
+      });
+      if (savedLocally(outcome)) {
+        saved += 1;
+        if (outcome.status !== 'synced') pending += 1;
+      } else {
+        failed.push(`${r.label}: ${outcome.message}`);
+      }
+    }
     setBusy(false);
     setConfirming(false);
-    outcomeToast(notify, outcome, type === 'issue' ? 'Issue' : 'Return');
-    if (savedLocally(outcome)) onDone();
+    const what = returning ? 'Returned' : 'Issued';
+    if (saved) {
+      notify(pending ? 'warning' : 'success', pending
+        ? `${what} ${item.name} for ${saved} ${noun}. Saved on this device; it will sync when the server is reachable.`
+        : `${what} ${item.name} for ${saved} ${noun}.`);
+    }
+    for (const f of failed) notify('error', f);
+    if (saved) onDone();
   }
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); setConfirming(true); }} className="space-y-3">
+    <form onSubmit={(e) => { e.preventDefault(); if (valid) setConfirming(true); }} className="space-y-3">
       <ErrorNote error={items.error} />
+      <Segmented label="Issue to" value={mode} onChange={switchMode}
+        options={[{ value: 'coach', label: 'Coach-wise' }, { value: 'janitor', label: 'Janitor-wise' }]} />
       <Field label="Item">
-        <Select value={form.item_id} required onChange={(v) => set({ item_id: v })}
+        <Select value={itemId} required onChange={(v) => { setItemId(v); setAmounts({}); }}
           placeholder={items.loading ? 'Loading…' : (items.data ?? []).length ? 'Select item' : 'No active items in this division'}
           options={(items.data ?? []).map((i) => ({ value: i.id, label: `${i.name} (${i.unit})` }))} />
       </Field>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Coach" hint="Leave empty for the whole journey">
-          <Select value={form.coach_code} onChange={(v) => set({ coach_code: v })} placeholder="Whole journey"
-            options={journey.coaches.map((c) => ({ value: c.code, label: c.code }))} />
-        </Field>
-        <Field label={`Quantity${item ? ` (${item.unit})` : ''}`}
-          hint={type === 'return' && form.item_id ? `Outstanding: ${qty(open)}${item ? ` ${item.unit}` : ''}` : undefined}
-          error={tooMuch ? 'A return cannot exceed the quantity issued.' : undefined}>
-          <input className="input" type="number" min="0.01" step="any" max={1_000_000} required value={form.quantity} onChange={(e) => set({ quantity: e.target.value })} />
-        </Field>
-      </div>
-      <Field label="Remarks"><textarea className="input h-20 py-3" maxLength={300} value={form.remarks} onChange={(e) => set({ remarks: e.target.value })} /></Field>
-      <SubmitBar label={type === 'issue' ? 'Review issue' : 'Review return'} disabled={!valid} onCancel={onClose} />
-      <ConfirmDialog open={confirming} title={type === 'issue' ? 'Confirm issue' : 'Confirm return'} busy={busy}
-        confirmLabel={type === 'issue' ? 'Record issue' : 'Record return'} onClose={() => setConfirming(false)} onConfirm={record}>
-        <p>{type === 'issue' ? 'Issue' : 'Return'} <strong>{qty(quantity || 0)} {item?.unit}</strong> of <strong>{item?.name}</strong>{form.coach_code ? ` for coach ${form.coach_code}` : ' for the journey'}?</p>
+
+      {item && (
+        <>
+          {rows.length === 0 ? (
+            <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-600">
+              {returning ? `Nothing of ${item.name} is outstanding ${mode === 'janitor' ? 'with a janitor' : 'on a coach or the journey'}.`
+                : mode === 'janitor' ? 'No staff are allocated to this journey.' : 'This journey has no coaches.'}
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-2 rounded-xl bg-slate-50 p-2.5">
+                {returning ? (
+                  <button type="button" className="btn-secondary h-10 text-sm" onClick={fillOutstanding}>Return all outstanding</button>
+                ) : (
+                  <>
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                      Same for every {mode === 'janitor' ? 'janitor' : 'coach'}
+                      <input className="input h-10 w-24" inputMode="decimal" aria-label="Same quantity for all" value={same}
+                        onChange={(e) => setSame(e.target.value)} placeholder={unit} />
+                    </label>
+                    <button type="button" className="btn-secondary h-10 text-sm" disabled={!same.trim()} onClick={fillAll}>Fill all</button>
+                  </>
+                )}
+                <button type="button" className="btn-link ml-auto text-xs" onClick={() => setAmounts({})}>Clear</button>
+              </div>
+              <ul className="grid gap-2 sm:grid-cols-2" aria-label={mode === 'janitor' ? 'Quantity per janitor' : 'Quantity per coach'}>
+                {parsed.map((r) => (
+                  <li key={r.key} className={`flex items-center gap-2 rounded-xl px-3 py-2 ring-1 ${r.error ? 'ring-red-300' : r.raw ? 'ring-brand-300 bg-brand-50/40' : 'ring-slate-200'}`}>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{r.label}</span>
+                      {returning && <span className="block text-[11px] text-slate-500">Outstanding {qty(open(r))} {unit}</span>}
+                      {r.error && <span className="block text-[11px] text-red-600">{r.error}</span>}
+                    </span>
+                    <input className="input h-10 w-24 text-right" inputMode="decimal" aria-label={`${r.label} quantity`}
+                      value={amounts[r.key] ?? ''} onChange={(e) => setAmount(r.key, e.target.value)} placeholder="0" />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <Field label="Remarks (optional)">
+            <input className="input" maxLength={300} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          </Field>
+        </>
+      )}
+
+      <SubmitBar disabled={!valid} onCancel={onClose}
+        label={!valid ? (returning ? 'Return' : 'Issue')
+          : `${returning ? 'Return' : 'Issue'} ${qty(total)} ${unit} · ${chosen.length} ${noun}`} />
+      <ConfirmDialog open={confirming} title={returning ? 'Confirm return' : 'Confirm issue'} busy={busy}
+        confirmLabel={returning ? 'Record return' : 'Record issue'} onClose={() => setConfirming(false)} onConfirm={record}>
+        <p>{returning ? 'Return' : 'Issue'} <strong>{item?.name}</strong>:</p>
+        <ul className="max-h-56 space-y-0.5 overflow-y-auto rounded-xl bg-slate-50 px-3 py-2 text-sm">
+          {chosen.map((r) => <li key={r.key} className="flex justify-between gap-3"><span>{r.label}</span><strong>{qty(r.n)} {unit}</strong></li>)}
+        </ul>
         <p className="text-xs text-slate-500">Inventory transactions cannot be edited or deleted once recorded. A mistake is corrected with a new transaction.</p>
       </ConfirmDialog>
     </form>
@@ -105,7 +211,9 @@ function JourneyInventory({ id }) {
     ledger.reload();
     queue.refresh();
   };
-  const coachRows = (rows) => rows.filter((r) => !scope || (scope === 'journey' ? !r.coach_code : r.coach_code === scope));
+  const toWhom = (r) => (r.recipient_id ? by(r.recipient_id) : r.coach_code ?? 'Journey');
+  const coachRows = (rows) => rows.filter((r) => !scope
+    || (scope === 'journey' ? !r.coach_code && !r.recipient_id : scope === 'janitors' ? !!r.recipient_id : r.coach_code === scope));
 
   return (
     <>
@@ -125,7 +233,8 @@ function JourneyInventory({ id }) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium uppercase text-slate-500">Scope</span>
             <Segmented label="Scope" value={scope} onChange={setScope}
-              options={[{ value: '', label: 'All' }, { value: 'journey', label: 'Whole journey' }, ...j.coaches.map((c) => ({ value: c.code, label: c.code }))]} />
+              options={[{ value: '', label: 'All' }, { value: 'journey', label: 'Whole journey' }, { value: 'janitors', label: 'Janitors' },
+                ...j.coaches.map((c) => ({ value: c.code, label: c.code }))]} />
           </div>
           <Panel title="Balance">
             {unsynced > 0 && balance.source === 'remote' && (
@@ -135,9 +244,9 @@ function JourneyInventory({ id }) {
             )}
             <DataState res={balance} empty="Nothing issued on this journey yet.">
               {(rows) => (
-                <Table rowKey={(r) => `${r.item_id}:${r.coach_code ?? ''}`} rows={coachRows(rows)} columns={[
+                <Table rowKey={(r) => `${r.item_id}:${r.coach_code ?? ''}:${r.recipient_id ?? ''}`} rows={coachRows(rows)} columns={[
                   { key: 'item_name', label: 'Item', render: (r) => <><span className="font-medium">{r.item_name}</span><span className="block text-xs text-slate-500">{r.unit}</span></> },
-                  { key: 'coach', label: 'Coach', render: (r) => r.coach_code ?? 'Journey' },
+                  { key: 'coach', label: 'Coach / janitor', render: toWhom },
                   { key: 'issued', label: 'Issued', render: (r) => qty(r.issued) },
                   { key: 'returned', label: 'Returned', render: (r) => qty(r.returned) },
                   { key: 'consumed', label: 'Consumed', render: (r) => qty(r.consumed) },
@@ -155,7 +264,7 @@ function JourneyInventory({ id }) {
                     { key: 'type', label: 'Type', render: (t) => <Badge tone={STATE_TONE[t.txn_type]}>{label(t.txn_type)}</Badge> },
                     { key: 'item', label: 'Item', render: (t) => t.item_name ?? (balance.data ?? []).find((b) => b.item_id === t.item_id)?.item_name ?? '—' },
                     { key: 'qty', label: 'Quantity', render: (t) => `${qty(t.quantity)}${t.unit ? ` ${t.unit}` : ''}` },
-                    { key: 'coach', label: 'Coach', render: (t) => t.coach_code ?? 'Journey' },
+                    { key: 'coach', label: 'Coach / janitor', render: toWhom },
                     { key: 'by', label: 'Recorded by', render: (t) => by(t.created_by_id) },
                     { key: 'remarks', label: 'Remarks', render: (t) => t.remarks ?? '—' },
                     { key: 'sync', label: 'Sync', render: (t) => <SyncState record={t} /> },

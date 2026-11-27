@@ -914,4 +914,29 @@ const V21 = {
   statements: ['DROP TRIGGER IF EXISTS trg_attendance_stage_order'],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21];
+// v22: inventory can be issued to and returned by a janitor (backend 0028). recipient_id is the journey staff
+// member who received it, NULL for a coach or the whole journey. A janitor can only hand back what was issued
+// to them, so the return limit is per item, coach AND recipient; recipient_id joins the immutable facts.
+const V22 = {
+  version: 22,
+  name: 'inventory to a janitor',
+  async prepare(db) {
+    const has = (await db.query('PRAGMA table_info(inventory_transactions)')).some((c) => c.name === 'recipient_id');
+    return [
+      ...(has ? [] : ['ALTER TABLE inventory_transactions ADD COLUMN recipient_id TEXT']),
+      'DROP TRIGGER IF EXISTS trg_inventory_return_limit',
+      `CREATE TRIGGER trg_inventory_return_limit BEFORE INSERT ON inventory_transactions
+        WHEN NEW.txn_type = 'return' AND NEW.quantity > COALESCE((
+          SELECT SUM(CASE t.txn_type WHEN 'issue' THEN t.quantity ELSE -t.quantity END) FROM inventory_transactions t
+          WHERE t.journey_id = NEW.journey_id AND t.item_id = NEW.item_id AND t.coach_code IS NEW.coach_code
+            AND t.recipient_id IS NEW.recipient_id AND t.${LIVE}), 0) + 1e-9
+        BEGIN SELECT RAISE(ABORT, 'return_exceeds_issue: the return is larger than the quantity issued'); END`,
+      'DROP TRIGGER IF EXISTS trg_inventory_immutable',
+      `CREATE TRIGGER trg_inventory_immutable BEFORE UPDATE OF journey_id, division_id, item_id, coach_code, recipient_id, txn_type,
+          quantity, unit, remarks, recorded_by_id, device_timestamp, created_at ON inventory_transactions
+        BEGIN SELECT RAISE(ABORT, 'immutable: inventory transactions cannot be changed'); END`,
+    ];
+  },
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21, V22];

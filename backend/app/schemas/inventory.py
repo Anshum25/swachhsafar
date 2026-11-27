@@ -35,6 +35,7 @@ class TxnIn(StrictModel):
     journey_id: uuid.UUID
     item_id: uuid.UUID
     coach_code: CoachCode | None = None
+    recipient_id: uuid.UUID | None = Field(default=None, description="The janitor (journey staff) who received or returned it")
     txn_type: InventoryTxnType
     quantity: float = Field(gt=0, le=1_000_000)
     remarks: str | None = Field(default=None, max_length=300)
@@ -46,6 +47,7 @@ class TxnOut(ReadModel):
     division_id: uuid.UUID
     item_id: uuid.UUID
     coach_code: str | None
+    recipient_id: uuid.UUID | None = None
     txn_type: InventoryTxnType
     quantity: float
     remarks: str | None
@@ -59,6 +61,7 @@ class BalanceRow(StrictModel):
     unit: Unit
     ideal_qty: float
     coach_code: str | None
+    recipient_id: uuid.UUID | None = None
     issued: float
     returned: float
     consumed: float

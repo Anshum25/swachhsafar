@@ -1,6 +1,7 @@
 // Inventory issue/return ledger per journey. Transactions are immutable (no update of their facts,
-// no delete) and a return can never exceed what was issued for the same journey, item and coach
-// (trg_inventory_return_limit). Balances are always derived from the ledger, never stored.
+// no delete) and a return can never exceed what was issued for the same journey, item, coach and janitor
+// (trg_inventory_return_limit). Stock goes to a coach, to the whole journey, or to a janitor on the journey's
+// staff (recipient_id). Balances are always derived from the ledger, never stored.
 import { LocalRuleError } from './errors.js';
 import { optionalText, requireDeviceTimestamp, requireUuid } from './captureRules.js';
 import { insertStatement } from './sqlHelpers.js';
@@ -8,11 +9,11 @@ import { insertStatement } from './sqlHelpers.js';
 const LIVE = "sync_status NOT IN ('rejected', 'conflict')";
 
 export function createInventoryRepository(db, { journeys, masters }) {
-  async function outstanding(journeyId, itemId, coachCode) {
+  async function outstanding(journeyId, itemId, coachCode, recipientId = null) {
     const [row] = await db.query(
       `SELECT COALESCE(SUM(CASE txn_type WHEN 'issue' THEN quantity ELSE -quantity END), 0) AS qty
-       FROM inventory_transactions WHERE journey_id = ? AND item_id = ? AND coach_code IS ? AND ${LIVE}`,
-      [journeyId, itemId, coachCode ?? null],
+       FROM inventory_transactions WHERE journey_id = ? AND item_id = ? AND coach_code IS ? AND recipient_id IS ? AND ${LIVE}`,
+      [journeyId, itemId, coachCode ?? null, recipientId ?? null],
     );
     return row.qty;
   }
@@ -35,20 +36,27 @@ export function createInventoryRepository(db, { journeys, masters }) {
       }
       const coach = p.coach_code ? await journeys.coach(journey.id, p.coach_code) : null;
       if (p.coach_code && !coach) throw new LocalRuleError('unknown_coach', 'This coach is not part of the journey.');
+      const recipient = p.recipient_id ?? null;
+      if (recipient) {
+        requireUuid(recipient, 'recipient_id');
+        if (recipient !== journey.supervisor_id && !(await journeys.isAllocated(journey.id, recipient))) {
+          throw new LocalRuleError('unknown_recipient', "This person is not on the journey's staff.");
+        }
+      }
       if (p.txn_type !== 'issue' && p.txn_type !== 'return') throw new LocalRuleError('invalid_value', "txn_type must be 'issue' or 'return'.");
       const quantity = Number(p.quantity);
       if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) {
         throw new LocalRuleError('invalid_quantity', 'Quantity must be greater than 0 and at most 1,000,000.');
       }
       if (p.txn_type === 'return') {
-        const open = await outstanding(journey.id, item.id, coach?.code ?? null);
+        const open = await outstanding(journey.id, item.id, coach?.code ?? null, recipient);
         if (quantity > open + 1e-9) {
           throw new LocalRuleError('return_exceeds_issue', 'The return is larger than the quantity issued.', { outstanding: open });
         }
       }
       const row = {
         id: p.id, journey_id: journey.id, division_id: journey.division_id, item_id: item.id, coach_code: coach?.code ?? null,
-        txn_type: p.txn_type, quantity, unit: item.unit, remarks: optionalText(p.remarks, 'Remarks', 300),
+        recipient_id: recipient, txn_type: p.txn_type, quantity, unit: item.unit, remarks: optionalText(p.remarks, 'Remarks', 300),
         recorded_by_id: actor?.id ?? null, device_timestamp: p.device_timestamp ?? null, origin: 'local', sync_status: 'pending',
         created_at: now, updated_at: now,
       };
@@ -81,7 +89,7 @@ export function createInventoryRepository(db, { journeys, masters }) {
         if (!item) continue; // item master not on this device yet: keep reading it from the server
         out.push(insertStatement('inventory_transactions', {
           id: t.id, journey_id: t.journey_id, division_id: t.division_id, item_id: t.item_id, coach_code: t.coach_code ?? null,
-          txn_type: t.txn_type, quantity: t.quantity, unit: item.unit, remarks: t.remarks ?? null, recorded_by_id: t.created_by_id ?? null,
+          recipient_id: t.recipient_id ?? null, txn_type: t.txn_type, quantity: t.quantity, unit: item.unit, remarks: t.remarks ?? null, recorded_by_id: t.created_by_id ?? null,
           device_timestamp: null, origin: 'server', sync_status: 'synced', synced_at: now, server_timestamp: t.created_at,
           created_at: t.created_at ?? now, updated_at: now,
         }));
@@ -92,12 +100,12 @@ export function createInventoryRepository(db, { journeys, masters }) {
     // Same shape as GET /inventory/journeys/{id}/balance.
     async balance(journeyId) {
       const rows = await db.query(
-        `SELECT t.item_id, i.name AS item_name, i.unit, i.ideal_qty, t.coach_code,
+        `SELECT t.item_id, i.name AS item_name, i.unit, i.ideal_qty, t.coach_code, t.recipient_id,
                 SUM(CASE t.txn_type WHEN 'issue' THEN t.quantity ELSE 0 END) AS issued,
                 SUM(CASE t.txn_type WHEN 'return' THEN t.quantity ELSE 0 END) AS returned
          FROM inventory_transactions t JOIN inventory_items i ON i.id = t.item_id
          WHERE t.journey_id = ? AND t.${LIVE}
-         GROUP BY t.item_id, t.coach_code ORDER BY i.name, t.coach_code`,
+         GROUP BY t.item_id, t.coach_code, t.recipient_id ORDER BY i.name, t.coach_code, t.recipient_id`,
         [journeyId],
       );
       return rows.map((r) => ({ ...r, consumed: r.issued - r.returned }));

@@ -112,10 +112,35 @@ def test_issue_return_and_balance(world, item):
     r = txn(world, item, "return", 1, coach="S1")
     assert r.status_code == 422  # nothing issued to S1
     bal = world.client.get(f"{API}/inventory/journeys/{world.journey['id']}/balance", headers=world.h("manager")).json()
-    assert bal == [dict(item_id=item["id"], item_name="Phenyl", unit="ltr", ideal_qty=5.0, coach_code="B1",
+    assert bal == [dict(item_id=item["id"], item_name="Phenyl", unit="ltr", ideal_qty=5.0, coach_code="B1", recipient_id=None,
                         issued=5.5, returned=2.0, consumed=3.5)]
     ledger = world.client.get(f"{API}/inventory/journeys/{world.journey['id']}/transactions", headers=world.h("manager")).json()
     assert [t["txn_type"] for t in ledger["items"]] == ["issue", "issue", "return"]
+
+
+def test_issue_to_a_janitor(world, item):
+    """Stock can go to a janitor on the journey; they can only hand back what was issued to them."""
+    jan = str(world.users["jan"].id)
+    assert txn(world, item, "issue", 3, coach=None, recipient_id=jan).status_code == 201
+    assert txn(world, item, "issue", 2, coach="B1").status_code == 201
+    r = txn(world, item, "return", 4, coach=None, recipient_id=jan)
+    assert r.status_code == 422 and r.json()["error"]["details"]["outstanding"] == 3.0
+    assert txn(world, item, "return", 1, coach=None, recipient_id=jan).status_code == 201
+    # Someone who is not on the journey's staff cannot be given stock.
+    r = txn(world, item, "issue", 1, coach=None, recipient_id=str(world.users["manager"].id))
+    assert r.status_code == 422 and r.json()["error"]["code"] == "unknown_recipient"
+    bal = world.client.get(f"{API}/inventory/journeys/{world.journey['id']}/balance", headers=world.h("manager")).json()
+    assert [(b["coach_code"], b["recipient_id"], b["issued"], b["returned"]) for b in bal] == [(None, jan, 3.0, 1.0), ("B1", None, 2.0, 0.0)]
+    ledger = world.client.get(f"{API}/inventory/journeys/{world.journey['id']}/transactions", headers=world.h("manager")).json()
+    assert [t["recipient_id"] for t in ledger["items"]] == [jan, None, jan]
+
+
+def test_a_transaction_without_janitor_replays_as_before(world, item):
+    """A device resending a transaction recorded before janitors existed is a replay, not a conflict."""
+    body = dict(id=str(uuid.uuid4()), journey_id=world.journey["id"], item_id=item["id"], coach_code="B1", txn_type="issue", quantity=2)
+    first = world.client.post(f"{API}/inventory/transactions", headers=world.h("sup"), json=body)
+    again = world.client.post(f"{API}/inventory/transactions", headers=world.h("sup"), json={**body, "recipient_id": None})
+    assert first.status_code == 201 and again.status_code == 200
 
 
 def test_ledger_is_immutable(world, item, db):

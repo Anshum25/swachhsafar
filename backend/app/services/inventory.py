@@ -1,3 +1,5 @@
+import hashlib
+import json
 import uuid
 from datetime import timedelta
 
@@ -56,17 +58,29 @@ def list_items(db: Session, p: Principal, division_id: uuid.UUID, active: bool |
     return list(db.scalars(stmt.order_by(InventoryItem.name)))
 
 
-def _outstanding(db: Session, journey_id, item_id, coach_code) -> float:
+def _outstanding(db: Session, journey_id, item_id, coach_code, recipient_id=None) -> float:
+    """Issued minus returned for one item, coach and janitor of a journey (None = not a coach / not a person)."""
     signed = case((InventoryTransaction.txn_type == InventoryTxnType.ISSUE, InventoryTransaction.quantity),
                   else_=-InventoryTransaction.quantity)
     stmt = select(func.coalesce(func.sum(signed), 0)).where(
         InventoryTransaction.journey_id == journey_id, InventoryTransaction.item_id == item_id)
     stmt = stmt.where(InventoryTransaction.coach_code.is_(None) if coach_code is None else InventoryTransaction.coach_code == coach_code)
+    stmt = stmt.where(InventoryTransaction.recipient_id.is_(None) if recipient_id is None
+                      else InventoryTransaction.recipient_id == recipient_id)
     return float(db.scalar(stmt))
 
 
+def _digest(body: TxnIn) -> str:
+    # A transaction with no janitor hashes exactly as it did before recipient_id existed, so a device replaying
+    # an older operation is recognised as the same transaction rather than a conflicting reuse of its id.
+    if body.recipient_id is not None:
+        return payload_hash(body)
+    raw = json.dumps(body.model_dump(mode="json", exclude={"recipient_id"}), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 def record(db: Session, p: Principal, body: TxnIn, *, commit: bool = True) -> tuple[InventoryTransaction, bool]:
-    digest = payload_hash(body)
+    digest = _digest(body)
     if (existing := check_replay(db, InventoryTransaction, body.id, digest, "created_by_id", p.id)) is not None:
         return existing, True
     j = get_journey(db, p, body.journey_id, for_update=True)  # serialises balance checks per journey
@@ -84,8 +98,10 @@ def record(db: Session, p: Principal, body: TxnIn, *, commit: bool = True) -> tu
         raise BusinessRuleViolation("Item not found or inactive in this division")
     if body.coach_code and body.coach_code not in {c.code for c in j.coaches}:
         raise BusinessRuleViolation("Coach is not part of this journey", code="unknown_coach")
+    if body.recipient_id and not (body.recipient_id == j.supervisor_id or is_allocated(db, j.id, body.recipient_id)):
+        raise BusinessRuleViolation("This person is not on the journey's staff", code="unknown_recipient")
     if body.txn_type == InventoryTxnType.RETURN:
-        outstanding = _outstanding(db, j.id, item.id, body.coach_code)
+        outstanding = _outstanding(db, j.id, item.id, body.coach_code, body.recipient_id)
         if body.quantity > outstanding + 1e-9:
             raise BusinessRuleViolation("Return exceeds the quantity issued", code="return_exceeds_issue",
                                         details={"outstanding": outstanding})
@@ -93,7 +109,7 @@ def record(db: Session, p: Principal, body: TxnIn, *, commit: bool = True) -> tu
     db.add(txn)
     db.flush()
     audit(db, actor_id=p.id, action=f"inventory.{body.txn_type.value}", entity=txn, division_id=j.division_id,
-          changes={"item_id": item.id, "quantity": body.quantity, "coach": body.coach_code})
+          changes={"item_id": item.id, "quantity": body.quantity, "coach": body.coach_code, "recipient": body.recipient_id})
     if commit:
         db.commit()
     return txn, False
@@ -113,11 +129,12 @@ def balance(db: Session, p: Principal, journey_id: uuid.UUID) -> list[dict]:
     returned = func.sum(case((InventoryTransaction.txn_type == InventoryTxnType.RETURN, InventoryTransaction.quantity), else_=0))
     rows = db.execute(
         select(InventoryItem.id, InventoryItem.name, InventoryItem.unit, InventoryItem.ideal_qty, InventoryTransaction.coach_code,
-               issued, returned)
+               InventoryTransaction.recipient_id, issued, returned)
         .join(InventoryItem, InventoryItem.id == InventoryTransaction.item_id)
         .where(InventoryTransaction.journey_id == j.id)
-        .group_by(InventoryItem.id, InventoryItem.name, InventoryItem.unit, InventoryItem.ideal_qty, InventoryTransaction.coach_code)
-        .order_by(InventoryItem.name, InventoryTransaction.coach_code.nulls_first())
+        .group_by(InventoryItem.id, InventoryItem.name, InventoryItem.unit, InventoryItem.ideal_qty, InventoryTransaction.coach_code,
+                  InventoryTransaction.recipient_id)
+        .order_by(InventoryItem.name, InventoryTransaction.coach_code.nulls_first(), InventoryTransaction.recipient_id.nulls_first())
     ).all()
-    return [dict(item_id=r[0], item_name=r[1], unit=r[2], ideal_qty=float(r[3]), coach_code=r[4], issued=float(r[5]),
-                 returned=float(r[6]), consumed=float(r[5]) - float(r[6])) for r in rows]
+    return [dict(item_id=r[0], item_name=r[1], unit=r[2], ideal_qty=float(r[3]), coach_code=r[4], recipient_id=r[5],
+                 issued=float(r[6]), returned=float(r[7]), consumed=float(r[6]) - float(r[7])) for r in rows]
