@@ -18,6 +18,7 @@ from app.schemas.reports import (
     PsiRow,
 )
 from app.security.principal import Principal, get_principal
+from app.services import detail_reports as detail
 from app.services import feedback_reports as fb_reports
 from app.services import reports as svc
 from app.timeutil import today_ist
@@ -90,6 +91,39 @@ def timetable_sync(division_id: uuid.UUID | None = None, db: Session = Depends(g
                    p: Principal = Depends(get_principal)):
     """Each train's timetable state (ok / failed / rejected / never read) and the latest failed reads."""
     return fb_reports.sync_report(db, p, division_id=division_id)
+
+
+# ---- row-level work statements (inspection list, PSI statement, attendance summary, journey report) ----------
+
+
+@router.get("/inspection-list")
+def inspection_list(date_from: date, date_to: date, train_id: uuid.UUID | None = None, division_id: uuid.UUID | None = None,
+                    db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Every inspection in the period (newest first): time, train, coach, B/A, comments and its photo/video."""
+    return detail.inspection_list(db, p, division_id=division_id, date_from=date_from, date_to=date_to, train_id=train_id)
+
+
+@router.get("/psi-statement", responses={409: {"description": "PSI weights not configured"}})
+def psi_statement(date_from: date, date_to: date, train_id: uuid.UUID | None = None, division_id: uuid.UUID | None = None,
+                  bank_id: uuid.UUID | None = None, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Work statement: per journey, AC / non-AC coaches, janitors deployed and each coach's PSI per direction."""
+    return detail.psi_statement(db, p, division_id=division_id, date_from=date_from, date_to=date_to, train_id=train_id,
+                                bank_id=bank_id)
+
+
+@router.get("/attendance-summary")
+def attendance_summary(date_from: date, date_to: date, train_id: uuid.UUID | None = None,
+                       division_id: uuid.UUID | None = None, db: Session = Depends(get_db),
+                       p: Principal = Depends(get_principal)):
+    """Per journey: each allocated staff member (EHK, G1, G2...) and whether they marked each attendance stage."""
+    return detail.attendance_summary(db, p, division_id=division_id, date_from=date_from, date_to=date_to, train_id=train_id)
+
+
+@router.get("/journey-report")
+def journey_report(date_from: date, date_to: date, train_id: uuid.UUID | None = None, division_id: uuid.UUID | None = None,
+                   db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
+    """Per journey: coaches, staff, and done | expected attendance, feedback and inspections."""
+    return detail.journey_report(db, p, division_id=division_id, date_from=date_from, date_to=date_to, train_id=train_id)
 
 
 class MapPoint(BaseModel):
