@@ -169,14 +169,22 @@ export function attendanceGrid(data, q) {
     sheet: 'Attendance', head, body };
 }
 
-export function journeyGrid(data, q) {
+export function journeyGrid(data, q, onOpen) {
+  // On screen each figure is a link to the detailed report for that journey's train and dates.
+  const link = (j, kind, text) => (onOpen && j.train_id ? {
+    content: text,
+    render: <button type="button" className="font-semibold text-brand-700 underline-offset-2 hover:underline"
+      onClick={() => onOpen(kind, { trainId: j.train_id, from: j.journey_date, to: j.end_date })}>{text}</button>,
+  } : text);
   return {
     title: `JOURNEY REPORT FOR ${trainTitle(data)} — ${period(q)}`,
     subtitle: 'Each pair is done | expected (feedback: counted | Train Master target).',
     sheet: 'Journeys',
     head: [['Sr.no', 'Train', 'AC/Non AC', 'Date', 'Staff', 'Attendance', 'Feedback', 'Inspections']],
     body: data.journeys.map((j) => [j.sr, j.train, pair(j.ac, j.nac), `${dmy(j.journey_date)} to ${dmy(j.end_date)}`, j.staff,
-      pair(j.attendance_done, j.attendance_expected), pair(j.feedback_done, j.feedback_target), pair(j.inspections_done, j.inspections_required)]),
+      link(j, 'attendance-summary', pair(j.attendance_done, j.attendance_expected)),
+      link(j, 'psi-statement', pair(j.feedback_done, j.feedback_target)),
+      link(j, 'inspection-list', pair(j.inspections_done, j.inspections_required))]),
   };
 }
 
@@ -252,8 +260,8 @@ const STATEMENTS = {
 };
 export const STATEMENT_TABS = Object.keys(STATEMENTS);
 
-export function WorkStatement({ kind, q }) {
-  const [trainId, setTrainId] = useState('');
+export function WorkStatement({ kind, q, initialTrain = '', onOpen }) {
+  const [trainId, setTrainId] = useState(initialTrain);
   const spec = STATEMENTS[kind];
   const query = { date_from: q.date_from, date_to: q.date_to, ...(q.division_id ? { division_id: q.division_id } : {}), ...(trainId ? { train_id: trainId } : {}) };
   const res = useResource(spec.path, query);
@@ -264,7 +272,7 @@ export function WorkStatement({ kind, q }) {
       <DataState res={{ ...res, stale: false }} isEmpty={spec.isEmpty} empty={spec.empty}>
         {(data) => {
           if (kind === 'inspection-list') return <InspectionList data={data} q={q} name={name(data)} />;
-          const grid = spec.grid(data, q);
+          const grid = spec.grid(data, q, onOpen);
           return (
             <>
               <Header title={grid.title}><ExportButtons grid={() => grid} name={name(data)} /></Header>
