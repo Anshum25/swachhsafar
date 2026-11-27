@@ -163,11 +163,14 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
   const save = useSave(onSaved);
   const [fb, setFb] = useState(() => FEEDBACK_DEFAULTS(train));
   const [f, setF] = useState({
-    train_no: train?.train_no ?? '', name: train?.name ?? '', duration_days: train?.duration_days ?? 1, operational_days: train?.operational_days ?? 2,
+    train_no: train?.train_no ?? '', name: train?.name ?? '', operational_days: train?.operational_days ?? 2,
     inspection_rounds_per_day: train?.inspection_rounds_per_day ?? 1, before_inspection_enabled: train?.before_inspection_enabled ?? false,
     after_inspection_enabled: train?.after_inspection_enabled ?? true, daywise: train?.daywise ?? false, coaches: train ? coachText(train.coaches) : '',
     ...Object.fromEntries(TIMES.map(([k]) => [k, train?.[k]?.slice(0, 5) ?? ''])),
   });
+  // Not day-wise, the inspections are entered per leg and the total covers both legs (going + return).
+  const legRounds = (total) => Math.max(1, Math.ceil((total || 1) / 2));
+  const [perLeg, setPerLeg] = useState(() => legRounds(train?.inspection_rounds_per_day ?? 2));
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
   const configured = !!train?.attendance_station_count;
   const [route, setRoute] = useState(train?.route_stations ?? []);
@@ -183,6 +186,10 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
     e.preventDefault();
     if (attError) return;
     const { train_no, coaches, ...rest } = f;
+    // A train whose stored total is odd keeps it until the per-leg number is changed.
+    if (!rest.daywise && !(train && !train.daywise && perLeg === legRounds(train.inspection_rounds_per_day))) {
+      rest.inspection_rounds_per_day = perLeg * 2;
+    }
     // Feedback settings are sent only when this device knows them (a train listed offline may lack them).
     const known = !train || 'feedback_enabled' in train;
     const fields = { ...rest, ...Object.fromEntries(TIMES.map(([k]) => [k, rest[k] || null])), ...(known ? feedbackFields(fb) : {}) };
@@ -211,8 +218,7 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Train no." hint="e.g. 12951 or 12951 / 12952"><input className="input" required disabled={!!train} value={f.train_no} onChange={set('train_no')} /></Field>
         <Field label="Name"><input className="input" required minLength={2} value={f.name} onChange={set('name')} /></Field>
-        <Field label="Operational days" hint="Journey days (feedback runs on these)"><input type="number" min={1} max={30} className="input" value={f.operational_days} onChange={set('operational_days')} /></Field>
-        <Field label="Duration (days)"><input type="number" min={0} max={15} className="input" value={f.duration_days} onChange={set('duration_days')} /></Field>
+        <Field label="Operational days" hint="Journey days, going and return together (feedback runs on these)"><input type="number" min={1} max={30} required className="input" value={f.operational_days} onChange={set('operational_days')} /></Field>
         {TIMES.map(([k, label]) => (
           <Field key={k} label={label}><input type="time" className="input" value={f[k]} onChange={set(k)} /></Field>
         ))}
@@ -224,14 +230,18 @@ function TrainForm({ train, divisionId, onClose, onSaved }) {
       </div>
       {f.daywise ? (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Number of days"><input type="number" min={1} max={30} required className="input" value={f.operational_days} onChange={set('operational_days')} /></Field>
           <Field label="Inspections per day"><input type="number" min={1} max={20} required className="input" value={f.inspection_rounds_per_day} onChange={set('inspection_rounds_per_day')} /></Field>
           <Field label="Total inspections" hint="Days × per day"><input className="input" disabled value={(f.operational_days || 0) * (f.inspection_rounds_per_day || 0)} /></Field>
         </div>
       ) : (
-        <Field label="Total inspections" hint="How many inspections to take in all.">
-          <input type="number" min={1} max={20} required className="input sm:w-1/2" value={f.inspection_rounds_per_day} onChange={set('inspection_rounds_per_day')} />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Inspections per leg" hint="Taken on the going leg, and the same again on the return.">
+            <input type="number" min={1} max={10} required className="input" value={perLeg} onChange={(e) => setPerLeg(Number(e.target.value))} />
+          </Field>
+          <Field label="Total inspections" hint="Going + return (per leg × 2)">
+            <input className="input" disabled value={train && !train.daywise && perLeg === legRounds(train.inspection_rounds_per_day) ? train.inspection_rounds_per_day : perLeg * 2} />
+          </Field>
+        </div>
       )}
       <Field label="Coaches" hint="Comma separated, e.g. B1, B2, S1, GEN. The class comes from the code (H, A, B, M, G, C, E, J, K, EV … = AC; S, D, F, DV … = Non-AC; GEN, GS, UR, UNR, SLR … = General); write AC, NON-AC or GEN after a code to set it yourself.">
         <textarea className="input h-20 py-3" required value={f.coaches} onChange={set('coaches')} />

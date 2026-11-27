@@ -195,3 +195,46 @@ def test_an_outage_is_never_stored(db):
     with pytest.raises(ProviderUnavailable):
         pnr_cache.lookup(db, fake, PNR)
     assert db.get(PnrLookup, PNR) is None
+
+
+# ---- RapidAPI as the old PHP app used it, and the provider factory ----------------------------------------------
+
+
+def test_rapidapi_flushed_pnr_is_not_found_and_numberofpassenger_is_not_required():
+    from app.providers.external import parse_rapidapi_pnr
+
+    flushed = parse_rapidapi_pnr({"success": False, "message": "FLUSHED PNR / PNR NOT YET GENERATED"})
+    assert flushed.found is False and flushed.status_text == "FLUSHED PNR / PNR NOT YET GENERATED"
+    r = parse_rapidapi_pnr({"success": True, "data": {"trainNumber": "15210", "trainName": "Saharsa Exp",
+                                                       "passengerList": [{"currentStatus": "CNF", "currentCoachId": "S3",
+                                                                          "currentBerthNo": 41}]}})
+    assert r.found and r.train_number == "15210" and r.passengers[0].coach == "S3"
+
+
+def _factory(monkeypatch, **env):
+    from app.config import get_settings
+    from app.providers import external
+
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    get_settings.cache_clear()
+    external.get_pnr_provider.cache_clear()
+    try:
+        return external.get_pnr_provider()
+    finally:
+        get_settings.cache_clear()
+        external.get_pnr_provider.cache_clear()
+
+
+def test_rapidapi_defaults_to_the_irctc_api_and_railradar_without_permission_uses_rapidapi(monkeypatch):
+    from app.providers.external import RapidApiPnrProvider
+
+    monkeypatch.delenv("PNR_API_URL", raising=False)
+    monkeypatch.delenv("PNR_API_HOST", raising=False)
+    p = _factory(monkeypatch, PNR_PROVIDER="railradar", RAILRADAR_PNR_AUTHORIZATION="", PNR_API_KEY="k")
+    assert isinstance(p, FallbackPnrProvider) and p.fallback is None
+    assert isinstance(p.primary, RapidApiPnrProvider)
+    assert p.primary._host == "irctc-indian-railway-pnr-status.p.rapidapi.com"
+    assert p.primary._url.endswith("/getPNRStatus/")
+    both = _factory(monkeypatch, PNR_PROVIDER="railradar", RAILRADAR_PNR_AUTHORIZATION="RR-1", PNR_API_KEY="k")
+    assert isinstance(both.primary, rr.RailRadarPnrProvider) and isinstance(both.fallback, RapidApiPnrProvider)

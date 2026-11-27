@@ -222,6 +222,44 @@ def _fetch_firebase(credentials_file: str) -> tuple[list[dict], dict]:
     return accounts, hash_config
 
 
+def pnr_check(pnr: str) -> int:
+    """Each PNR provider in turn, as the feedback flow would build it from this server's settings."""
+    from app.config import get_settings
+    from app.providers import railradar_pnr
+    from app.providers.external import ProviderUnavailable, _rapidapi_from_settings, get_pnr_provider
+
+    s = get_settings()
+    key = s.pnr_api_key.get_secret_value() if s.pnr_api_key else ""
+    print(f"PNR_PROVIDER={s.pnr_provider}  RAILRADAR_PNR_AUTHORIZATION={'set' if s.railradar_pnr_authorization else 'NOT SET'}"
+          f"  RAILRADAR_PNR_TRANSPORT={s.railradar_pnr_transport}")
+    print(f"PNR_API_HOST={s.pnr_api_host}  PNR_API_KEY={'...' + key[-4:] if key else 'NOT SET'}")
+    candidates = []
+    if s.railradar_pnr_authorization:
+        candidates.append(("railradar", lambda: railradar_pnr.from_settings(s)))
+    candidates.append(("rapidapi", lambda: _rapidapi_from_settings(s)))
+    candidates.append(("as used by feedback", get_pnr_provider))
+    ok = False
+    for name, build in candidates:
+        try:
+            provider = build()
+            if provider is None:
+                print(f"{name:20} not configured")
+                continue
+            r = provider.lookup(pnr)
+        except (ProviderUnavailable, RuntimeError) as exc:
+            print(f"{name:20} FAILED: {exc}")
+            continue
+        ok = ok or name == "as used by feedback"
+        if r.found:
+            pax = ", ".join(f"{p.coach or '-'}/{p.berth_no or '-'} {p.status or ''}".strip() for p in r.passengers)
+            print(f"{name:20} found: {r.train_number} {r.train_name or ''} on {r.journey_date} "
+                  f"{r.from_code}->{r.to_code} class {r.journey_class} [{pax}]"
+                  + (f" (answered by {r.source})" if r.source else ""))
+        else:
+            print(f"{name:20} PNR not found ({r.status_text or 'no detail'})")
+    return 0 if ok else 3
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -256,7 +294,13 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("--retry-failed", action="store_true", help="only trains whose last read failed")
     st.add_argument("--division-code", help="only this division's trains")
     st.add_argument("--limit", type=int, default=60, help="at most this many trains in one run (default 60)")
+    pc = sub.add_parser("pnr-check", help="ask each configured PNR provider for one PNR and print what it said "
+                                          "(diagnoses 'PNR service unavailable'; nothing is stored)")
+    pc.add_argument("pnr")
     args = parser.parse_args(argv)
+
+    if args.cmd == "pnr-check":
+        return pnr_check(args.pnr)
 
     if args.cmd == "sync-timetables":
         from app.providers.railradar import get_timetable_provider

@@ -10,7 +10,7 @@ from app.models import (Attendance, Complaint, Division, Inspection, InventoryTr
 from app.services.journeys import derive_dates
 from app.timeutil import IST, today_ist, utcnow
 from app.schemas.common import PageParams
-from app.schemas.trains import CoachesReplace, CoachIn, TrainCreate, TrainUpdate
+from app.schemas.trains import CoachesReplace, CoachIn, TrainCreate, TrainUpdate, one_way_days
 from app.security.principal import Principal
 from app.services import feedback_plan, route_window
 from app.services.common import audit, commit_or_conflict, diff, flush_or_conflict, paginate
@@ -258,6 +258,8 @@ def create_train(db: Session, p: Principal, body: TrainCreate) -> Train:
 def update_train(db: Session, p: Principal, train_id: uuid.UUID, body: TrainUpdate) -> Train:
     train = get_train(db, p, train_id, "trains.manage")
     updates = body.model_dump(exclude_unset=True)
+    if "operational_days" in updates and "duration_days" not in updates:
+        updates["duration_days"] = one_way_days(updates["operational_days"])
     before = updates.get("before_inspection_enabled", train.before_inspection_enabled)
     after = updates.get("after_inspection_enabled", train.after_inspection_enabled)
     if not (before or after):
