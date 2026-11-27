@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useResource, useSession } from '../../app/session.jsx';
 import { useNotify } from '../../app/Layout.jsx';
 import JourneyPicker from '../../components/JourneyPicker.jsx';
@@ -9,7 +9,7 @@ import {
   Badge, DataState, DetailList, Dialog, Empty, Field, FilterBar, Loading, PageHeader, Pager, Panel, STATE_TONE, Select, SubmitBar, SyncBadge,
   SyncState, Table, Tabs, fmtDateTime, label,
 } from '../../components/ui.jsx';
-import { CameraSolidIcon, CheckBoldIcon, CheckIcon, LockSolidIcon, RefreshIcon, TrainSolidIcon, UserSolidIcon, UsersIcon } from '../../components/Icons.jsx';
+import { CameraSolidIcon, CheckBoldIcon, CheckIcon, LockSolidIcon, RefreshIcon, TrainSolidIcon, UserSolidIcon, UsersIcon, XIcon } from '../../components/Icons.jsx';
 import { canAct } from '../../services/authorization.js';
 import { deviceTimestamp, stampLines } from '../../utils/capture.js';
 import { FaceCheckNote, faceFields, useFaceCheck } from '../../face/FaceCheck.jsx';
@@ -19,9 +19,10 @@ import LiveFaceCapture from '../../face/LiveFaceCapture.jsx';
 import GroupPhotoCapture from '../../face/GroupPhotoCapture.jsx';
 import { FACE_MODEL } from '../../face/faceMatch.js';
 import { useSecurityGate } from '../../security/SecurityProvider.jsx';
+import { getSharedLocationGuard } from '../../security/location.js';
 import { nextStageFor } from '../../database/attendanceRepository.js';
 import { stageCaption, stageInfo, stageLabel, stagesOf } from '../../utils/attendanceStages.js';
-import { isOutside, outsideMessage, stageRouteCheck } from '../../utils/routeWindow.js';
+import { isOutside, kmToStation, outsideMessage, stageRouteCheck } from '../../utils/routeWindow.js';
 
 // A status cell with its stage's name and station. Cells from a server that predates station-wise
 // attendance carry only the stage number, so they take the journey's stage descriptor.
@@ -51,12 +52,14 @@ const ROUTE_STATUS = { inside: 'On its stretch of route', before: 'Before its st
 const routeCheckText = (c) => (c ? `${ROUTE_STATUS[c.status] ?? c.status}${c.status !== 'unknown' && c.status !== 'inside' && c.off_route_km != null ? ` · ${c.off_route_km} km away` : ''}` : null);
 
 // Stage mark (reference: green check = taken, purple camera = capture now, grey lock = not open yet);
-// amber = saved on this device, waiting to sync.
+// amber = saved on this device, waiting to sync; red cross = missed, the train has left the last station
+// this attendance stayed open at, so it can no longer be taken and the stage after it has opened.
 const MARK = {
   taken: { label: 'text-success', node: <span className="grid h-8 w-8 place-items-center rounded-full bg-success text-white shadow-[0_3px_8px_rgba(37,180,90,0.35)]"><CheckBoldIcon className="h-4.5 w-4.5" /></span> },
   pending: { label: 'text-amber-700', node: <span className="grid h-8 w-8 place-items-center rounded-full bg-amber-400 text-white"><RefreshIcon className="h-4.5 w-4.5" /></span> },
   next: { label: 'text-camera', node: <span className="grid h-8 w-8 place-items-center rounded-xl bg-camera/12 text-camera"><CameraSolidIcon className="h-6 w-6" /></span> },
   locked: { label: 'text-slate-500', node: <span className="grid h-8 w-8 place-items-center text-locked"><LockSolidIcon className="h-6 w-6" /></span> },
+  missed: { label: 'text-red-600', node: <span className="grid h-8 w-8 place-items-center rounded-full bg-red-100 text-red-600"><XIcon className="h-4.5 w-4.5" /></span> },
 };
 const LegendDot = ({ state, children }) => (
   <span className="inline-flex items-center gap-1.5"><span className="inline-block origin-left scale-[0.6]">{MARK[state].node}</span><span className="-ml-3">{children}</span></span>
@@ -401,6 +404,7 @@ function StageGrid({ journey: j, status }) {
         <LegendDot state="next">Capture now</LegendDot>
         <LegendDot state="pending">Saved on device</LegendDot>
         <LegendDot state="locked">Locked</LegendDot>
+        <LegendDot state="missed">Missed</LegendDot>
       </div>
       <DataState res={status} empty="No staff allocated to this journey.">
         {(rows) => (
@@ -532,11 +536,56 @@ function AttendanceRecords({ journey: j }) {
   );
 }
 
+// How near the next attendance station the train has to be for the screen to say so. Far enough ahead that
+// the crew can get to a door and be ready, near enough that it is not announced an hour early.
+const APPROACH_KM = 10;
+
+// Warns as an attendance station comes up, so it is not missed while the train is standing at it. Reads the
+// fix the app is already watching (security/location), so it costs no extra GPS. Once per station: a train
+// can sit 9 km out, and a banner that returns every few seconds would be ignored by the second time.
+function useApproachWarning(journey, rows) {
+  const notify = useNotify();
+  const seen = useRef(new Set());
+  const next = useMemo(() => {
+    if (!journey) return null;
+    const open = new Set((rows ?? []).flatMap((r) => r.stages.filter((c) => c.status === 'next').map((c) => c.stage)));
+    return stagesOf(journey).find((st) => open.has(st.stage) && st.window?.path?.length) ?? null;
+  }, [journey, rows]);
+
+  useEffect(() => {
+    if (!next) return undefined;
+    const guard = getSharedLocationGuard();
+    const look = () => {
+      const km = kmToStation(next, guard.getState().fix);
+      if (km === null || km > APPROACH_KM || seen.current.has(next.stage)) return;
+      seen.current.add(next.stage);
+      notify('info', `${next.station_name || next.label} is about ${km} km ahead - attendance opens there.`);
+    };
+    look();
+    return guard.subscribe(look);
+  }, [next, notify]);
+}
+
 function JourneyAttendance({ id }) {
-  const { can } = useSession();
+  const { can, ops } = useSession();
   const journey = useResource(`/journeys/${id}`);
   const status = useResource(`/attendance/journeys/${id}/status`);
   const [tab, setTab] = useState('stages');
+
+  // Opening this screen re-reads the train's timetable: a train re-routed or re-timed since the journey was
+  // planned would otherwise be checked against stations it no longer calls at. The server throttles the
+  // read, so a whole crew opening the same journey is still one read, and answers rather than fails when
+  // RailRadar cannot be reached -- nothing here may stop anybody marking attendance.
+  useEffect(() => {
+    let live = true;
+    ops.attendance.refreshRoute(id)
+      .then((r) => { if (live && r?.changed) { journey.reload(); status.reload(); } })
+      .catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  useApproachWarning(journey.data, status.data);
 
   if (journey.loading && !journey.data) return <Loading />;
   const j = journey.data;

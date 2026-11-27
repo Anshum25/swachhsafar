@@ -37,6 +37,11 @@ class AttendanceStageOut(StrictModel):
     valid_until_code: str | None = None
     valid_until_name: str | None = None
     window: RouteWindowOut | None = None
+    # When the train is timetabled to leave valid_until_code: "HH:MM" and the day it falls on, counted from
+    # the day the train leaves its first station (1). Past this (plus the division's grace) the stage is
+    # missed. None when the train's timetable had not been read, and on every legacy stage.
+    closes_time: str | None = None
+    closes_day: int | None = None
 
 
 class CoachIn(StrictModel):

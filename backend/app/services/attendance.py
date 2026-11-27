@@ -16,7 +16,7 @@ from app.services import security
 from app.services import media, route_window
 from app.services.common import audit, check_replay, get_or_404, paginate
 from app.services.journeys import check_capture_window, get_journey, is_allocated
-from app.services.trains import stages_of, window_of
+from app.services.trains import stage_missed, stages_of, window_of
 from app.services.policy import get_policy
 from app.timeutil import utcnow
 
@@ -182,9 +182,19 @@ def create(db: Session, p: Principal, body: AttendanceIn, *, sync_op_id: uuid.UU
         Attendance.journey_id == j.id, Attendance.employee_id == body.employee_id))}
     if body.stage in previous:
         raise Conflict("Attendance already recorded for this stage", code="duplicate_attendance")
-    if body.stage > 1 and body.stage - 1 not in previous:
-        raise BusinessRuleViolation(f"Stage {body.stage - 1} must be recorded first", code="stage_order",
-                                    details={"recorded_stages": sorted(previous)})
+    # Stages are taken in order, but a stage the train has already left no longer blocks the ones after it:
+    # otherwise one attendance missed at the first station would make every later station unmarkable for the
+    # rest of the journey. A missed stage cannot be back-filled either -- the train is gone.
+    plan = stages_of(j)
+    if stage_missed(j, planned, policy):
+        raise BusinessRuleViolation(
+            f"This attendance closed when the train left {planned.get('valid_until_name') or planned['label']}",
+            code="stage_missed", details={"stage": body.stage})
+    skipped = [s["stage"] for s in plan
+               if s["stage"] < body.stage and s["stage"] not in previous and not stage_missed(j, s, policy)]
+    if skipped:
+        raise BusinessRuleViolation(f"Stage {skipped[-1]} must be recorded first", code="stage_order",
+                                    details={"recorded_stages": sorted(previous), "pending_stages": skipped})
 
     verified_by = _check_identity(db, p, j, policy, body)
     # Liveness is a property of the face photo, so it is only asked of a capture verified by face. A photo
@@ -318,6 +328,17 @@ def list_records(db: Session, p: Principal, params: PageParams, *, journey_id, e
     return paginate(db, stmt.order_by(Attendance.device_timestamp.desc(), Attendance.id), params)
 
 
+def refresh_route(db: Session, p: Principal, journey_id: uuid.UUID, provider) -> dict:
+    """Re-read this journey's train timetable when the attendance screen opens, so a route changed under the
+    crew is picked up before they capture against the old one (services/timetable.refresh_for_journey, which
+    throttles the read and never raises)."""
+    from app.services import timetable
+
+    j = get_journey(db, p, journey_id)
+    p.require("attendance.read", j.division_id)
+    return timetable.refresh_for_journey(db, provider, j)
+
+
 def journey_status(db: Session, p: Principal, journey_id: uuid.UUID) -> list[dict]:
     j = get_journey(db, p, journey_id)
     p.require("attendance.read", j.division_id)
@@ -327,11 +348,19 @@ def journey_status(db: Session, p: Principal, journey_id: uuid.UUID) -> list[dic
     for att_id, emp, stage in db.execute(select(Attendance.id, Attendance.employee_id, Attendance.stage).where(Attendance.journey_id == j.id)):
         taken.setdefault(emp, {})[stage] = att_id
     plan = stages_of(j)
+    # A stage the train has already left is missed, not still to come: it locks, and the one after it opens
+    # (services/trains.stage_missed). Judged per journey, not per employee, since the timetable is the same
+    # for everyone on board.
+    policy = get_policy(db, j.division_id)
+    missed = {s["stage"] for s in plan if stage_missed(j, s, policy)}
     out = []
     for a in allocations:
         done = taken.get(a.user_id, {})
-        nxt = next((s["stage"] for s in plan if s["stage"] not in done), None)
-        cells = [dict({k: v for k, v in s.items() if k != "window"}, status="taken" if s["stage"] in done else ("next" if s["stage"] == nxt else "locked"),
+        nxt = next((s["stage"] for s in plan if s["stage"] not in done and s["stage"] not in missed), None)
+        cells = [dict({k: v for k, v in s.items() if k != "window"},
+                      status="taken" if s["stage"] in done
+                      else "missed" if s["stage"] in missed
+                      else "next" if s["stage"] == nxt else "locked",
                       attendance_id=done.get(s["stage"])) for s in plan]
         out.append(dict(employee_id=a.user_id, name=a.user.name, emp_id=a.user.emp_id, role_id=a.role_id,
                         stages=cells, completed=nxt is None))

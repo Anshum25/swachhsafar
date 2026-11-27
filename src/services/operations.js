@@ -37,6 +37,10 @@ export function createOperations(api) {
     },
     attendance: {
       review: (id, status, remarks) => api.post(`/attendance/${id}/review`, review(status, remarks)),
+      // Re-read the train's timetable as the attendance screen opens, so a route changed under the crew is
+      // noticed before they capture against the old one. The server throttles the read and answers
+      // `checked: false` rather than failing, so this never has to be guarded by the caller.
+      refreshRoute: (journeyId) => api.post(`/attendance/journeys/${journeyId}/route-refresh`),
     },
     inspections: {
       review: (id, status, remarks) => api.post(`/inspections/${id}/review`, review(status, remarks)),

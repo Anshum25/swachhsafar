@@ -16,8 +16,10 @@ from app.schemas.operations import (
     InspectionIn,
     InspectionOut,
     ReviewIn,
+    RouteRefreshOut,
     StaffAttendanceStatus,
 )
+from app.providers.railradar import TimetableProvider, get_timetable_provider
 from app.security.principal import Principal, get_principal
 from app.services import attendance, inspections
 
@@ -56,6 +58,16 @@ def list_attendance(params: PageParams = Depends(), journey_id: uuid.UUID | None
 @attendance_router.get("/journeys/{journey_id}/status", response_model=list[StaffAttendanceStatus])
 def attendance_status(journey_id: uuid.UUID, db: Session = Depends(get_db), p: Principal = Depends(get_principal)):
     return attendance.journey_status(db, p, journey_id)
+
+
+@attendance_router.post("/journeys/{journey_id}/route-refresh", response_model=RouteRefreshOut)
+def attendance_route_refresh(journey_id: uuid.UUID, db: Session = Depends(get_db),
+                             p: Principal = Depends(get_principal),
+                             provider: TimetableProvider = Depends(get_timetable_provider)):
+    """Re-read the train's timetable as the attendance screen opens, so the crew sees a changed route before
+    capturing against the old one. Throttled, and answers `checked: false` rather than failing when the
+    timetable cannot be read."""
+    return attendance.refresh_route(db, p, journey_id, provider)
 
 
 @attendance_router.get("/{attendance_id}", response_model=AttendanceOut)

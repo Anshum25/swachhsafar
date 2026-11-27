@@ -27,6 +27,10 @@ class PolicySettings(StrictModel):
     attendance_route_check: Literal["off", "flag", "block"] = "block"
     # How far from the route (and past its first and last station) a fix may be, on top of its accuracy.
     attendance_route_tolerance_km: int = Field(default=3, ge=1, le=25)
+    # Hours past a stage's timetabled closing station before it counts as missed: it then locks, and the
+    # next stage opens without it. The grace is what keeps a late train from locking its staff out, so it
+    # is generous by default; 0 takes the timetable literally.
+    attendance_missed_grace_hours: int = Field(default=6, ge=0, le=48)
     inspection_photo_required: bool = True
     complaint_default_sla_hours: int = Field(default=72, ge=1, le=24 * 60)
     # Face verification of attendance (off by default). The device compares the attendance photo with the

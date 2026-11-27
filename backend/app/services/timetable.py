@@ -242,6 +242,7 @@ def after_change(db: Session, train_ids, today: date | None = None) -> int:
     journey not ended gets its legs (until it starts) and future targets regenerated. Returns the journeys
     changed. Does not commit."""
     from app.services.railway import _redate_unstarted
+    from app.services.trains import refresh_journey_plans
 
     today = today or today_ist()
     ids = list(train_ids)
@@ -250,6 +251,11 @@ def after_change(db: Session, train_ids, today: date | None = None) -> int:
     trains = list(db.scalars(select(Train).options(selectinload(Train.return_train))
                              .where(or_(Train.id.in_(ids), Train.return_train_id.in_(ids)))))
     _redate_unstarted(db, trains, today)
+    # The route itself may have moved (a diverted or re-timed train), so journeys take the stages the new
+    # route gives: their attendance windows and closing times are built from it. refresh_journey_plans
+    # leaves alone any journey where somebody has already marked attendance, so no record changes meaning.
+    for train in trains:
+        refresh_journey_plans(db, train)
     return feedback_plan.refresh_for_trains(db, [t.id for t in trains], today)
 
 
@@ -406,3 +412,36 @@ def upcoming_journeys(db: Session, train: Train, today: date) -> int:
     return len(list(db.scalars(select(Journey.id).where(
         or_(Journey.train_id == train.id, Journey.linked_train_id == train.id),
         Journey.status == JourneyStatus.PLANNED, Journey.end_date >= today))))
+
+
+# How recently a train's timetable must have been checked for the attendance screen to leave it alone. The
+# screen asks on every open, and RailRadar is rate limited (and stops on CAPTCHA/403/429), so a crew of ten
+# opening the same journey must not become ten reads of the same page.
+JOURNEY_REFRESH_AFTER = timedelta(minutes=30)
+
+
+def refresh_for_journey(db: Session, provider: TimetableProvider, j: Journey, *,
+                        now: datetime | None = None, today: date | None = None) -> dict:
+    """Bring one journey's train up to date when the attendance screen opens, so a route that changed under
+    the crew is noticed before they try to mark attendance against the old one.
+
+    Throttled by JOURNEY_REFRESH_AFTER and skipped once the journey has ended -- its route is history by
+    then. Never raises: a timetable that cannot be read leaves the journey exactly as it was and reports
+    `checked: False`, because failing to reach RailRadar must not stop anybody marking attendance.
+    """
+    now = now or utcnow()
+    train = j.train
+    skip = (None if train is None else
+            "ended" if j.status == JourneyStatus.CANCELLED or (j.end_date and j.end_date < (today or today_ist()))
+            else "fresh" if train.schedule_checked_at and now - train.schedule_checked_at < JOURNEY_REFRESH_AFTER
+            else None)
+    if train is None or skip:
+        return dict(checked=False, reason=skip or "no_train", changed=0, journeys_updated=0)
+    try:
+        result = sync_one(db, provider, train, trigger="scheduled", today=today)
+    except Exception:                                    # noqa: BLE001 - reported, never raised at the crew
+        log.exception("journey route refresh failed for train %s", train.train_no)
+        db.rollback()
+        return dict(checked=False, reason="unavailable", changed=0, journeys_updated=0)
+    return dict(checked=True, reason=None, **{k: result[k] for k in ("changed", "journeys_updated")},
+                outcome=result["outcome"])

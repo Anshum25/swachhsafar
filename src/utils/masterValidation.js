@@ -83,6 +83,7 @@ export const POLICY_FIELDS = [
   { key: 'railway_feedback_limit_per_journey', type: 'int', min: 0, max: 50, label: 'Railway feedback limit per journey', group: 'Railway feedback' },
   { key: 'attendance_photo_required', type: 'bool', label: 'Attendance photo required', group: 'Attendance and inspection' },
   { key: 'attendance_late_grace_days', type: 'int', min: 0, max: 7, label: 'Late attendance grace (days after journey end)', group: 'Attendance and inspection' },
+  { key: 'attendance_missed_grace_hours', type: 'int', min: 0, max: 48, label: 'Hours after a stage closes before the attendance counts as missed', hint: '0-48 - 6 by default; a missed stage locks and the next one opens, so a late train does not lock its staff out', group: 'Attendance and inspection' },
   { key: 'attendance_route_check', type: 'enum', options: [{ value: 'flag', label: 'Record it for review' }, { value: 'block', label: 'Refuse the attendance' }, { value: 'off', label: 'Do not check' }], label: 'Attendance taken away from its stretch of route (station to valid-until station)', group: 'Attendance and inspection' },
   { key: 'attendance_route_tolerance_km', type: 'int', min: 1, max: 25, label: 'How far from the route an attendance may be taken (km)', hint: '1–25 · 3 by default; also reaches past the first and last station', group: 'Attendance and inspection' },
   { key: 'inspection_photo_required', type: 'bool', label: 'Inspection photo required', group: 'Attendance and inspection' },

@@ -98,3 +98,27 @@ export function attendanceConfigError({ enabled, count, codes, route }) {
   if (codes.length !== n) return `Select exactly ${n} stations (${codes.length} selected).`;
   return null;
 }
+
+// When a stage stops being markable, as epoch ms, or null when it has none. The stage carries a clock and
+// a day offset rather than a moment (backend services/trains._closing_times), so it reads against the day
+// this journey's train leaves. Dates are India time, as everywhere else in the app.
+export function stageClosesAt(journeyDate, stage) {
+  const clock = stage?.closes_time;
+  const day = stage?.closes_day;
+  if (!clock || !day || !journeyDate) return null;
+  const [y, m, d] = String(journeyDate).slice(0, 10).split('-').map(Number);
+  const [hh, mm] = clock.split(':').map(Number);
+  if ([y, m, d, hh, mm].some((n) => !Number.isFinite(n))) return null;
+  // IST is UTC+5:30 the year round, so the moment is built directly rather than through a local-time Date,
+  // whose answer would depend on the phone's own time zone.
+  return Date.UTC(y, m - 1, d + (day - 1), hh - 5, mm - 30);
+}
+
+// Has the train left the last station this stage stays open at, with the division's grace on top? The grace
+// keeps a late train from locking its staff out (backend services/trains.stage_missed says the same).
+export function stageMissed(journeyDate, stage, policy, nowMs = Date.now()) {
+  const closes = stageClosesAt(journeyDate, stage);
+  if (closes === null) return false;
+  const grace = Number.isFinite(policy?.attendance_missed_grace_hours) ? policy.attendance_missed_grace_hours : 6;
+  return nowMs > closes + grace * 3600_000;
+}

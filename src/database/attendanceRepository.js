@@ -7,7 +7,7 @@
 import { LocalRuleError } from './errors.js';
 import { requireCaptureWindow, requireDeviceTimestamp, requireGps, requireInt, requireUuid } from './captureRules.js';
 import { insertStatement, placeholders } from './sqlHelpers.js';
-import { stagesOf } from '../utils/attendanceStages.js';
+import { stageMissed, stagesOf } from '../utils/attendanceStages.js';
 import { isOutside, outsideMessage, stageRouteCheck } from '../utils/routeWindow.js';
 
 // A local row in the shape of the backend AttendanceOut, plus where it stands between device and server.
@@ -38,18 +38,27 @@ export function nextStageFor(row, extraDone = () => false) {
 const LIVE = "sync_status NOT IN ('rejected', 'conflict')";
 
 // The stage descriptors of a status row's cells (they carry the journey's stage list).
-const planOf = (cells) => cells.map(({ stage, kind = null, label = null, station_code = null, station_name = null }) => ({
-  stage, kind, label, station_code, station_name,
-}));
+const planOf = (cells) => cells.map(({
+  stage, kind = null, label = null, station_code = null, station_name = null,
+  valid_until_name = null, closes_time = null, closes_day = null,
+}) => ({ stage, kind, label, station_code, station_name, valid_until_name, closes_time, closes_day }));
 
 // Cell states for one employee over the journey's stages. `taken` = acknowledged by the server,
-// `pending` = saved on this device. Each cell keeps its stage's name and station.
-export function attendanceCells(plan, taken, pending) {
-  const next = plan.find((s) => !taken.has(s.stage) && !pending.has(s.stage))?.stage ?? null;
+// `pending` = saved on this device, `missed` = the train has left the stage's last station, so it can no
+// longer be taken and the one after it opens instead. Each cell keeps its stage's name and station.
+// `missed` needs the journey's date and the division's grace; without them nothing is ever missed, which
+// is how a journey whose train has no timetable behaves.
+export function attendanceCells(plan, taken, pending, { journeyDate = null, policy = null, nowMs, missed = null } = {}) {
+  // `missed` given: the server has already judged these, and its answer is kept rather than recomputed
+  // against a device clock that may have drifted.
+  const gone = (s) => !taken.has(s.stage) && !pending.has(s.stage)
+    && (missed ? missed.has(s.stage) : stageMissed(journeyDate, s, policy, nowMs));
+  const next = plan.find((s) => !taken.has(s.stage) && !pending.has(s.stage) && !gone(s))?.stage ?? null;
   return {
     stages: plan.map((s) => {
       if (taken.has(s.stage)) return { ...s, status: 'taken', attendance_id: taken.get(s.stage) };
       if (pending.has(s.stage)) return { ...s, status: 'pending', attendance_id: pending.get(s.stage) };
+      if (gone(s)) return { ...s, status: 'missed', attendance_id: null };
       return { ...s, status: s.stage === next ? 'next' : 'locked', attendance_id: null };
     }),
     completed: next === null && [...pending.keys()].every((st) => taken.has(st)),
@@ -139,8 +148,19 @@ export function createAttendanceRepository(db, { journeys, masters }) {
       }
       const done = new Set((await liveStages(journey.id, p.employee_id)).map((r) => r.stage));
       if (done.has(stage)) throw new LocalRuleError('duplicate_attendance', 'Attendance is already recorded for this stage.');
-      if (stage > 1 && !done.has(stage - 1)) {
-        throw new LocalRuleError('stage_order', `Stage ${stage - 1} must be recorded first.`, { recorded_stages: [...done].sort() });
+      // A stage the train has already left is gone: it cannot be back-filled, and it no longer holds up the
+      // stages after it -- otherwise one attendance missed at the first station would lock the crew out of
+      // the whole journey. The server applies the same two rules (services/attendance.create).
+      const gone = (s) => stageMissed(journey.journey_date, s, policy, nowMs);
+      if (gone(planned)) {
+        throw new LocalRuleError('stage_missed',
+          `This attendance closed when the train left ${planned.valid_until_name || planned.label}.`, { stage });
+      }
+      const pendingEarlier = plan.filter((s) => s.stage < stage && !done.has(s.stage) && !gone(s));
+      if (pendingEarlier.length) {
+        const previous = pendingEarlier[pendingEarlier.length - 1].stage;
+        throw new LocalRuleError('stage_order', `Stage ${previous} must be recorded first.`,
+          { recorded_stages: [...done].sort(), pending_stages: pendingEarlier.map((s) => s.stage) });
       }
       const row = {
         id: p.id, journey_id: journey.id, division_id: journey.division_id, employee_id: p.employee_id, stage, ...gps,
@@ -196,30 +216,40 @@ export function createAttendanceRepository(db, { journeys, masters }) {
       );
     },
 
+    // What `missed` has to be judged against: the day the train leaves and the division's grace.
+    async missedContext(journeyId) {
+      const [row] = await db.query('SELECT journey_date, division_id FROM journeys WHERE id = ?', [journeyId]);
+      return { journeyDate: row?.journey_date ?? null, policy: row ? await masters?.getPolicy(row.division_id) : null };
+    },
+
     // Same shape as GET /attendance/journeys/{id}/status, plus 'pending' cells for unsynced records.
     async journeyStatus(journeyId) {
-      const [staff, records, [journey]] = await Promise.all([
+      const [staff, records, [journey], context] = await Promise.all([
         journeys.activeStaff(journeyId),
         db.query(`SELECT id, employee_id, stage, sync_status FROM attendance_records WHERE journey_id = ? AND ${LIVE}`, [journeyId]),
         db.query('SELECT attendance_stages FROM journeys WHERE id = ?', [journeyId]),
+        this.missedContext(journeyId),
       ]);
       const plan = stagesOf(journey);
       return staff.map((s) => {
         const mine = records.filter((r) => r.employee_id === s.user_id);
         const taken = new Map(mine.filter((r) => r.sync_status === 'synced').map((r) => [r.stage, r.id]));
         const pending = new Map(mine.filter((r) => r.sync_status === 'pending').map((r) => [r.stage, r.id]));
-        return { employee_id: s.user_id, name: s.name, emp_id: s.emp_id, role_id: s.role_id, ...attendanceCells(plan, taken, pending) };
+        return { employee_id: s.user_id, name: s.name, emp_id: s.emp_id, role_id: s.role_id,
+          ...attendanceCells(plan, taken, pending, context) };
       });
     },
 
-    // Adds this device's unsynced records to a server status response.
+    // Adds this device's unsynced records to a server status response. Which stages are missed comes from
+    // the server's own cells, not from this device's clock.
     async overlayStatus(journeyId, rows) {
       const pending = await this.pendingForJourney(journeyId);
       if (!pending.length) return rows;
       return rows.map((r) => {
         const taken = new Map(r.stages.filter((c) => c.status === 'taken').map((c) => [c.stage, c.attendance_id]));
         const mine = new Map(pending.filter((p) => p.employee_id === r.employee_id && !taken.has(p.stage)).map((p) => [p.stage, p.id]));
-        return mine.size ? { ...r, ...attendanceCells(planOf(r.stages), taken, mine) } : r;
+        const missed = new Set(r.stages.filter((c) => c.status === 'missed').map((c) => c.stage));
+        return mine.size ? { ...r, ...attendanceCells(planOf(r.stages), taken, mine, { missed }) } : r;
       });
     },
 

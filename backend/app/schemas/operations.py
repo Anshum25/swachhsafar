@@ -136,7 +136,9 @@ class GroupResult(StrictModel):
 
 class StageCell(StrictModel):
     stage: int
-    status: Literal["taken", "next", "locked"]
+    # "missed": the train has left the last station this stage stayed open at, so it can no longer be
+    # taken and the stage after it has opened (services/trains.stage_missed).
+    status: Literal["taken", "next", "locked", "missed"]
     attendance_id: uuid.UUID | None = None
     kind: str | None = None
     label: str | None = None
@@ -144,6 +146,18 @@ class StageCell(StrictModel):
     station_name: str | None = None
     valid_until_code: str | None = None
     valid_until_name: str | None = None
+    closes_time: str | None = None
+    closes_day: int | None = None
+
+
+class RouteRefreshOut(StrictModel):
+    """What re-reading a journey's timetable did (services/timetable.refresh_for_journey). `checked` is
+    false when the read was skipped or could not be made, and `reason` says which."""
+    checked: bool
+    reason: str | None = None       # fresh | ended | no_train | unavailable
+    changed: int = 0                # trains whose timetable differed
+    journeys_updated: int = 0
+    outcome: str | None = None      # updated | unchanged | failed | rejected
 
 
 class StaffAttendanceStatus(StrictModel):

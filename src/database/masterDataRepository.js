@@ -15,6 +15,7 @@ export const DEFAULT_POLICY = Object.freeze({
   attendance_late_grace_days: 1,
   attendance_route_check: 'block',
   attendance_route_tolerance_km: 3,
+  attendance_missed_grace_hours: 6,
   inspection_photo_required: true,
   complaint_default_sla_hours: 72,
   attendance_face_verification: false,

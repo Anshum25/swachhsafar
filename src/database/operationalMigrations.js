@@ -902,4 +902,16 @@ const V20 = {
   ],
 };
 
-export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20];
+// v21: a stage the train has already left is missed, and the stages after it stay markable. The trigger
+// demanded stage N-1 for every stage N, which made a gap impossible -- so one attendance missed at the
+// first station locked the crew out of the whole journey. Order is still enforced where it can tell a
+// missed stage from a skipped one: attendanceRepository.prepareCapture on the device and
+// services/attendance.create on the server, both of which read the stage's closing time. The trigger keeps
+// what it can still judge on its own -- no stage twice, which idx_attendance_slot also covers.
+const V21 = {
+  version: 21,
+  name: 'let a missed attendance stage be skipped',
+  statements: ['DROP TRIGGER IF EXISTS trg_attendance_stage_order'],
+};
+
+export const OPERATIONAL_MIGRATIONS = [V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21];

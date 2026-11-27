@@ -56,6 +56,15 @@ export function checkRouteWindow(window, latitude, longitude, accuracyM, toleran
 
 export const isOutside = (result) => !!result && result.status !== 'inside' && result.status !== 'unknown';
 
+// How far a fix is from a stage's own station, in km, or null when either is unknown. The first point of
+// the stage's window is that station (the window is built from it onwards), so no extra data is needed and
+// this works offline like the rest of the check.
+export function kmToStation(stage, fix) {
+  const first = stage?.window?.path?.[0];
+  if (!first || typeof fix?.latitude !== 'number' || typeof fix?.longitude !== 'number') return null;
+  return round(km([fix.latitude, fix.longitude], [first[0], first[1]]), 1);
+}
+
 // What the staff member is told (backend services/attendance.outside_message says the same).
 export function outsideMessage(stage, result) {
   const start = stage?.station_name || stage?.label || 'this station';

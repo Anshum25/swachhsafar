@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, time, timedelta
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, selectinload
@@ -7,7 +8,7 @@ from app.errors import BusinessRuleViolation, NotFound
 from app.models import (Attendance, Complaint, Division, Inspection, InventoryTransaction, Journey, JourneyCoach,
                         JourneyStatus, PassengerFeedback, RailwayFeedback, Train, TrainCoach)
 from app.services.journeys import derive_dates
-from app.timeutil import today_ist
+from app.timeutil import IST, today_ist, utcnow
 from app.schemas.common import PageParams
 from app.schemas.trains import CoachesReplace, CoachIn, TrainCreate, TrainUpdate
 from app.security.principal import Principal
@@ -63,10 +64,31 @@ def attendance_plan(train: Train) -> list[dict]:
     order = {r["code"]: i for i, r in enumerate(route)}
     codes = sorted(train.attendance_station_codes, key=lambda c: order.get(c, len(order)))
     until = valid_until_of(route, codes, train.attendance_valid_until)
+    closes = _closing_times(train)
     return [dict(stage=i, kind="station", label=names.get(c, c), station_code=c, station_name=names.get(c, c),
                  valid_until_code=until.get(c), valid_until_name=names.get(until.get(c)) if until.get(c) else None,
-                 window=station_window(route, codes, c, until.get(c)))
+                 window=station_window(route, codes, c, until.get(c)),
+                 **closes.get(until.get(c), dict(closes_day=None, closes_time=None)))
             for i, c in enumerate(codes, 1)]
+
+
+def _closing_times(train: Train) -> dict[str, dict]:
+    """When the train is timetabled to leave each station, as {code: {closes_day, closes_time}}.
+
+    A stage closes when the train leaves the last station it stays open at, which is what tells the app an
+    attendance was missed rather than still to come. The clock is stored with the stage, not a datetime, so
+    it holds for whichever day the journey runs: `closes_day` counts from the day the train leaves its first
+    station (1), matching TrainStop.departure_day. A station the route visits twice keeps its first halt,
+    the same one valid_until_choices and the window are built from (_first_index). Empty for a train whose
+    timetable has not been read -- the stage then has no deadline and is never counted as missed."""
+    out: dict[str, dict] = {}
+    for stop in sorted(train.stops or [], key=lambda s: s.seq):
+        clock = stop.departure or stop.arrival      # the last station of a route has no departure
+        day = stop.departure_day if stop.departure else stop.arrival_day
+        if clock is None or day is None or stop.station_code in out:
+            continue
+        out[stop.station_code] = dict(closes_day=day, closes_time=clock.strftime("%H:%M"))
+    return out
 
 
 def station_window(route: list[dict], codes: list[str], code: str, until: str | None) -> dict | None:
@@ -412,3 +434,33 @@ def list_trains(db: Session, p: Principal, params: PageParams, *, division_id: u
     if updated_since is not None:
         stmt = stmt.where(Train.updated_at > updated_since)
     return paginate(db, stmt.order_by(Train.train_no, Train.id), params)
+
+
+def stage_closes_at(j: Journey, stage: dict) -> datetime | None:
+    """When a stage stops being markable, as an aware datetime, or None when it has no deadline.
+
+    The stage carries a clock and a day offset rather than a datetime (_closing_times), so the deadline is
+    read against the day this journey's train leaves. A stage whose train had no timetable when the journey
+    was planned, and every legacy stage, has none: it is never counted as missed, because nothing says the
+    train has passed it.
+    """
+    clock, day = stage.get("closes_time"), stage.get("closes_day")
+    if not clock or not day or j.journey_date is None:
+        return None
+    hh, mm = clock.split(":")
+    return datetime.combine(j.journey_date + timedelta(days=int(day) - 1),
+                            time(int(hh), int(mm)), tzinfo=IST)
+
+
+def stage_missed(j: Journey, stage: dict, policy, now: datetime | None = None) -> bool:
+    """Has the train left the last station this stage stays open at, with the division's grace on top?
+
+    The grace is what keeps a late train from locking its staff out: Indian trains run behind often enough
+    that a deadline read straight off the timetable would refuse attendances the staff could honestly still
+    take. A division that wants the timetable taken literally sets the grace to 0.
+    """
+    closes = stage_closes_at(j, stage)
+    if closes is None:
+        return False
+    grace = getattr(policy, "attendance_missed_grace_hours", 6)
+    return (now or utcnow()) > closes + timedelta(hours=grace)
