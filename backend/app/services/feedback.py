@@ -490,8 +490,10 @@ def send_otp(db: Session, p: Principal, sms: SmsProvider, feedback_id: uuid.UUID
             raise BusinessRuleViolation("Please wait before requesting another OTP", code="otp_cooldown",
                                         details={"resend_available_at": wait_until.isoformat()})
     code = f"{secrets.randbelow(1_000_000):06d}"
+    master_only = settings.feedback_master_otp is not None and not getattr(sms, "enabled", True)
     try:
-        sms.send_otp(fb.mobile, code)
+        if not master_only:
+            sms.send_otp(fb.mobile, code)
     except ProviderUnavailable as exc:
         _record_outage(db, p, fb, "feedback.passenger.sms_unavailable", exc)
         raise ServiceUnavailable("SMS service unavailable; try again later", code="sms_unavailable") from exc
@@ -508,7 +510,7 @@ def send_otp(db: Session, p: Principal, sms: SmsProvider, feedback_id: uuid.UUID
         challenge.last_sent_at = now
     fb.otp_status = OtpStatus.SENT
     audit(db, actor_id=p.id, action="feedback.passenger.otp_sent", entity=fb, division_id=fb.division_id,
-          changes={"send_count": challenge.send_count})
+          changes={"send_count": challenge.send_count, "sms_skipped_master_otp": master_only})
     db.commit()
     return dict(otp_status=fb.otp_status, expires_at=expires,
                 resend_available_at=now + timedelta(seconds=settings.otp_resend_cooldown_seconds),
@@ -525,7 +527,9 @@ def verify_otp(db: Session, p: Principal, feedback_id: uuid.UUID, body: OtpVerif
     if utcnow() > challenge.expires_at:
         raise BusinessRuleViolation("OTP expired; request a new one", code="otp_expired")
     challenge.attempts += 1
-    if not hmac.compare_digest(challenge.code_hash, _otp_hash(fb.id, body.code)):
+    master = settings.feedback_master_otp
+    via_master = master is not None and hmac.compare_digest(master.get_secret_value(), body.code)
+    if not via_master and not hmac.compare_digest(challenge.code_hash, _otp_hash(fb.id, body.code)):
         if challenge.attempts >= settings.otp_max_attempts:
             fb.otp_status = OtpStatus.LOCKED
             fb.status = PassengerFeedbackStatus.VOID
@@ -540,7 +544,8 @@ def verify_otp(db: Session, p: Principal, feedback_id: uuid.UUID, body: OtpVerif
     challenge.verified_at = utcnow()
     fb.otp_status = OtpStatus.VERIFIED
     _maybe_verified(fb)
-    audit(db, actor_id=p.id, action="feedback.passenger.otp_verified", entity=fb, division_id=fb.division_id)
+    audit(db, actor_id=p.id, action="feedback.passenger.otp_verified", entity=fb, division_id=fb.division_id,
+          changes={"via": "master_otp" if via_master else "sms"})
     _commit_transition(db)
     return fb
 

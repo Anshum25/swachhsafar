@@ -50,9 +50,16 @@ class CoachOut(ReadModel):
     position: int
 
 
+def one_way_days(operational_days: int) -> int:
+    """Operational days cover the going and the return leg, so one leg (duration_days, the gap to the
+    return train) is half of them, rounded up: 1 or 2 days -> 1, 3 or 4 -> 2."""
+    return min(max((operational_days + 1) // 2, 1), 15)
+
+
 class _TrainFields(StrictModel):
     name: str = Field(min_length=2, max_length=100)
-    duration_days: int = Field(ge=0, le=15)
+    # Derived from operational_days when not sent (the Train Master form no longer asks for it).
+    duration_days: int | None = Field(default=None, ge=0, le=15)
     operational_days: int = Field(ge=1, le=30)
     start_time: time | None = None
     end_time: time | None = None
@@ -93,6 +100,8 @@ class TrainCreate(_TrainFields):
     def _phase(self):
         if not (self.before_inspection_enabled or self.after_inspection_enabled):
             raise ValueError("at least one inspection phase must be enabled")
+        if self.duration_days is None:
+            self.duration_days = one_way_days(self.operational_days)
         return self
 
 

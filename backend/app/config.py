@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -25,6 +26,10 @@ class Settings(BaseSettings):
     otp_max_attempts: int = 5
     otp_resend_cooldown_seconds: int = 60
     otp_max_sends: int = 3
+    # Testing aid for live PNR trials: a fixed 6-digit code that passenger-feedback OTP verification also
+    # accepts. Unset = off. While SMS_PROVIDER=disabled and this is set, "Send OTP" skips the SMS and the
+    # collector types this code. Every use is audited (via="master_otp"). Remove it after the trial.
+    feedback_master_otp: SecretStr | None = None
 
     cors_origins: list[str] = []
 
@@ -43,8 +48,11 @@ class Settings(BaseSettings):
     # PNR verification. "railradar": RailRadar's PNR JSON (app/providers/railradar_pnr.py) with RapidAPI as the
     # fallback when PNR_API_* are set; "rapidapi": RapidAPI only; "disabled": feedback stays pending.
     pnr_provider: Literal["disabled", "rapidapi", "railradar"] = "disabled"
-    pnr_api_url: str | None = None
-    pnr_api_host: str | None = None
+    # RapidAPI "IRCTC Indian Railway PNR Status" -- the API the old PHP app's live PNR check used and the one
+    # parse_rapidapi_pnr reads. Only PNR_API_KEY has to be set; another RapidAPI PNR API answers in another
+    # shape and would not parse.
+    pnr_api_url: str | None = "https://irctc-indian-railway-pnr-status.p.rapidapi.com/getPNRStatus/"
+    pnr_api_host: str | None = "irctc-indian-railway-pnr-status.p.rapidapi.com"
     pnr_api_key: SecretStr | None = None
     # RailRadar PNR: the reference of the written permission from RailRadar (required for PNR_PROVIDER=railradar),
     # "http" (direct JSON request) or "browser" (headless Chromium via Playwright, the pnrfetch portal method),
@@ -107,6 +115,15 @@ class Settings(BaseSettings):
         raw = v.get_secret_value()
         if len(raw) < 32 or raw == "CHANGE_ME":
             raise ValueError("OTP_PEPPER must be a random secret of at least 32 characters")
+        return v
+
+    @field_validator("feedback_master_otp")
+    @classmethod
+    def _master_otp_format(cls, v: SecretStr | None) -> SecretStr | None:
+        if v is None or not v.get_secret_value():
+            return None
+        if not re.fullmatch(r"[0-9]{6}", v.get_secret_value()):
+            raise ValueError("FEEDBACK_MASTER_OTP must be exactly 6 digits")
         return v
 
     # Local disk is allowed in production (single-server deployment) only with an explicit absolute

@@ -127,11 +127,15 @@ def parse_rapidapi_pnr(body: dict) -> PnrResult:
     passengerList: [{passengerSerialNumber, bookingStatus, bookingCoachId, bookingBerthNo, bookingBerthCode,
     currentStatus, currentCoachId, currentBerthNo, currentBerthCode, currentStatusDetails}]}}. Only what is
     present is mapped; a missing field stays None."""
-    data = (body or {}).get("data") or {}
+    body = body or {}
+    if body.get("success") is False:  # "FLUSHED PNR / PNR NOT YET GENERATED", invalid PNR ...
+        return PnrResult(found=False, status_text=(str(body.get("message") or "").strip()[:120] or None))
+    data = body.get("data") or {}
     if not isinstance(data, dict):
         return PnrResult(found=False)
-    plist = data.get("passengerList") or []
-    if not data.get("numberOfpassenger") or not isinstance(plist, list) or not plist:
+    plist = [p for p in (data.get("passengerList") or []) if isinstance(p, dict)] \
+        if isinstance(data.get("passengerList"), list) else []
+    if not plist:
         return PnrResult(found=False)
     passengers, coaches = [], set()
     for i, pax in enumerate(p for p in plist if isinstance(p, dict)):
@@ -272,9 +276,13 @@ class RapidApiPnrProvider:
             log.warning("PNR provider answered HTTP %s", resp.status_code)
             raise ProviderUnavailable(f"PNR provider returned {resp.status_code}")
         if resp.status_code in (401, 403):
-            log.error("PNR provider refused the API key (HTTP %s): check PNR_API_KEY and the RapidAPI subscription",
-                      resp.status_code)
-            raise ProviderUnavailable(f"PNR provider refused the request ({resp.status_code})")
+            try:  # RapidAPI says why: "You are not subscribed to this API.", "Invalid API key." ...
+                why = str((resp.json() or {}).get("message") or "")[:120]
+            except (ValueError, AttributeError):
+                why = ""
+            log.error("PNR provider refused the API key (HTTP %s%s): check PNR_API_KEY and that its RapidAPI "
+                      "account is subscribed to %s", resp.status_code, f", {why}" if why else "", self._host)
+            raise ProviderUnavailable(f"PNR provider refused the request ({resp.status_code}{', ' + why if why else ''})")
         if resp.status_code >= 400:
             return PnrResult(found=False)
         try:
@@ -394,7 +402,13 @@ def get_pnr_provider() -> PnrProvider:
 
         fallback = _rapidapi_from_settings(s)
         if fallback is None:
-            log.warning("PNR_PROVIDER=railradar without PNR_API_URL/HOST/KEY: no RapidAPI fallback")
+            log.warning("PNR_PROVIDER=railradar without PNR_API_KEY: no RapidAPI fallback")
+        if not (s.railradar_pnr_authorization or "").strip():
+            if fallback is not None:
+                # RailRadar is never asked without the permission reference; RapidAPI alone still verifies
+                log.error("PNR_PROVIDER=railradar without RAILRADAR_PNR_AUTHORIZATION: using RapidAPI only")
+                return FallbackPnrProvider(fallback, None)
+            railradar_pnr.from_settings(s)  # raises the configuration error
         return FallbackPnrProvider(railradar_pnr.from_settings(s), fallback)
     if s.pnr_provider == "rapidapi":
         provider = _rapidapi_from_settings(s)

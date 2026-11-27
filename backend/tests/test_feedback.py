@@ -277,3 +277,41 @@ def test_assign_bank_to_stations(world):
         active = [x for x in banks if x["is_active"] and x["audience"] == "passenger"]
         assert len(active) == 1 and active[0]["option_labels"][4] == "Excellent"
         assert active[0]["questions"][0]["text_hi"] == "शौचालय"
+
+
+def test_master_otp_verifies_and_is_audited(world, fakes, monkeypatch):
+    from pydantic import SecretStr
+
+    from app.config import get_settings
+    from app.models import AuditLog
+    monkeypatch.setattr(get_settings(), "feedback_master_otp", SecretStr("246810"))
+    valid_pnr(fakes)
+    fb = start(world).json()
+    world.client.post(f"{API}/passenger/{fb['id']}/verify-pnr", headers=world.h("sup"))
+    world.client.post(f"{API}/passenger/{fb['id']}/send-otp", headers=world.h("sup"))
+    r = world.client.post(f"{API}/passenger/{fb['id']}/verify-otp", headers=world.h("sup"), json={"code": "246810"})
+    assert r.status_code == 200 and r.json()["status"] == "verified", r.text
+    log = world.db.scalar(select(AuditLog).where(AuditLog.action == "feedback.passenger.otp_verified"))
+    assert log.changes["via"] == "master_otp"
+
+
+def test_master_otp_skips_disabled_sms(world, fakes, monkeypatch):
+    from pydantic import SecretStr
+
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "feedback_master_otp", SecretStr("246810"))
+    monkeypatch.setattr(fakes[1], "enabled", False, raising=False)
+    fb = start(world).json()
+    r = world.client.post(f"{API}/passenger/{fb['id']}/send-otp", headers=world.h("sup"))
+    assert r.status_code == 200, r.text
+    assert fakes[1].sent == []  # no SMS went out
+    r = world.client.post(f"{API}/passenger/{fb['id']}/verify-otp", headers=world.h("sup"), json={"code": "246810"})
+    assert r.json()["otp_status"] == "verified"
+
+
+def test_no_master_otp_by_default(world, fakes):
+    fb = start(world).json()
+    world.client.post(f"{API}/passenger/{fb['id']}/send-otp", headers=world.h("sup"))
+    wrong = "000000" if fakes[1].last_code != "000000" else "111111"
+    r = world.client.post(f"{API}/passenger/{fb['id']}/verify-otp", headers=world.h("sup"), json={"code": wrong})
+    assert r.json()["error"]["code"] == "otp_invalid"
