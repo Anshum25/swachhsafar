@@ -159,6 +159,14 @@ class PassengerFeedbackOut(ReadModel):
     pnr_journey_date: date | None = None
     boarding_code: str | None = None
     alighting_code: str | None = None
+    pnr_train_name: str | None = None
+    pnr_class: str | None = None
+    pnr_booking_status: str | None = None     # the passenger line, e.g. CNF/A1/17/SL
+    pnr_coach: str | None = None
+    pnr_berth_no: int | None = None
+    pnr_berth_code: str | None = None
+    pnr_chart_prepared: bool | None = None
+    pnr_source: str | None = None
     # The provider's answer as kept (train, date, stations, class, chart, each passenger's status/coach/berth);
     # it holds no passenger names.
     pnr_details: dict | None = None

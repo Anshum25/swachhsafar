@@ -194,18 +194,35 @@ export function createLocalReports(db) {
     };
   }
 
-  // Backend psi_report: sum(w * (avg - min) / (max - min)) / sum(w) * 100 per journey, completed feedback only.
-  async function psi({ divisions, userId, from, to, bankId }) {
-    const bank = await bankFor(divisions, 'passenger', bankId);
-    if (!bank) return [];
-    const questions = await questionsOf(bank.id);
-    if (!questions.length || questions.some((q) => q.psi_weight == null)) {
-      throw new ApiError(409, 'psi_not_configured', 'PSI weights are not configured for this question bank');
-    }
-    const weight = new Map(questions.map((q) => [q.id, q.psi_weight]));
+  // Backend _psi_weights: the bank's weights when every question has one ('configured'), else 1 each ('equal').
+  function psiWeights(questions) {
+    const configured = questions.length && questions.every((q) => q.psi_weight != null);
+    return { weighting: configured ? 'configured' : 'equal', weight: new Map(questions.map((q) => [q.id, configured ? Number(q.psi_weight) : 1])) };
+  }
+
+  // Backend _psi: sum(w * (avg - min) / (max - min)) / sum(w) * 100 over the questions answered.
+  function psiScore(weight, averages, bank) {
     const span = bank.scale_max - bank.scale_min;
+    const rated = averages.filter((p) => weight.has(p.question_id) && p.avg != null);
+    const w = rated.reduce((n, p) => n + weight.get(p.question_id), 0);
+    if (!w || !span) return null;
+    return (rated.reduce((n, p) => n + (weight.get(p.question_id) * (p.avg - bank.scale_min)) / span, 0) / w) * 100;
+  }
+
+  async function psiFeedback(divisions, userId, from, to, bankId) {
+    const bank = await bankFor(divisions, 'passenger', bankId);
+    if (!bank) return {};
+    const questions = await questionsOf(bank.id);
     const done = (await feedbackRows('passenger', divisions, userId))
       .filter((f) => f.bank_id === bank.id && f.status === 'completed' && inRange(f.feedback_date, from, to));
+    return { bank, questions, done };
+  }
+
+  // Backend psi_report, per journey, completed feedback only.
+  async function psi({ divisions, userId, from, to, bankId }) {
+    const { bank, questions, done } = await psiFeedback(divisions, userId, from, to, bankId);
+    if (!bank || !questions.length) return [];
+    const { weight } = psiWeights(questions);
     const byJourney = new Map();
     for (const f of done) byJourney.set(f.journey_id, [...(byJourney.get(f.journey_id) ?? []), f.id]);
     const out = [];
@@ -213,14 +230,36 @@ export function createLocalReports(db) {
       const per = await db.query(
         `SELECT question_id, AVG(value) AS avg FROM passenger_feedback_ratings WHERE feedback_id IN (${marks(ids.length)}) GROUP BY question_id`, ids,
       );
-      const rated = per.filter((p) => weight.has(p.question_id));
-      if (!rated.length) continue;
-      const w = rated.reduce((n, p) => n + weight.get(p.question_id), 0);
-      const score = (rated.reduce((n, p) => n + (weight.get(p.question_id) * (p.avg - bank.scale_min)) / span, 0) / w) * 100;
+      const score = psiScore(weight, per, bank);
+      if (score == null) continue;
       const [j] = await db.query('SELECT train_no, journey_date FROM journeys WHERE id = ?', [journeyId]);
       out.push({ journey_id: journeyId, train_no: j?.train_no ?? null, journey_date: j?.journey_date ?? null, responses: ids.length, psi: round(score, 2) });
     }
-    return out.sort((a, b) => String(a.journey_date).localeCompare(String(b.journey_date)));
+    return out.sort((a, b) => String(a.journey_date).localeCompare(String(b.journey_date)) || String(a.train_no).localeCompare(String(b.train_no)));
+  }
+
+  // Backend psi_questions_report: the period's PSI question by question; contributions add up to psi.
+  async function psiQuestions({ divisions, userId, from, to, bankId }) {
+    const { bank, questions, done } = await psiFeedback(divisions, userId, from, to, bankId);
+    if (!bank || !questions.length) return null;
+    const { weight, weighting } = psiWeights(questions);
+    const stats = await ratingStats('passenger', done.map((f) => f.id));
+    const span = bank.scale_max - bank.scale_min;
+    const answered = [...stats.keys()].filter((id) => weight.has(id)).reduce((n, id) => n + weight.get(id), 0);
+    const rows = questions.map((q) => {
+      const s = stats.get(q.id);
+      const score = s && span ? ((s.avg - bank.scale_min) / span) * 100 : null;
+      const share = score != null && answered ? weight.get(q.id) / answered : null;
+      return {
+        question_id: q.id, position: q.position, text_en: q.text_en, weight: weight.get(q.id), responses: s?.n ?? 0,
+        average: s ? round(s.avg, 3) : null, score: round(score, 2), weight_share: share == null ? null : round(share * 100, 2),
+        contribution: share == null ? null : round(share * score, 2), points_lost: share == null ? null : round(share * (100 - score), 2),
+      };
+    });
+    return {
+      bank_id: bank.id, scale_min: bank.scale_min, scale_max: bank.scale_max, weighting, responses: done.length,
+      psi: round(psiScore(weight, [...stats.values()], bank), 2), questions: rows,
+    };
   }
 
   async function complaints({ divisions, userId, from, to, nowIso }) {
@@ -266,5 +305,5 @@ export function createLocalReports(db) {
     return rows.map((r) => ({ ...r, issued: Number(r.issued), returned: Number(r.returned), consumed: Number(r.issued) - Number(r.returned) }));
   }
 
-  return { attendance, inspections, feedback, psi, complaints, inventory };
+  return { attendance, inspections, feedback, psi, psiQuestions, complaints, inventory };
 }

@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -90,6 +91,29 @@ class PsiRow(BaseModel):
     journey_date: date
     responses: int
     psi: float | None
+
+
+class PsiQuestionRow(BaseModel):
+    question_id: uuid.UUID
+    position: int
+    text_en: str
+    weight: float
+    responses: int
+    average: float | None
+    score: float | None          # 0-100: (average - scale_min) / (scale_max - scale_min) * 100
+    weight_share: float | None   # % of the weight of the questions answered
+    contribution: float | None   # weight_share * score; the contributions add up to psi
+    points_lost: float | None    # weight_share * (100 - score)
+
+
+class PsiQuestions(BaseModel):
+    bank_id: uuid.UUID
+    scale_min: int
+    scale_max: int
+    weighting: Literal["configured", "equal"]
+    responses: int
+    psi: float | None
+    questions: list[PsiQuestionRow]
 
 
 class DivisionDashboard(BaseModel):

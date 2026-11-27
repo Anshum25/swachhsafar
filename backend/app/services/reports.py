@@ -3,10 +3,10 @@
 import uuid
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import Integer, and_, case, cast, distinct, func, literal, select
+from sqlalchemy import Integer, and_, case, cast, distinct, func, select
 from sqlalchemy.orm import Session
 
-from app.errors import BusinessRuleViolation, Conflict, Forbidden
+from app.errors import BusinessRuleViolation, Forbidden
 from app.models import (
     Attendance,
     Complaint,
@@ -23,7 +23,6 @@ from app.models import (
     PassengerFeedback,
     PassengerFeedbackRating,
     PassengerFeedbackStatus,
-    Question,
     QuestionBank,
     RailwayFeedback,
     RailwayFeedbackRating,
@@ -216,33 +215,143 @@ def feedback_report(db: Session, p: Principal, *, audience: str, division_id, da
                 by_coach_class={str(getattr(k, "value", k)): v for k, v in by_class.items()}, questions=questions)
 
 
+def _psi_weights(bank: QuestionBank) -> tuple[dict, str]:
+    """Each question's PSI weight: the bank's own when every question has one ("configured"), else 1 for
+    every question ("equal"), so PSI is always available and an admin's weights change only the balance."""
+    if bank.questions and all(q.psi_weight is not None for q in bank.questions):
+        return {q.id: float(q.psi_weight) for q in bank.questions}, "configured"
+    return {q.id: 1.0 for q in bank.questions}, "equal"
+
+
+def _psi(weights: dict, averages: dict, scale_min: float, span: float) -> float | None:
+    """sum(w * (avg - min)/(max - min)) / sum(w) * 100 over the questions that were answered."""
+    rated = [(weights[q], a) for q, a in averages.items() if q in weights and a is not None]
+    total = sum(w for w, _ in rated)
+    if not total or not span:
+        return None
+    return sum(w * (float(a) - scale_min) / span for w, a in rated) / total * 100
+
+
+def _psi_scope(bank: QuestionBank, divisions, date_from: date, date_to: date) -> tuple:
+    return (PassengerFeedback.bank_id == bank.id, PassengerFeedback.division_id.in_(divisions),
+            PassengerFeedback.status == PassengerFeedbackStatus.COMPLETED,
+            PassengerFeedback.feedback_date.between(date_from, date_to))
+
+
 def psi_report(db: Session, p: Principal, *, division_id, date_from: date, date_to: date, bank_id: uuid.UUID | None) -> list[dict]:
-    """Weighted, scale-normalised index per journey: sum(w * (avg - min)/(max - min)) / sum(w) * 100.
-    Only available when every question of the bank has an approved psi_weight."""
+    """Weighted, scale-normalised index per journey: sum(w * (avg - min)/(max - min)) / sum(w) * 100, from
+    completed feedback. Weights: _psi_weights (equal when the bank's are not all set)."""
     divisions = _divisions(p, division_id)
     bank = _bank_for(db, divisions, "passenger", bank_id)
-    if bank is None:
+    if bank is None or not bank.questions:
         return []
-    if not bank.questions or any(q.psi_weight is None for q in bank.questions):
-        raise Conflict("PSI weights are not configured for this question bank", code="psi_not_configured")
+    weights, _ = _psi_weights(bank)
     span = float(bank.scale_max - bank.scale_min)
-    per_q = (select(PassengerFeedback.journey_id.label("journey_id"), PassengerFeedbackRating.question_id.label("qid"),
-                    func.avg(PassengerFeedbackRating.value).label("avg"))
-             .join(PassengerFeedback, PassengerFeedback.id == PassengerFeedbackRating.feedback_id)
-             .where(PassengerFeedback.bank_id == bank.id, PassengerFeedback.division_id.in_(divisions),
-                    PassengerFeedback.status == PassengerFeedbackStatus.COMPLETED,
-                    PassengerFeedback.feedback_date.between(date_from, date_to))
-             .group_by(PassengerFeedback.journey_id, PassengerFeedbackRating.question_id).subquery())
-    score = func.sum(Question.psi_weight * (per_q.c.avg - bank.scale_min) / literal(span)) / func.sum(Question.psi_weight) * 100
-    responses = (select(func.count()).where(PassengerFeedback.journey_id == Journey.id, PassengerFeedback.bank_id == bank.id,
-                                            PassengerFeedback.status == PassengerFeedbackStatus.COMPLETED,
-                                            PassengerFeedback.feedback_date.between(date_from, date_to))
-                 .correlate(Journey).scalar_subquery())
-    rows = db.execute(select(Journey.id, Train.train_no, Journey.journey_date, responses, score)
-                      .join(per_q, per_q.c.journey_id == Journey.id).join(Question, Question.id == per_q.c.qid)
-                      .join(Train, Train.id == Journey.train_id)
-                      .group_by(Journey.id, Train.train_no, Journey.journey_date).order_by(Journey.journey_date)).all()
-    return [dict(journey_id=r[0], train_no=r[1], journey_date=r[2], responses=r[3], psi=round(float(r[4]), 2)) for r in rows]
+    scope = _psi_scope(bank, divisions, date_from, date_to)
+    averages: dict = {}
+    for jid, qid, avg in db.execute(
+            select(PassengerFeedback.journey_id, PassengerFeedbackRating.question_id, func.avg(PassengerFeedbackRating.value))
+            .join(PassengerFeedback, PassengerFeedback.id == PassengerFeedbackRating.feedback_id).where(*scope)
+            .group_by(PassengerFeedback.journey_id, PassengerFeedbackRating.question_id)):
+        averages.setdefault(jid, {})[qid] = avg
+    if not averages:
+        return []
+    counts = dict(db.execute(select(PassengerFeedback.journey_id, func.count()).where(*scope)
+                             .group_by(PassengerFeedback.journey_id)).all())
+    out = []
+    for jid, train_no, journey_date in db.execute(
+            select(Journey.id, Train.train_no, Journey.journey_date).join(Train, Train.id == Journey.train_id)
+            .where(Journey.id.in_(list(averages))).order_by(Journey.journey_date, Train.train_no)):
+        score = _psi(weights, averages[jid], float(bank.scale_min), span)
+        if score is not None:
+            out.append(dict(journey_id=jid, train_no=train_no, journey_date=journey_date,
+                            responses=counts.get(jid, 0), psi=round(score, 2)))
+    return out
+
+
+def psi_questions_report(db: Session, p: Principal, *, division_id, date_from: date, date_to: date,
+                         bank_id: uuid.UUID | None) -> dict | None:
+    """PSI of the whole period broken down by question: each question's average, its score on 0-100, its
+    share of the weight, what it contributes to PSI and the points it loses (share * (100 - score)).
+    The contributions add up to the period's PSI, so the questions losing most points are where to act."""
+    divisions = _divisions(p, division_id)
+    bank = _bank_for(db, divisions, "passenger", bank_id)
+    if bank is None or not bank.questions:
+        return None
+    weights, weighting = _psi_weights(bank)
+    span = float(bank.scale_max - bank.scale_min)
+    scope = _psi_scope(bank, divisions, date_from, date_to)
+    stats = {qid: (n, avg) for qid, n, avg in db.execute(
+        select(PassengerFeedbackRating.question_id, func.count(), func.avg(PassengerFeedbackRating.value))
+        .join(PassengerFeedback, PassengerFeedback.id == PassengerFeedbackRating.feedback_id).where(*scope)
+        .group_by(PassengerFeedbackRating.question_id))}
+    responses = db.scalar(select(func.count()).select_from(PassengerFeedback).where(*scope)) or 0
+    answered = sum(weights[q] for q in stats if q in weights)
+    rows = []
+    for q in sorted(bank.questions, key=lambda q: q.position):
+        n, avg = stats.get(q.id, (0, None))
+        score = (float(avg) - bank.scale_min) / span * 100 if avg is not None and span else None
+        share = weights[q.id] / answered if score is not None and answered else None
+        rows.append(dict(question_id=q.id, position=q.position, text_en=q.text_en, weight=weights[q.id],
+                         responses=n, average=round(float(avg), 3) if avg is not None else None,
+                         score=round(score, 2) if score is not None else None,
+                         weight_share=round(share * 100, 2) if share is not None else None,
+                         contribution=round(share * score, 2) if share is not None else None,
+                         points_lost=round(share * (100 - score), 2) if share is not None else None))
+    psi = _psi(weights, {q: a for q, (_, a) in stats.items()}, float(bank.scale_min), span)
+    return dict(bank_id=bank.id, scale_min=bank.scale_min, scale_max=bank.scale_max, weighting=weighting,
+                responses=responses, psi=round(psi, 2) if psi is not None else None, questions=rows)
+
+
+def feedback_sheet(db: Session, p: Principal, *, journey_id: uuid.UUID) -> dict:
+    """One journey's completed passenger feedback laid out coach by journey day (the coach sheet): each entry
+    with its PSI and per-question scores, time, PNR check and ticket, location, passenger name and masked
+    mobile. Totals are the sum of the ratings given; PSI is the same weighted index as psi_report."""
+    j = get_journey(db, p, journey_id)
+    _divisions(p, j.division_id)
+    feedback = db.scalars(select(PassengerFeedback).where(
+        PassengerFeedback.journey_id == j.id, PassengerFeedback.status == PassengerFeedbackStatus.COMPLETED)
+        .order_by(PassengerFeedback.completed_at, PassengerFeedback.server_timestamp)).all()
+    banks = {b.id: b for b in db.scalars(select(QuestionBank).where(
+        QuestionBank.id.in_({f.bank_id for f in feedback}))).all()} if feedback else {}
+    weighting = {b: _psi_weights(bank) for b, bank in banks.items()}
+    days = max([j.operational_days, *[f.journey_day for f in feedback]] or [1])
+    coaches = [c.code for c in sorted(j.coaches, key=lambda c: c.position)]
+    coaches += sorted({f.coach_code for f in feedback} - set(coaches))
+    cells: dict = {c: {} for c in coaches}
+    for f in feedback:
+        bank = banks[f.bank_id]
+        weights, _ = weighting[f.bank_id]
+        span = float(bank.scale_max - bank.scale_min)
+        position = {q.id: q.position for q in bank.questions}
+        values = {r.question_id: r.value for r in f.ratings}
+        psi = _psi(weights, values, float(bank.scale_min), span)
+        cells[f.coach_code].setdefault(f.journey_day, []).append(dict(
+            id=f.id, psi=round(psi, 2) if psi is not None else None,
+            scores=[dict(position=position.get(qid), score=round((v - bank.scale_min) / span, 2) if span else None)
+                    for qid, v in sorted(values.items(), key=lambda kv: position.get(kv[0], 0))],
+            total=sum(values.values()), time=f.completed_at or f.device_timestamp,
+            passenger_name=f.passenger_name, mobile_masked=f.mobile_masked,
+            pnr=f.pnr, pnr_status=f.pnr_status, pnr_coach=f.pnr_coach, pnr_berth_no=f.pnr_berth_no,
+            pnr_berth_code=f.pnr_berth_code, pnr_booking_status=f.pnr_booking_status,
+            train_no=f.train_no, train_name=f.pnr_train_name, pnr_class=f.pnr_class,
+            coach_code=f.coach_code, coach_source=f.coach_source, seat_no=f.seat_no,
+            latitude=f.latitude, longitude=f.longitude))
+    rows = []
+    for c in coaches:
+        entries = [e for d in cells[c].values() for e in d]
+        scored = [e["psi"] for e in entries if e["psi"] is not None]
+        rows.append(dict(coach_code=c, days={d: cells[c].get(d, []) for d in range(1, days + 1)},
+                         responses=len(entries), total=sum(e["total"] for e in entries),
+                         psi=round(sum(scored) / len(scored), 2) if scored else None))
+    every = [e["psi"] for r in rows for d in r["days"].values() for e in d if e["psi"] is not None]
+    return dict(journey_id=j.id, train_no=j.train.train_no, train_name=j.train.name,
+                linked_train_no=j.linked_train.train_no if j.linked_train else None,
+                linked_train_name=j.linked_train.name if j.linked_train else None,
+                journey_date=j.journey_date, end_date=j.end_date, days=days,
+                weighting=sorted({w for _, w in weighting.values()}), rows=rows,
+                responses=len(feedback), total=sum(r["total"] for r in rows),
+                psi=round(sum(every) / len(every), 2) if every else None)
 
 
 # ---- complaints / inventory --------------------------------------------------------------------------------

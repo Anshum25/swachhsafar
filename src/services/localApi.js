@@ -102,7 +102,7 @@ export function createLocalApi({ store, getContext = () => ({}) }) {
       return page(visible, q);
     }],
     // CP-11 reports from this device's records (see localReports.js); reports.read per division.
-    [/^\/reports\/(attendance|inspections|feedback\/passenger|feedback\/railway|psi|complaints|inventory)$/, (q, [kind]) => {
+    [/^\/reports\/(attendance|inspections|feedback\/passenger|feedback\/railway|psi|psi\/questions|complaints|inventory)$/, (q, [kind]) => {
       const divisions = scopeFor(q, 'reports.read');
       checkRange(q.date_from, q.date_to);
       const args = { divisions, userId: ctx().userId, from: q.date_from, to: q.date_to };
@@ -110,6 +110,7 @@ export function createLocalApi({ store, getContext = () => ({}) }) {
         case 'attendance': return reports.attendance({ ...args, groupBy: q.group_by || 'employee' });
         case 'inspections': return reports.inspections({ ...args, coachWise: truthy(q.coach_wise) });
         case 'psi': return reports.psi({ ...args, bankId: q.bank_id });
+        case 'psi/questions': return reports.psiQuestions({ ...args, bankId: q.bank_id });
         case 'complaints': return reports.complaints({ ...args, nowIso: store.clock().now });
         case 'inventory': return reports.inventory(args);
         default: return reports.feedback({ ...args, audience: kind.split('/')[1], journeyId: q.journey_id, bankId: q.bank_id });

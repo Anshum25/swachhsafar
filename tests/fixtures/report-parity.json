@@ -1,9 +1,9 @@
 {
- "generated_at": "2026-11-04T11:21:37.612101+00:00",
- "today": "2026-11-04",
+ "generated_at": "2026-11-27T11:45:50.426659+00:00",
+ "today": "2026-11-27",
  "me": {
   "user": {
-   "id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+   "id": "1d861cd5-2caa-491c-9560-06bb7c308000",
    "emp_id": "AAA-manager",
    "name": "Manager",
    "name_hindi": null,
@@ -13,13 +13,15 @@
    "designation": null,
    "lang": "en",
    "role_id": 3,
-   "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+   "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
    "status": "active",
-   "firebase_linked": true,
-   "updated_at": "2026-11-04T11:21:34.682622Z"
+   "password_set": false,
+   "face_enrolled": false,
+   "fingerprint_enrolled": false,
+   "updated_at": "2026-11-27T11:45:46.996683Z"
   },
   "divisions": {
-   "1282b03d-6867-4cbc-b695-bf35a889cd31": [
+   "fa92b31c-c74d-4d6a-b564-bd72856f2e0b": [
     "attendance.read",
     "attendance.review",
     "complaints.create",
@@ -43,6 +45,52 @@
     "users.manage",
     "users.read"
    ]
+  },
+  "client": {
+   "id": "08163ba3-546d-4342-8717-ecb3ca3a12fd",
+   "office_id": "OFF-AAA",
+   "name": "OFF-AAA Office",
+   "status": "active",
+   "modules": [
+    "admin",
+    "attendance",
+    "complaints",
+    "feedback",
+    "inspections",
+    "inventory",
+    "journeys",
+    "masters",
+    "media",
+    "reports",
+    "users"
+   ],
+   "credit_balance": 0,
+   "credit_per_journey": 0,
+   "low_credit": false,
+   "state": null,
+   "city": null,
+   "setup_completed_at": null
+  },
+  "offline_lease": {
+   "lease_id": "94ba3600-2195-4db1-a780-4e95bb069bbf",
+   "emp_id": "AAA-manager",
+   "user_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+   "device_id": "dev-factory-0000",
+   "session_id": "5a95e82d-6281-4a91-8a20-1e054aeb074a",
+   "issued_at": "2026-11-27T11:45:50.418487+00:00",
+   "expires_at": "2026-11-28T11:45:50.418487+00:00",
+   "authorization_version": 1,
+   "policy_version": 1,
+   "permitted_operations": [
+    "attendance.record",
+    "inspection.record",
+    "feedback.passenger.start",
+    "feedback.railway.create",
+    "complaint.create",
+    "inventory.record",
+    "security.event"
+   ],
+   "signature": "b246350d6880ced9d4927d0e954fa3720c815fe2ab4b8e2b305605c713db2658"
   }
  },
  "downloads": [
@@ -50,19 +98,21 @@
    "GET",
    "/sync/changes",
    {
-    "cursor": "2026-11-04T11:21:36.635817Z",
+    "cursor": "2026-11-27T11:45:49.257626Z",
     "full": true,
     "divisions": [
      {
-      "id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "code": "AAA",
       "name": "AAA Division",
       "is_active": true,
-      "updated_at": "2026-11-04T11:21:34.659797Z"
+      "client_id": "08163ba3-546d-4342-8717-ecb3ca3a12fd",
+      "kind": "station",
+      "updated_at": "2026-11-27T11:45:46.942804Z"
      }
     ],
     "policies": {
-     "1282b03d-6867-4cbc-b695-bf35a889cd31": {
+     "fa92b31c-c74d-4d6a-b564-bd72856f2e0b": {
       "passenger_pnr_required": true,
       "passenger_otp_required": true,
       "pnr_train_day_mapping": false,
@@ -71,14 +121,31 @@
       "railway_feedback_limit_per_journey": 2,
       "attendance_photo_required": true,
       "attendance_late_grace_days": 1,
+      "attendance_route_check": "block",
+      "attendance_route_tolerance_km": 3,
+      "attendance_missed_grace_hours": 6,
       "inspection_photo_required": true,
-      "complaint_default_sla_hours": 72
+      "complaint_default_sla_hours": 72,
+      "attendance_face_verification": false,
+      "face_match_threshold": 0.5,
+      "attendance_fingerprint_verification": false,
+      "fingerprint_match_score": 40,
+      "gps_enforced": true,
+      "gps_block_app": false,
+      "gps_max_age_seconds": 120,
+      "gps_max_accuracy_m": 100,
+      "gps_timeout_seconds": 20,
+      "gps_max_speed_kmh": 250,
+      "vpn_policy": "block",
+      "offline_session_hours": 24,
+      "face_liveness_required": false,
+      "attendance_group_photo": false
      }
     },
     "trains": [
      {
-      "id": "69dd37f2-d6c0-4858-a017-670c70c6ef26",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "25eb137d-bd34-460e-9ad4-6e4cc12986d0",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "train_no": "12001",
       "name": "Shatabdi Test",
       "duration_days": 1,
@@ -104,11 +171,38 @@
         "position": 2
        }
       ],
-      "updated_at": "2026-11-04T11:21:34.758017Z"
+      "route_stations": null,
+      "attendance_station_count": null,
+      "attendance_station_codes": null,
+      "attendance_valid_until": null,
+      "updated_at": "2026-11-27T11:45:47.374821Z",
+      "origin_code": null,
+      "origin_name": null,
+      "destination_code": null,
+      "destination_name": null,
+      "run_days": null,
+      "arrival_days": null,
+      "return_train_id": null,
+      "return_train_no": null,
+      "distance_km": null,
+      "duration_minutes": null,
+      "schedule_status": null,
+      "schedule_synced_at": null,
+      "schedule_checked_at": null,
+      "schedule_error": null,
+      "auto_journeys": false,
+      "feedback_enabled": true,
+      "feedback_daily_target": null,
+      "feedback_coach_daily_target": null,
+      "feedback_min_daily": null,
+      "feedback_from_day": 1,
+      "feedback_to_day": null,
+      "feedback_days": "all",
+      "feedback_targets_active": true
      },
      {
-      "id": "61065cce-c543-4606-944e-0ca80d0cfae0",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "17b0391f-7a34-4a90-9c57-d063ee6ef788",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "train_no": "12002",
       "name": "Shatabdi Test",
       "duration_days": 1,
@@ -134,11 +228,38 @@
         "position": 2
        }
       ],
-      "updated_at": "2026-11-04T11:21:35.040778Z"
+      "route_stations": null,
+      "attendance_station_count": null,
+      "attendance_station_codes": null,
+      "attendance_valid_until": null,
+      "updated_at": "2026-11-27T11:45:47.381702Z",
+      "origin_code": null,
+      "origin_name": null,
+      "destination_code": null,
+      "destination_name": null,
+      "run_days": null,
+      "arrival_days": null,
+      "return_train_id": null,
+      "return_train_no": null,
+      "distance_km": null,
+      "duration_minutes": null,
+      "schedule_status": null,
+      "schedule_synced_at": null,
+      "schedule_checked_at": null,
+      "schedule_error": null,
+      "auto_journeys": false,
+      "feedback_enabled": true,
+      "feedback_daily_target": null,
+      "feedback_coach_daily_target": null,
+      "feedback_min_daily": null,
+      "feedback_from_day": 1,
+      "feedback_to_day": null,
+      "feedback_days": "all",
+      "feedback_targets_active": true
      },
      {
-      "id": "2971b45c-b534-4b25-a92e-04a2d08a9509",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "5acb66fd-a7d3-494b-a358-aeb13697a1f4",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "train_no": "12003",
       "name": "Shatabdi Test",
       "duration_days": 1,
@@ -164,127 +285,162 @@
         "position": 2
        }
       ],
-      "updated_at": "2026-11-04T11:21:35.055337Z"
+      "route_stations": null,
+      "attendance_station_count": null,
+      "attendance_station_codes": null,
+      "attendance_valid_until": null,
+      "updated_at": "2026-11-27T11:45:47.405981Z",
+      "origin_code": null,
+      "origin_name": null,
+      "destination_code": null,
+      "destination_name": null,
+      "run_days": null,
+      "arrival_days": null,
+      "return_train_id": null,
+      "return_train_no": null,
+      "distance_km": null,
+      "duration_minutes": null,
+      "schedule_status": null,
+      "schedule_synced_at": null,
+      "schedule_checked_at": null,
+      "schedule_error": null,
+      "auto_journeys": false,
+      "feedback_enabled": true,
+      "feedback_daily_target": null,
+      "feedback_coach_daily_target": null,
+      "feedback_min_daily": null,
+      "feedback_from_day": 1,
+      "feedback_to_day": null,
+      "feedback_days": "all",
+      "feedback_targets_active": true
      }
     ],
     "inventory_items": [
      {
-      "id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "name": "Phenyl",
       "unit": "ltr",
       "ideal_qty": 5.0,
       "is_active": true,
-      "updated_at": "2026-11-04T11:21:35.257982Z"
+      "updated_at": "2026-11-27T11:45:47.720628Z"
      },
      {
-      "id": "0efd6193-731f-47cb-9458-b611c5bbf950",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "0da094fe-fb40-448d-8e83-d2f21a52e98d",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "name": "Soap",
       "unit": "nos",
       "ideal_qty": 10.0,
       "is_active": true,
-      "updated_at": "2026-11-04T11:21:35.276874Z"
+      "updated_at": "2026-11-27T11:45:47.740979Z"
      }
     ],
     "question_banks": [
      {
-      "id": "ffc772f4-e718-4562-8912-1c4413e63819",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "audience": "passenger",
       "name": "passenger v1",
       "scale_min": 1,
       "scale_max": 5,
+      "option_labels": null,
       "is_active": true,
       "questions": [
        {
-        "id": "b8fbd7c0-d623-41fc-ae42-aca765592cda",
+        "id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
         "position": 1,
         "text_en": "Toilet cleaning",
         "text_hi": null,
         "applies_ac": true,
         "applies_non_ac": true,
+        "applies_gen": true,
         "required": true,
         "psi_weight": 2.0
        },
        {
-        "id": "44382c8e-5955-40b0-a225-5c20c7c50f19",
+        "id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
         "position": 2,
         "text_en": "Bedroll quality",
         "text_hi": null,
         "applies_ac": true,
         "applies_non_ac": false,
+        "applies_gen": true,
         "required": true,
         "psi_weight": 2.0
        },
        {
-        "id": "9ea581c3-22c7-45e6-b8a7-56d02b2b42a0",
+        "id": "496f5e74-d229-498e-ae21-ca04045226a8",
         "position": 3,
         "text_en": "Staff behaviour",
         "text_hi": null,
         "applies_ac": true,
         "applies_non_ac": true,
+        "applies_gen": true,
         "required": false,
         "psi_weight": 2.0
        }
       ],
-      "updated_at": "2026-11-04T11:21:34.986459Z"
+      "updated_at": "2026-11-27T11:45:47.293215Z"
      },
      {
-      "id": "9c47e3ba-f1d6-46d7-93a2-01a837917c2b",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "426aa6b1-6b6e-4fe0-8249-b8ccc1b98d14",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "audience": "railway",
       "name": "railway v1",
       "scale_min": 1,
       "scale_max": 5,
+      "option_labels": null,
       "is_active": true,
       "questions": [
        {
-        "id": "33246210-82df-45db-a22a-e7fdf022e6ae",
+        "id": "4dbf1cee-77a0-493d-b4ec-a5744ee4bdf2",
         "position": 1,
         "text_en": "Toilet cleaning",
         "text_hi": null,
         "applies_ac": true,
         "applies_non_ac": true,
+        "applies_gen": true,
         "required": true,
         "psi_weight": null
        },
        {
-        "id": "3f18dc6a-b6bf-42df-880d-bbea02c0ac38",
+        "id": "47c28f90-50bc-445b-9b28-6a9f81a7fa64",
         "position": 2,
         "text_en": "Bedroll quality",
         "text_hi": null,
         "applies_ac": true,
         "applies_non_ac": false,
+        "applies_gen": true,
         "required": true,
         "psi_weight": null
        },
        {
-        "id": "68bbdf20-74c1-4466-9aea-0be4594f8ca4",
+        "id": "a152f1e2-f827-448b-ac03-1f0f53b53075",
         "position": 3,
         "text_en": "Staff behaviour",
         "text_hi": null,
         "applies_ac": true,
         "applies_non_ac": true,
+        "applies_gen": true,
         "required": false,
         "psi_weight": null
        }
       ],
-      "updated_at": "2026-11-04T11:21:35.023761Z"
+      "updated_at": "2026-11-27T11:45:47.348984Z"
      }
     ],
     "complaint_departments": [
      {
-      "id": "25372001-6f45-4810-b83f-138aa2d27bcf",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "200332d6-eb43-42d3-9564-69f21d881472",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "name": "Electrical",
       "is_active": true
      }
     ],
     "complaint_categories": [
      {
-      "id": "3d97b51e-d3d1-4f5a-be34-9a5ad94b4e1a",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "018fa1ce-5a03-4e81-aaa6-acf555fc87dd",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "parent_id": null,
       "name": "Coach",
       "default_department_id": null,
@@ -293,11 +449,11 @@
       "is_active": true
      },
      {
-      "id": "2b6ea39c-c852-4da2-a9d4-01e7f7499c47",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "c2039108-4420-4988-8315-859ad7da775c",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "parent_id": null,
       "name": "Water",
-      "default_department_id": "25372001-6f45-4810-b83f-138aa2d27bcf",
+      "default_department_id": "200332d6-eb43-42d3-9564-69f21d881472",
       "sla_hours": 1,
       "sort_order": 0,
       "is_active": true
@@ -305,17 +461,17 @@
     ],
     "journeys": [
      {
-      "id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "train_id": "69dd37f2-d6c0-4858-a017-670c70c6ef26",
+      "id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "train_id": "25eb137d-bd34-460e-9ad4-6e4cc12986d0",
       "train_no": "12001",
       "train_name": "Shatabdi Test",
       "linked_train_id": null,
       "linked_train_no": null,
-      "journey_date": "2026-11-04",
+      "journey_date": "2026-11-27",
       "outbound_end_date": null,
-      "linked_journey_date": "2026-11-05",
-      "end_date": "2026-11-05",
+      "linked_journey_date": "2026-11-28",
+      "end_date": "2026-11-28",
       "start_time": null,
       "end_time": null,
       "return_start_time": null,
@@ -326,9 +482,11 @@
       "inspection_rounds_per_day": 2,
       "before_inspection_enabled": true,
       "after_inspection_enabled": true,
-      "supervisor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "supervisor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "supervisor_name": "Sup",
-      "created_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+      "created_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+      "auto_created": false,
+      "charged": true,
       "state": "active",
       "cancel_reason": null,
       "cancelled_at": null,
@@ -345,40 +503,121 @@
         "position": 2
        }
       ],
-      "updated_at": "2026-11-04T11:21:34.822836Z",
+      "attendance_stages": [
+       {
+        "stage": 1,
+        "kind": "source",
+        "label": "Source",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 2,
+        "kind": "enroute",
+        "label": "Enroute 1",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 3,
+        "kind": "destination",
+        "label": "Destination",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 4,
+        "kind": "enroute",
+        "label": "Enroute 2",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 5,
+        "kind": "end",
+        "label": "End",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       }
+      ],
+      "updated_at": "2026-11-27T11:45:47.374821Z",
+      "feedback_enabled": true,
+      "feedback_daily_target": null,
+      "legs": [
+       {
+        "direction": 1,
+        "train_no": "12001",
+        "train_name": "Shatabdi Test",
+        "origin_code": null,
+        "origin_name": null,
+        "destination_code": null,
+        "destination_name": null,
+        "departs_on": "2026-11-27",
+        "departs_at": null,
+        "arrives_on": "2026-11-28",
+        "arrives_at": null,
+        "first_day": 1,
+        "last_day": 2
+       }
+      ],
       "staff": [
        {
-        "id": "20c7470f-cb3b-4c68-8737-7f0c9f8e707c",
-        "user_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+        "id": "77eb5332-a616-4535-af3b-c54b16649cca",
+        "user_id": "82449957-f7a1-48a2-9352-13a0036522c5",
         "role_id": 4,
         "name": "Sup",
         "emp_id": "AAA-sup",
-        "allocated_at": "2026-11-04 11:21:34.822836+00:00",
+        "allocated_at": "2026-11-27 11:45:47.128743+00:00",
         "removed_at": null
        },
        {
-        "id": "78aa62c8-de04-4e95-a323-661e2e1e4a64",
-        "user_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+        "id": "ef5c2f84-783a-4dc0-ae03-78192b58c45e",
+        "user_id": "ed45b779-ff70-416c-9594-d89959fa4982",
         "role_id": 5,
         "name": "Jan",
         "emp_id": "AAA-jan",
-        "allocated_at": "2026-11-04 11:21:34.822836+00:00",
+        "allocated_at": "2026-11-27 11:45:47.128743+00:00",
         "removed_at": null
        }
       ]
      },
      {
-      "id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "train_id": "61065cce-c543-4606-944e-0ca80d0cfae0",
+      "id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "train_id": "17b0391f-7a34-4a90-9c57-d063ee6ef788",
       "train_no": "12002",
       "train_name": "Shatabdi Test",
       "linked_train_id": null,
       "linked_train_no": null,
-      "journey_date": "2026-11-04",
+      "journey_date": "2026-11-27",
       "outbound_end_date": null,
-      "linked_journey_date": "2026-11-05",
-      "end_date": "2026-11-05",
+      "linked_journey_date": "2026-11-28",
+      "end_date": "2026-11-28",
       "start_time": null,
       "end_time": null,
       "return_start_time": null,
@@ -389,9 +628,11 @@
       "inspection_rounds_per_day": 2,
       "before_inspection_enabled": true,
       "after_inspection_enabled": true,
-      "supervisor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "supervisor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "supervisor_name": "Sup",
-      "created_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+      "created_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+      "auto_created": false,
+      "charged": true,
       "state": "active",
       "cancel_reason": null,
       "cancelled_at": null,
@@ -408,40 +649,121 @@
         "position": 2
        }
       ],
-      "updated_at": "2026-11-04T11:21:35.069236Z",
+      "attendance_stages": [
+       {
+        "stage": 1,
+        "kind": "source",
+        "label": "Source",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 2,
+        "kind": "enroute",
+        "label": "Enroute 1",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 3,
+        "kind": "destination",
+        "label": "Destination",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 4,
+        "kind": "enroute",
+        "label": "Enroute 2",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 5,
+        "kind": "end",
+        "label": "End",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       }
+      ],
+      "updated_at": "2026-11-27T11:45:47.435922Z",
+      "feedback_enabled": true,
+      "feedback_daily_target": null,
+      "legs": [
+       {
+        "direction": 1,
+        "train_no": "12002",
+        "train_name": "Shatabdi Test",
+        "origin_code": null,
+        "origin_name": null,
+        "destination_code": null,
+        "destination_name": null,
+        "departs_on": "2026-11-27",
+        "departs_at": null,
+        "arrives_on": "2026-11-28",
+        "arrives_at": null,
+        "first_day": 1,
+        "last_day": 2
+       }
+      ],
       "staff": [
        {
-        "id": "c0bb431a-d8ec-4a1e-9f63-edbb369c7573",
-        "user_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+        "id": "3d3dbb52-6d8e-4175-b3d2-83b1b8436097",
+        "user_id": "82449957-f7a1-48a2-9352-13a0036522c5",
         "role_id": 4,
         "name": "Sup",
         "emp_id": "AAA-sup",
-        "allocated_at": "2026-11-04 11:21:35.069236+00:00",
+        "allocated_at": "2026-11-27 11:45:47.435922+00:00",
         "removed_at": null
        },
        {
-        "id": "e46598e2-1e05-422d-b87b-4b4475807ca7",
-        "user_id": "2c791450-b2c7-4596-89b4-240b003d54bf",
+        "id": "c8cbc6be-54a4-4ffe-a431-4d53b730c9ab",
+        "user_id": "6dff8c5c-8908-40f6-a680-48d995ff1d0d",
         "role_id": 5,
         "name": "Jan2",
         "emp_id": "AAA-jan2",
-        "allocated_at": "2026-11-04 11:21:35.069236+00:00",
+        "allocated_at": "2026-11-27 11:45:47.435922+00:00",
         "removed_at": null
        }
       ]
      },
      {
-      "id": "6f7216c1-41ae-48d0-858b-abf3ae70c8d7",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "train_id": "2971b45c-b534-4b25-a92e-04a2d08a9509",
+      "id": "0b7664d8-7b12-402e-b6b9-fb3058c481b6",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "train_id": "5acb66fd-a7d3-494b-a358-aeb13697a1f4",
       "train_no": "12003",
       "train_name": "Shatabdi Test",
       "linked_train_id": null,
       "linked_train_no": null,
-      "journey_date": "2026-11-04",
+      "journey_date": "2026-11-27",
       "outbound_end_date": null,
-      "linked_journey_date": "2026-11-05",
-      "end_date": "2026-11-05",
+      "linked_journey_date": "2026-11-28",
+      "end_date": "2026-11-28",
       "start_time": null,
       "end_time": null,
       "return_start_time": null,
@@ -452,12 +774,14 @@
       "inspection_rounds_per_day": 2,
       "before_inspection_enabled": true,
       "after_inspection_enabled": true,
-      "supervisor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "supervisor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "supervisor_name": "Sup",
-      "created_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+      "created_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+      "auto_created": false,
+      "charged": true,
       "state": "cancelled",
       "cancel_reason": "Rake not available",
-      "cancelled_at": "2026-11-04T11:21:35.156416Z",
+      "cancelled_at": "2026-11-27T11:45:47.615509Z",
       "version": 2,
       "coaches": [
        {
@@ -471,29 +795,137 @@
         "position": 2
        }
       ],
-      "updated_at": "2026-11-04T11:21:35.140896Z",
+      "attendance_stages": [
+       {
+        "stage": 1,
+        "kind": "source",
+        "label": "Source",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 2,
+        "kind": "enroute",
+        "label": "Enroute 1",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 3,
+        "kind": "destination",
+        "label": "Destination",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 4,
+        "kind": "enroute",
+        "label": "Enroute 2",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       },
+       {
+        "stage": 5,
+        "kind": "end",
+        "label": "End",
+        "station_code": null,
+        "station_name": null,
+        "valid_until_code": null,
+        "valid_until_name": null,
+        "window": null,
+        "closes_time": null,
+        "closes_day": null
+       }
+      ],
+      "updated_at": "2026-11-27T11:45:47.581721Z",
+      "feedback_enabled": true,
+      "feedback_daily_target": null,
+      "legs": [
+       {
+        "direction": 1,
+        "train_no": "12003",
+        "train_name": "Shatabdi Test",
+        "origin_code": null,
+        "origin_name": null,
+        "destination_code": null,
+        "destination_name": null,
+        "departs_on": "2026-11-27",
+        "departs_at": null,
+        "arrives_on": "2026-11-28",
+        "arrives_at": null,
+        "first_day": 1,
+        "last_day": 2
+       }
+      ],
       "staff": [
        {
-        "id": "8649dcea-5f04-45b7-8fed-42b4b093e268",
-        "user_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+        "id": "1a834ebe-8492-4b37-b8df-210f41714097",
+        "user_id": "82449957-f7a1-48a2-9352-13a0036522c5",
         "role_id": 4,
         "name": "Sup",
         "emp_id": "AAA-sup",
-        "allocated_at": "2026-11-04 11:21:35.104380+00:00",
+        "allocated_at": "2026-11-27 11:45:47.508284+00:00",
         "removed_at": null
        },
        {
-        "id": "9c01102a-1e27-49ee-b1c8-2840892e607e",
-        "user_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+        "id": "2e5c88fa-bfd9-42e2-b8bd-50a21ecff882",
+        "user_id": "ed45b779-ff70-416c-9594-d89959fa4982",
         "role_id": 5,
         "name": "Jan",
         "emp_id": "AAA-jan",
-        "allocated_at": "2026-11-04 11:21:35.104380+00:00",
+        "allocated_at": "2026-11-27 11:45:47.508284+00:00",
         "removed_at": null
        }
       ]
      }
-    ]
+    ],
+    "face_profiles": [],
+    "fingerprint_profiles": [],
+    "client": {
+     "id": "08163ba3-546d-4342-8717-ecb3ca3a12fd",
+     "office_id": "OFF-AAA",
+     "name": "OFF-AAA Office",
+     "status": "active",
+     "modules": [
+      "admin",
+      "attendance",
+      "complaints",
+      "feedback",
+      "inspections",
+      "inventory",
+      "journeys",
+      "masters",
+      "media",
+      "reports",
+      "users"
+     ],
+     "credit_balance": 0,
+     "credit_per_journey": 0,
+     "low_credit": false,
+     "state": null,
+     "city": null,
+     "setup_completed_at": null
+    }
    }
   ],
   [
@@ -502,7 +934,7 @@
    {
     "items": [
      {
-      "id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+      "id": "ed45b779-ff70-416c-9594-d89959fa4982",
       "emp_id": "AAA-jan",
       "name": "Jan",
       "name_hindi": null,
@@ -512,13 +944,15 @@
       "designation": null,
       "lang": "en",
       "role_id": 5,
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "status": "active",
-      "firebase_linked": true,
-      "updated_at": "2026-11-04T11:21:34.689735Z"
+      "password_set": false,
+      "face_enrolled": false,
+      "fingerprint_enrolled": false,
+      "updated_at": "2026-11-27T11:45:47.015119Z"
      },
      {
-      "id": "2c791450-b2c7-4596-89b4-240b003d54bf",
+      "id": "6dff8c5c-8908-40f6-a680-48d995ff1d0d",
       "emp_id": "AAA-jan2",
       "name": "Jan2",
       "name_hindi": null,
@@ -528,13 +962,15 @@
       "designation": null,
       "lang": "en",
       "role_id": 5,
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "status": "active",
-      "firebase_linked": true,
-      "updated_at": "2026-11-04T11:21:34.692969Z"
+      "password_set": false,
+      "face_enrolled": false,
+      "fingerprint_enrolled": false,
+      "updated_at": "2026-11-27T11:45:47.020923Z"
      },
      {
-      "id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+      "id": "1d861cd5-2caa-491c-9560-06bb7c308000",
       "emp_id": "AAA-manager",
       "name": "Manager",
       "name_hindi": null,
@@ -544,13 +980,15 @@
       "designation": null,
       "lang": "en",
       "role_id": 3,
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "status": "active",
-      "firebase_linked": true,
-      "updated_at": "2026-11-04T11:21:34.682622Z"
+      "password_set": false,
+      "face_enrolled": false,
+      "fingerprint_enrolled": false,
+      "updated_at": "2026-11-27T11:45:46.996683Z"
      },
      {
-      "id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "emp_id": "AAA-sup",
       "name": "Sup",
       "name_hindi": null,
@@ -560,13 +998,15 @@
       "designation": null,
       "lang": "en",
       "role_id": 4,
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "status": "active",
-      "firebase_linked": true,
-      "updated_at": "2026-11-04T11:21:34.685868Z"
+      "password_set": false,
+      "face_enrolled": false,
+      "fingerprint_enrolled": false,
+      "updated_at": "2026-11-27T11:45:47.002180Z"
      },
      {
-      "id": "fa3bfa1f-275f-4a17-9e9c-140dc19f5779",
+      "id": "9293b7a6-2b22-405a-a011-32e4dd008636",
       "emp_id": "AAA-sup2",
       "name": "Sup2",
       "name_hindi": null,
@@ -576,10 +1016,12 @@
       "designation": null,
       "lang": "en",
       "role_id": 4,
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "status": "active",
-      "firebase_linked": true,
-      "updated_at": "2026-11-04T11:21:34.688062Z"
+      "password_set": false,
+      "face_enrolled": false,
+      "fingerprint_enrolled": false,
+      "updated_at": "2026-11-27T11:45:47.008770Z"
      }
     ],
     "total": 5,
@@ -589,19 +1031,19 @@
   ],
   [
    "GET",
-   "/journeys/a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+   "/journeys/f32de101-1dc4-4be2-a1d5-01521900f0ce",
    {
-    "id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-    "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-    "train_id": "69dd37f2-d6c0-4858-a017-670c70c6ef26",
+    "id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+    "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+    "train_id": "25eb137d-bd34-460e-9ad4-6e4cc12986d0",
     "train_no": "12001",
     "train_name": "Shatabdi Test",
     "linked_train_id": null,
     "linked_train_no": null,
-    "journey_date": "2026-11-04",
+    "journey_date": "2026-11-27",
     "outbound_end_date": null,
-    "linked_journey_date": "2026-11-05",
-    "end_date": "2026-11-05",
+    "linked_journey_date": "2026-11-28",
+    "end_date": "2026-11-28",
     "start_time": null,
     "end_time": null,
     "return_start_time": null,
@@ -612,9 +1054,11 @@
     "inspection_rounds_per_day": 2,
     "before_inspection_enabled": true,
     "after_inspection_enabled": true,
-    "supervisor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+    "supervisor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
     "supervisor_name": "Sup",
-    "created_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+    "created_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+    "auto_created": false,
+    "charged": true,
     "state": "active",
     "cancel_reason": null,
     "cancelled_at": null,
@@ -631,24 +1075,105 @@
       "position": 2
      }
     ],
-    "updated_at": "2026-11-04T11:21:34.822836Z",
+    "attendance_stages": [
+     {
+      "stage": 1,
+      "kind": "source",
+      "label": "Source",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 2,
+      "kind": "enroute",
+      "label": "Enroute 1",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 3,
+      "kind": "destination",
+      "label": "Destination",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 4,
+      "kind": "enroute",
+      "label": "Enroute 2",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 5,
+      "kind": "end",
+      "label": "End",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     }
+    ],
+    "updated_at": "2026-11-27T11:45:47.374821Z",
+    "feedback_enabled": true,
+    "feedback_daily_target": null,
+    "legs": [
+     {
+      "direction": 1,
+      "train_no": "12001",
+      "train_name": "Shatabdi Test",
+      "origin_code": null,
+      "origin_name": null,
+      "destination_code": null,
+      "destination_name": null,
+      "departs_on": "2026-11-27",
+      "departs_at": null,
+      "arrives_on": "2026-11-28",
+      "arrives_at": null,
+      "first_day": 1,
+      "last_day": 2
+     }
+    ],
     "staff": [
      {
-      "id": "20c7470f-cb3b-4c68-8737-7f0c9f8e707c",
-      "user_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "id": "77eb5332-a616-4535-af3b-c54b16649cca",
+      "user_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "role_id": 4,
       "name": "Sup",
       "emp_id": "AAA-sup",
-      "allocated_at": "2026-11-04T11:21:34.822836Z",
+      "allocated_at": "2026-11-27T11:45:47.128743Z",
       "removed_at": null
      },
      {
-      "id": "78aa62c8-de04-4e95-a323-661e2e1e4a64",
-      "user_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+      "id": "ef5c2f84-783a-4dc0-ae03-78192b58c45e",
+      "user_id": "ed45b779-ff70-416c-9594-d89959fa4982",
       "role_id": 5,
       "name": "Jan",
       "emp_id": "AAA-jan",
-      "allocated_at": "2026-11-04T11:21:34.822836Z",
+      "allocated_at": "2026-11-27T11:45:47.128743Z",
       "removed_at": null
      }
     ]
@@ -656,19 +1181,19 @@
   ],
   [
    "GET",
-   "/journeys/46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
+   "/journeys/f5f5a134-4975-4a42-a224-30a5bacc6fa5",
    {
-    "id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-    "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-    "train_id": "61065cce-c543-4606-944e-0ca80d0cfae0",
+    "id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+    "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+    "train_id": "17b0391f-7a34-4a90-9c57-d063ee6ef788",
     "train_no": "12002",
     "train_name": "Shatabdi Test",
     "linked_train_id": null,
     "linked_train_no": null,
-    "journey_date": "2026-11-04",
+    "journey_date": "2026-11-27",
     "outbound_end_date": null,
-    "linked_journey_date": "2026-11-05",
-    "end_date": "2026-11-05",
+    "linked_journey_date": "2026-11-28",
+    "end_date": "2026-11-28",
     "start_time": null,
     "end_time": null,
     "return_start_time": null,
@@ -679,9 +1204,11 @@
     "inspection_rounds_per_day": 2,
     "before_inspection_enabled": true,
     "after_inspection_enabled": true,
-    "supervisor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+    "supervisor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
     "supervisor_name": "Sup",
-    "created_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+    "created_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+    "auto_created": false,
+    "charged": true,
     "state": "active",
     "cancel_reason": null,
     "cancelled_at": null,
@@ -698,24 +1225,105 @@
       "position": 2
      }
     ],
-    "updated_at": "2026-11-04T11:21:35.069236Z",
+    "attendance_stages": [
+     {
+      "stage": 1,
+      "kind": "source",
+      "label": "Source",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 2,
+      "kind": "enroute",
+      "label": "Enroute 1",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 3,
+      "kind": "destination",
+      "label": "Destination",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 4,
+      "kind": "enroute",
+      "label": "Enroute 2",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 5,
+      "kind": "end",
+      "label": "End",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     }
+    ],
+    "updated_at": "2026-11-27T11:45:47.435922Z",
+    "feedback_enabled": true,
+    "feedback_daily_target": null,
+    "legs": [
+     {
+      "direction": 1,
+      "train_no": "12002",
+      "train_name": "Shatabdi Test",
+      "origin_code": null,
+      "origin_name": null,
+      "destination_code": null,
+      "destination_name": null,
+      "departs_on": "2026-11-27",
+      "departs_at": null,
+      "arrives_on": "2026-11-28",
+      "arrives_at": null,
+      "first_day": 1,
+      "last_day": 2
+     }
+    ],
     "staff": [
      {
-      "id": "c0bb431a-d8ec-4a1e-9f63-edbb369c7573",
-      "user_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "id": "3d3dbb52-6d8e-4175-b3d2-83b1b8436097",
+      "user_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "role_id": 4,
       "name": "Sup",
       "emp_id": "AAA-sup",
-      "allocated_at": "2026-11-04T11:21:35.069236Z",
+      "allocated_at": "2026-11-27T11:45:47.435922Z",
       "removed_at": null
      },
      {
-      "id": "e46598e2-1e05-422d-b87b-4b4475807ca7",
-      "user_id": "2c791450-b2c7-4596-89b4-240b003d54bf",
+      "id": "c8cbc6be-54a4-4ffe-a431-4d53b730c9ab",
+      "user_id": "6dff8c5c-8908-40f6-a680-48d995ff1d0d",
       "role_id": 5,
       "name": "Jan2",
       "emp_id": "AAA-jan2",
-      "allocated_at": "2026-11-04T11:21:35.069236Z",
+      "allocated_at": "2026-11-27T11:45:47.435922Z",
       "removed_at": null
      }
     ]
@@ -723,19 +1331,19 @@
   ],
   [
    "GET",
-   "/journeys/6f7216c1-41ae-48d0-858b-abf3ae70c8d7",
+   "/journeys/0b7664d8-7b12-402e-b6b9-fb3058c481b6",
    {
-    "id": "6f7216c1-41ae-48d0-858b-abf3ae70c8d7",
-    "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-    "train_id": "2971b45c-b534-4b25-a92e-04a2d08a9509",
+    "id": "0b7664d8-7b12-402e-b6b9-fb3058c481b6",
+    "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+    "train_id": "5acb66fd-a7d3-494b-a358-aeb13697a1f4",
     "train_no": "12003",
     "train_name": "Shatabdi Test",
     "linked_train_id": null,
     "linked_train_no": null,
-    "journey_date": "2026-11-04",
+    "journey_date": "2026-11-27",
     "outbound_end_date": null,
-    "linked_journey_date": "2026-11-05",
-    "end_date": "2026-11-05",
+    "linked_journey_date": "2026-11-28",
+    "end_date": "2026-11-28",
     "start_time": null,
     "end_time": null,
     "return_start_time": null,
@@ -746,12 +1354,14 @@
     "inspection_rounds_per_day": 2,
     "before_inspection_enabled": true,
     "after_inspection_enabled": true,
-    "supervisor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+    "supervisor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
     "supervisor_name": "Sup",
-    "created_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+    "created_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+    "auto_created": false,
+    "charged": true,
     "state": "cancelled",
     "cancel_reason": "Rake not available",
-    "cancelled_at": "2026-11-04T11:21:35.156416Z",
+    "cancelled_at": "2026-11-27T11:45:47.615509Z",
     "version": 2,
     "coaches": [
      {
@@ -765,24 +1375,105 @@
       "position": 2
      }
     ],
-    "updated_at": "2026-11-04T11:21:35.140896Z",
+    "attendance_stages": [
+     {
+      "stage": 1,
+      "kind": "source",
+      "label": "Source",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 2,
+      "kind": "enroute",
+      "label": "Enroute 1",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 3,
+      "kind": "destination",
+      "label": "Destination",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 4,
+      "kind": "enroute",
+      "label": "Enroute 2",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     },
+     {
+      "stage": 5,
+      "kind": "end",
+      "label": "End",
+      "station_code": null,
+      "station_name": null,
+      "valid_until_code": null,
+      "valid_until_name": null,
+      "window": null,
+      "closes_time": null,
+      "closes_day": null
+     }
+    ],
+    "updated_at": "2026-11-27T11:45:47.581721Z",
+    "feedback_enabled": true,
+    "feedback_daily_target": null,
+    "legs": [
+     {
+      "direction": 1,
+      "train_no": "12003",
+      "train_name": "Shatabdi Test",
+      "origin_code": null,
+      "origin_name": null,
+      "destination_code": null,
+      "destination_name": null,
+      "departs_on": "2026-11-27",
+      "departs_at": null,
+      "arrives_on": "2026-11-28",
+      "arrives_at": null,
+      "first_day": 1,
+      "last_day": 2
+     }
+    ],
     "staff": [
      {
-      "id": "8649dcea-5f04-45b7-8fed-42b4b093e268",
-      "user_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "id": "1a834ebe-8492-4b37-b8df-210f41714097",
+      "user_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "role_id": 4,
       "name": "Sup",
       "emp_id": "AAA-sup",
-      "allocated_at": "2026-11-04T11:21:35.104380Z",
+      "allocated_at": "2026-11-27T11:45:47.508284Z",
       "removed_at": null
      },
      {
-      "id": "9c01102a-1e27-49ee-b1c8-2840892e607e",
-      "user_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+      "id": "2e5c88fa-bfd9-42e2-b8bd-50a21ecff882",
+      "user_id": "ed45b779-ff70-416c-9594-d89959fa4982",
       "role_id": 5,
       "name": "Jan",
       "emp_id": "AAA-jan",
-      "allocated_at": "2026-11-04T11:21:35.104380Z",
+      "allocated_at": "2026-11-27T11:45:47.508284Z",
       "removed_at": null
      }
     ]
@@ -790,10 +1481,10 @@
   ],
   [
    "GET",
-   "/attendance/journeys/a285c38c-e1a2-48f5-8927-d8c5c5c781ea/status",
+   "/attendance/journeys/f32de101-1dc4-4be2-a1d5-01521900f0ce/status",
    [
     {
-     "employee_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+     "employee_id": "82449957-f7a1-48a2-9352-13a0036522c5",
      "name": "Sup",
      "emp_id": "AAA-sup",
      "role_id": 4,
@@ -801,33 +1492,73 @@
       {
        "stage": 1,
        "status": "taken",
-       "attendance_id": "a911ccfa-3729-4319-85b3-208e3230eae9"
+       "attendance_id": "5ae1b0b1-700c-4ff8-b3f5-1ffa9a1ec1ac",
+       "kind": "source",
+       "label": "Source",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 2,
        "status": "next",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 1",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 3,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "destination",
+       "label": "Destination",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 4,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 2",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 5,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "end",
+       "label": "End",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       }
      ],
      "completed": false
     },
     {
-     "employee_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+     "employee_id": "ed45b779-ff70-416c-9594-d89959fa4982",
      "name": "Jan",
      "emp_id": "AAA-jan",
      "role_id": 5,
@@ -835,27 +1566,67 @@
       {
        "stage": 1,
        "status": "taken",
-       "attendance_id": "169c3d51-49f3-484b-9bee-fe09f11aeec7"
+       "attendance_id": "00f83a80-010a-437f-abcd-77b24a718ab1",
+       "kind": "source",
+       "label": "Source",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 2,
        "status": "taken",
-       "attendance_id": "b16abd8e-de14-47c4-ab7b-694b7b873d3c"
+       "attendance_id": "43a9fb82-827d-45e8-8651-8ac65a9c5baa",
+       "kind": "enroute",
+       "label": "Enroute 1",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 3,
        "status": "taken",
-       "attendance_id": "ab494928-1216-4a4a-b220-a3283235098a"
+       "attendance_id": "6960d00d-d082-4fba-8e8f-59bb6397490b",
+       "kind": "destination",
+       "label": "Destination",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 4,
        "status": "next",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 2",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 5,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "end",
+       "label": "End",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       }
      ],
      "completed": false
@@ -864,7 +1635,7 @@
   ],
   [
    "GET",
-   "/inspections/journeys/a285c38c-e1a2-48f5-8927-d8c5c5c781ea/status",
+   "/inspections/journeys/f32de101-1dc4-4be2-a1d5-01521900f0ce/status",
    [
     {
      "coach_code": "B1",
@@ -877,19 +1648,19 @@
        "round": 1,
        "phase": "B",
        "status": "taken",
-       "inspection_id": "71c64b02-8c37-40ad-a8b2-c992bc14f581"
+       "inspection_id": "18848c98-aa25-42b9-a2a1-d4cad91b824d"
       },
       {
        "round": 1,
        "phase": "A",
        "status": "taken",
-       "inspection_id": "b935d278-f7e9-4cc0-80dd-6dd74b3a5d1e"
+       "inspection_id": "99b7a8d1-7f48-4b7b-861b-c489e5f2ec60"
       },
       {
        "round": 2,
        "phase": "B",
        "status": "taken",
-       "inspection_id": "87884c92-430a-4f2e-b3a6-c7f8e4292f9c"
+       "inspection_id": "246ecf99-abcb-40d6-ae26-f09bd9841884"
       },
       {
        "round": 2,
@@ -943,7 +1714,7 @@
        "round": 1,
        "phase": "B",
        "status": "taken",
-       "inspection_id": "89dfd705-d751-4a3a-b2c7-b62b0e0e619f"
+       "inspection_id": "27971000-701a-4009-a30d-f92245fabd16"
       },
       {
        "round": 1,
@@ -960,7 +1731,7 @@
       {
        "round": 2,
        "phase": "A",
-       "status": "locked",
+       "status": "open",
        "inspection_id": null
       }
      ]
@@ -1002,44 +1773,47 @@
   ],
   [
    "GET",
-   "/inventory/journeys/a285c38c-e1a2-48f5-8927-d8c5c5c781ea/transactions",
+   "/inventory/journeys/f32de101-1dc4-4be2-a1d5-01521900f0ce/transactions",
    {
     "items": [
      {
-      "id": "e0556543-155c-4f5a-91ed-9e44f4d902f2",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "item_id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
+      "id": "dc1dbef4-082c-4835-ae21-4cdf8139b168",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "item_id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
       "coach_code": "B1",
+      "recipient_id": null,
       "txn_type": "issue",
       "quantity": 10.0,
       "remarks": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "created_at": "2026-11-04T11:21:36.554399Z"
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "created_at": "2026-11-27T11:45:49.150991Z"
      },
      {
-      "id": "7db1ecc3-63ae-487c-9d42-242897afa5fd",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "item_id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
+      "id": "fe119c0a-5d3e-4c26-90d9-6c03bd4f1cd6",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "item_id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
       "coach_code": "B1",
+      "recipient_id": null,
       "txn_type": "return",
       "quantity": 4.0,
       "remarks": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "created_at": "2026-11-04T11:21:36.578180Z"
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "created_at": "2026-11-27T11:45:49.183887Z"
      },
      {
-      "id": "07e54bda-7852-461e-9531-a21b9db117ac",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "item_id": "0efd6193-731f-47cb-9458-b611c5bbf950",
+      "id": "92040237-5dc7-4c31-87f6-9cac35665dea",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "item_id": "0da094fe-fb40-448d-8e83-d2f21a52e98d",
       "coach_code": null,
+      "recipient_id": null,
       "txn_type": "issue",
       "quantity": 6.0,
       "remarks": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "created_at": "2026-11-04T11:21:36.601948Z"
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "created_at": "2026-11-27T11:45:49.211707Z"
      }
     ],
     "total": 3,
@@ -1049,10 +1823,10 @@
   ],
   [
    "GET",
-   "/attendance/journeys/46a70b9d-31cf-45a9-b9ac-8c41653dfc24/status",
+   "/attendance/journeys/f5f5a134-4975-4a42-a224-30a5bacc6fa5/status",
    [
     {
-     "employee_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+     "employee_id": "82449957-f7a1-48a2-9352-13a0036522c5",
      "name": "Sup",
      "emp_id": "AAA-sup",
      "role_id": 4,
@@ -1060,33 +1834,73 @@
       {
        "stage": 1,
        "status": "next",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "source",
+       "label": "Source",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 2,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 1",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 3,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "destination",
+       "label": "Destination",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 4,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 2",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 5,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "end",
+       "label": "End",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       }
      ],
      "completed": false
     },
     {
-     "employee_id": "2c791450-b2c7-4596-89b4-240b003d54bf",
+     "employee_id": "6dff8c5c-8908-40f6-a680-48d995ff1d0d",
      "name": "Jan2",
      "emp_id": "AAA-jan2",
      "role_id": 5,
@@ -1094,27 +1908,67 @@
       {
        "stage": 1,
        "status": "taken",
-       "attendance_id": "02956328-4058-4092-b597-501dea019aad"
+       "attendance_id": "85088b34-03de-4654-8931-f0ddb3b3b119",
+       "kind": "source",
+       "label": "Source",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 2,
        "status": "next",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 1",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 3,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "destination",
+       "label": "Destination",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 4,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 2",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 5,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "end",
+       "label": "End",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       }
      ],
      "completed": false
@@ -1123,7 +1977,7 @@
   ],
   [
    "GET",
-   "/inspections/journeys/46a70b9d-31cf-45a9-b9ac-8c41653dfc24/status",
+   "/inspections/journeys/f5f5a134-4975-4a42-a224-30a5bacc6fa5/status",
    [
     {
      "coach_code": "B1",
@@ -1136,7 +1990,7 @@
        "round": 1,
        "phase": "B",
        "status": "taken",
-       "inspection_id": "18e5f650-eead-4724-b7f3-73095ba6fc4b"
+       "inspection_id": "e56d13af-2817-4387-aa23-5496c39a4f56"
       },
       {
        "round": 1,
@@ -1153,7 +2007,7 @@
       {
        "round": 2,
        "phase": "A",
-       "status": "locked",
+       "status": "open",
        "inspection_id": null
       }
      ]
@@ -1207,19 +2061,19 @@
       {
        "round": 1,
        "phase": "A",
-       "status": "locked",
+       "status": "open",
        "inspection_id": null
       },
       {
        "round": 2,
        "phase": "B",
-       "status": "locked",
+       "status": "open",
        "inspection_id": null
       },
       {
        "round": 2,
        "phase": "A",
-       "status": "locked",
+       "status": "open",
        "inspection_id": null
       }
      ]
@@ -1261,20 +2115,21 @@
   ],
   [
    "GET",
-   "/inventory/journeys/46a70b9d-31cf-45a9-b9ac-8c41653dfc24/transactions",
+   "/inventory/journeys/f5f5a134-4975-4a42-a224-30a5bacc6fa5/transactions",
    {
     "items": [
      {
-      "id": "cef6a152-4e0b-47c5-8639-6a22934ad762",
-      "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "item_id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
+      "id": "02a1c163-23c9-4607-8686-46afdd3683a1",
+      "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "item_id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
       "coach_code": "B1",
+      "recipient_id": null,
       "txn_type": "issue",
       "quantity": 2.5,
       "remarks": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "created_at": "2026-11-04T11:21:36.618171Z"
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "created_at": "2026-11-27T11:45:49.235105Z"
      }
     ],
     "total": 1,
@@ -1284,10 +2139,10 @@
   ],
   [
    "GET",
-   "/attendance/journeys/6f7216c1-41ae-48d0-858b-abf3ae70c8d7/status",
+   "/attendance/journeys/0b7664d8-7b12-402e-b6b9-fb3058c481b6/status",
    [
     {
-     "employee_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+     "employee_id": "82449957-f7a1-48a2-9352-13a0036522c5",
      "name": "Sup",
      "emp_id": "AAA-sup",
      "role_id": 4,
@@ -1295,33 +2150,73 @@
       {
        "stage": 1,
        "status": "next",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "source",
+       "label": "Source",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 2,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 1",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 3,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "destination",
+       "label": "Destination",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 4,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 2",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 5,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "end",
+       "label": "End",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       }
      ],
      "completed": false
     },
     {
-     "employee_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+     "employee_id": "ed45b779-ff70-416c-9594-d89959fa4982",
      "name": "Jan",
      "emp_id": "AAA-jan",
      "role_id": 5,
@@ -1329,27 +2224,67 @@
       {
        "stage": 1,
        "status": "next",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "source",
+       "label": "Source",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 2,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 1",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 3,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "destination",
+       "label": "Destination",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 4,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "enroute",
+       "label": "Enroute 2",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       },
       {
        "stage": 5,
        "status": "locked",
-       "attendance_id": null
+       "attendance_id": null,
+       "kind": "end",
+       "label": "End",
+       "station_code": null,
+       "station_name": null,
+       "valid_until_code": null,
+       "valid_until_name": null,
+       "closes_time": null,
+       "closes_day": null
       }
      ],
      "completed": false
@@ -1358,7 +2293,7 @@
   ],
   [
    "GET",
-   "/inspections/journeys/6f7216c1-41ae-48d0-858b-abf3ae70c8d7/status",
+   "/inspections/journeys/0b7664d8-7b12-402e-b6b9-fb3058c481b6/status",
    [
     {
      "coach_code": "B1",
@@ -1496,7 +2431,7 @@
   ],
   [
    "GET",
-   "/inventory/journeys/6f7216c1-41ae-48d0-858b-abf3ae70c8d7/transactions",
+   "/inventory/journeys/0b7664d8-7b12-402e-b6b9-fb3058c481b6/transactions",
    {
     "items": [],
     "total": 0,
@@ -1510,97 +2445,142 @@
    {
     "items": [
      {
-      "id": "a911ccfa-3729-4319-85b3-208e3230eae9",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "employee_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "id": "5ae1b0b1-700c-4ff8-b3f5-1ffa9a1ec1ac",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "employee_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "stage": 1,
-      "device_timestamp": "2026-11-04T11:21:35.506411Z",
-      "server_timestamp": "2026-11-04T11:21:35.539115Z",
+      "station_code": null,
+      "stage_label": "Source",
+      "route_check": null,
+      "device_timestamp": "2026-11-27T11:45:47.961757Z",
+      "server_timestamp": "2026-11-27T11:45:47.992105Z",
       "latitude": 23.1,
       "longitude": 79.9,
       "gps_accuracy_m": null,
-      "photo_media_id": "2ddae030-f029-46aa-8fcc-400773c6c1a0",
+      "photo_media_id": "5f0d94c6-9762-4acb-a39b-3188ccbbdfed",
       "group_submission_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "face_distance": null,
+      "face_model": null,
+      "fingerprint_score": null,
+      "fingerprint_matcher": null,
+      "fingerprint_finger": null,
+      "identified_by": null,
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "submitted",
       "verified_by_id": null,
       "review_remarks": null,
       "sync_op_id": null
      },
      {
-      "id": "ab494928-1216-4a4a-b220-a3283235098a",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "employee_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+      "id": "6960d00d-d082-4fba-8e8f-59bb6397490b",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "employee_id": "ed45b779-ff70-416c-9594-d89959fa4982",
       "stage": 3,
-      "device_timestamp": "2026-11-04T11:21:35.457880Z",
-      "server_timestamp": "2026-11-04T11:21:35.490062Z",
+      "station_code": null,
+      "stage_label": "Destination",
+      "route_check": null,
+      "device_timestamp": "2026-11-27T11:45:47.912171Z",
+      "server_timestamp": "2026-11-27T11:45:47.939956Z",
       "latitude": 23.1,
       "longitude": 79.9,
       "gps_accuracy_m": null,
-      "photo_media_id": "3e779ff4-5446-4587-b380-2e7c388bd21c",
+      "photo_media_id": "e5284963-3267-4d4b-8862-a49cbd2d482a",
       "group_submission_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "face_distance": null,
+      "face_model": null,
+      "fingerprint_score": null,
+      "fingerprint_matcher": null,
+      "fingerprint_finger": null,
+      "identified_by": null,
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "submitted",
       "verified_by_id": null,
       "review_remarks": null,
       "sync_op_id": null
      },
      {
-      "id": "b16abd8e-de14-47c4-ab7b-694b7b873d3c",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "employee_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+      "id": "43a9fb82-827d-45e8-8651-8ac65a9c5baa",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "employee_id": "ed45b779-ff70-416c-9594-d89959fa4982",
       "stage": 2,
-      "device_timestamp": "2026-11-04T11:21:35.402910Z",
-      "server_timestamp": "2026-11-04T11:21:35.437904Z",
+      "station_code": null,
+      "stage_label": "Enroute 1",
+      "route_check": null,
+      "device_timestamp": "2026-11-27T11:45:47.853152Z",
+      "server_timestamp": "2026-11-27T11:45:47.890104Z",
       "latitude": 23.1,
       "longitude": 79.9,
       "gps_accuracy_m": null,
-      "photo_media_id": "be74f788-1fc2-4ff7-8393-7e8fb0329a08",
+      "photo_media_id": "3af1f8a2-88b7-47b2-9b6e-391e516257bc",
       "group_submission_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "face_distance": null,
+      "face_model": null,
+      "fingerprint_score": null,
+      "fingerprint_matcher": null,
+      "fingerprint_finger": null,
+      "identified_by": null,
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "submitted",
       "verified_by_id": null,
       "review_remarks": null,
       "sync_op_id": null
      },
      {
-      "id": "169c3d51-49f3-484b-9bee-fe09f11aeec7",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "employee_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+      "id": "00f83a80-010a-437f-abcd-77b24a718ab1",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "employee_id": "ed45b779-ff70-416c-9594-d89959fa4982",
       "stage": 1,
-      "device_timestamp": "2026-11-04T11:21:35.281413Z",
-      "server_timestamp": "2026-11-04T11:21:35.363061Z",
+      "station_code": null,
+      "stage_label": "Source",
+      "route_check": null,
+      "device_timestamp": "2026-11-27T11:45:47.753318Z",
+      "server_timestamp": "2026-11-27T11:45:47.804521Z",
       "latitude": 23.1,
       "longitude": 79.9,
       "gps_accuracy_m": null,
-      "photo_media_id": "152f944c-f448-4b7d-a70d-4d00e30c76fc",
+      "photo_media_id": "5bedd778-e058-4a7d-bed0-40df111e3d8d",
       "group_submission_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "face_distance": null,
+      "face_model": null,
+      "fingerprint_score": null,
+      "fingerprint_matcher": null,
+      "fingerprint_finger": null,
+      "identified_by": null,
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "verified",
-      "verified_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+      "verified_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
       "review_remarks": null,
       "sync_op_id": null
      },
      {
-      "id": "02956328-4058-4092-b597-501dea019aad",
-      "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "employee_id": "2c791450-b2c7-4596-89b4-240b003d54bf",
+      "id": "85088b34-03de-4654-8931-f0ddb3b3b119",
+      "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "employee_id": "6dff8c5c-8908-40f6-a680-48d995ff1d0d",
       "stage": 1,
-      "device_timestamp": "2026-11-03T18:35:00Z",
-      "server_timestamp": "2026-11-04T11:21:35.586282Z",
+      "station_code": null,
+      "stage_label": "Source",
+      "route_check": null,
+      "device_timestamp": "2026-11-26T18:35:00Z",
+      "server_timestamp": "2026-11-27T11:45:48.043832Z",
       "latitude": 23.1,
       "longitude": 79.9,
       "gps_accuracy_m": null,
-      "photo_media_id": "25330f2a-e4a4-48fb-b5bb-00152755507d",
+      "photo_media_id": "192960fc-3e35-44fc-9c7e-a5a927379b19",
       "group_submission_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "face_distance": null,
+      "face_model": null,
+      "fingerprint_score": null,
+      "fingerprint_matcher": null,
+      "fingerprint_finger": null,
+      "identified_by": null,
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "rejected",
-      "verified_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+      "verified_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
       "review_remarks": "Blurred photo",
       "sync_op_id": null
      }
@@ -1616,102 +2596,102 @@
    {
     "items": [
      {
-      "id": "b935d278-f7e9-4cc0-80dd-6dd74b3a5d1e",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "99b7a8d1-7f48-4b7b-861b-c489e5f2ec60",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "coach_code": "B1",
       "day": 1,
       "round": 1,
       "phase": "A",
       "comments": null,
-      "device_timestamp": "2026-11-04T11:21:35.679705Z",
-      "server_timestamp": "2026-11-04T11:21:35.708730Z",
+      "device_timestamp": "2026-11-27T11:45:48.149239Z",
+      "server_timestamp": "2026-11-27T11:45:48.177820Z",
       "latitude": 1.0,
       "longitude": 1.0,
       "gps_accuracy_m": null,
-      "photo_media_id": "e9adfa15-64d9-41f7-9303-4557b768484b",
+      "photo_media_id": "4bb88061-85e6-4d15-a46b-3150d585a489",
       "video_media_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "submitted",
       "review_remarks": null
      },
      {
-      "id": "18e5f650-eead-4724-b7f3-73095ba6fc4b",
-      "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "e56d13af-2817-4387-aa23-5496c39a4f56",
+      "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "coach_code": "B1",
       "day": 1,
       "round": 1,
       "phase": "B",
       "comments": null,
-      "device_timestamp": "2026-11-04T11:21:35.811120Z",
-      "server_timestamp": "2026-11-04T11:21:35.841050Z",
+      "device_timestamp": "2026-11-27T11:45:48.431976Z",
+      "server_timestamp": "2026-11-27T11:45:48.459099Z",
       "latitude": 1.0,
       "longitude": 1.0,
       "gps_accuracy_m": null,
-      "photo_media_id": "e4109328-a5a6-448c-b18f-8f8770c9b160",
+      "photo_media_id": "bfea14e3-93cf-4ddb-9497-14612afda3f9",
       "video_media_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "submitted",
       "review_remarks": null
      },
      {
-      "id": "71c64b02-8c37-40ad-a8b2-c992bc14f581",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "18848c98-aa25-42b9-a2a1-d4cad91b824d",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "coach_code": "B1",
       "day": 1,
       "round": 1,
       "phase": "B",
       "comments": null,
-      "device_timestamp": "2026-11-04T11:21:35.624237Z",
-      "server_timestamp": "2026-11-04T11:21:35.654349Z",
+      "device_timestamp": "2026-11-27T11:45:48.093536Z",
+      "server_timestamp": "2026-11-27T11:45:48.123937Z",
       "latitude": 1.0,
       "longitude": 1.0,
       "gps_accuracy_m": null,
-      "photo_media_id": "7bd047fc-7ad9-4145-950e-e8c826183e19",
+      "photo_media_id": "5bee1b95-4b92-47ad-87ac-2ae6eca9f68e",
       "video_media_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "verified",
       "review_remarks": null
      },
      {
-      "id": "87884c92-430a-4f2e-b3a6-c7f8e4292f9c",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "246ecf99-abcb-40d6-ae26-f09bd9841884",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "coach_code": "B1",
       "day": 1,
       "round": 2,
       "phase": "B",
       "comments": null,
-      "device_timestamp": "2026-11-04T11:21:35.766918Z",
-      "server_timestamp": "2026-11-04T11:21:35.794350Z",
+      "device_timestamp": "2026-11-27T11:45:48.244591Z",
+      "server_timestamp": "2026-11-27T11:45:48.284703Z",
       "latitude": 1.0,
       "longitude": 1.0,
       "gps_accuracy_m": null,
-      "photo_media_id": "474504e5-7929-47f4-8316-19d001161796",
+      "photo_media_id": "5cf31c0f-5ccc-431a-b7d8-006069d2b632",
       "video_media_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "submitted",
       "review_remarks": null
      },
      {
-      "id": "89dfd705-d751-4a3a-b2c7-b62b0e0e619f",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
+      "id": "27971000-701a-4009-a30d-f92245fabd16",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
       "coach_code": "S1",
       "day": 1,
       "round": 1,
       "phase": "B",
       "comments": null,
-      "device_timestamp": "2026-11-04T11:21:35.722728Z",
-      "server_timestamp": "2026-11-04T11:21:35.750775Z",
+      "device_timestamp": "2026-11-27T11:45:48.195006Z",
+      "server_timestamp": "2026-11-27T11:45:48.227443Z",
       "latitude": 1.0,
       "longitude": 1.0,
       "gps_accuracy_m": null,
-      "photo_media_id": "def0a015-27d5-43c9-93e6-a16c72f06745",
+      "photo_media_id": "e7c41f77-7a56-429b-a92a-6da16cff1741",
       "video_media_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
       "verification_status": "rejected",
       "review_remarks": null
      }
@@ -1727,110 +2707,110 @@
    {
     "items": [
      {
-      "id": "6876db2e-111d-4466-9123-1f4edd8806e4",
+      "id": "713564a1-c409-4650-9a32-02f5e17bc7d4",
       "complaint_no": "AAA-2026-000003",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-      "train_id": "61065cce-c543-4606-944e-0ca80d0cfae0",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+      "train_id": "17b0391f-7a34-4a90-9c57-d063ee6ef788",
       "coach_code": "B1",
       "coach_class": "AC",
-      "category_id": "2b6ea39c-c852-4da2-a9d4-01e7f7499c47",
+      "category_id": "c2039108-4420-4988-8315-859ad7da775c",
       "subcategory_id": null,
       "description": "Fan in bay 3 not working",
       "latitude": 23.1,
       "longitude": 79.9,
-      "department_id": "25372001-6f45-4810-b83f-138aa2d27bcf",
+      "department_id": "200332d6-eb43-42d3-9564-69f21d881472",
       "assigned_to_id": null,
       "status": "completed",
       "sla_hours": 1,
-      "due_at": "2026-11-04T12:21:36.491899Z",
+      "due_at": "2026-11-27T12:45:49.082926Z",
       "is_overdue": false,
       "resolution_remarks": "Fixed",
-      "closed_at": "2026-11-04T11:21:36.538919Z",
-      "closed_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "server_timestamp": "2026-11-04T11:21:36.485777Z",
+      "closed_at": "2026-11-27T11:45:49.135736Z",
+      "closed_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "server_timestamp": "2026-11-27T11:45:49.070440Z",
       "attachment_ids": [],
       "history": [
        {
-        "id": "1cd9fcfc-de8e-450c-9d0b-8783c854173e",
+        "id": "33b72759-ed5a-425b-9ba8-7fb51346992b",
         "from_status": null,
         "to_status": "created",
-        "actor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+        "actor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
         "forwarded_to_id": null,
-        "department_id": "25372001-6f45-4810-b83f-138aa2d27bcf",
+        "department_id": "200332d6-eb43-42d3-9564-69f21d881472",
         "remarks": "Created",
-        "created_at": "2026-11-04T11:21:36.485777Z"
+        "created_at": "2026-11-27T11:45:49.070440Z"
        },
        {
-        "id": "76c0c770-8ceb-4015-8c00-552412bbf11f",
+        "id": "2e13b760-3dbe-46d0-8db3-0350af109d89",
         "from_status": "created",
         "to_status": "completed",
-        "actor_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+        "actor_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
         "forwarded_to_id": null,
         "department_id": null,
         "remarks": "Fixed",
-        "created_at": "2026-11-04T11:21:36.534062Z"
+        "created_at": "2026-11-27T11:45:49.127098Z"
        }
       ]
      },
      {
-      "id": "50e9f40b-c9fd-43c0-a225-9bc061248e76",
+      "id": "8d4da788-a156-4fc8-a029-6693a9b41145",
       "complaint_no": "AAA-2026-000002",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "train_id": "69dd37f2-d6c0-4858-a017-670c70c6ef26",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "train_id": "25eb137d-bd34-460e-9ad4-6e4cc12986d0",
       "coach_code": "B1",
       "coach_class": "AC",
-      "category_id": "2b6ea39c-c852-4da2-a9d4-01e7f7499c47",
+      "category_id": "c2039108-4420-4988-8315-859ad7da775c",
       "subcategory_id": null,
       "description": "Fan in bay 3 not working",
       "latitude": 23.1,
       "longitude": 79.9,
-      "department_id": "25372001-6f45-4810-b83f-138aa2d27bcf",
+      "department_id": "200332d6-eb43-42d3-9564-69f21d881472",
       "assigned_to_id": null,
       "status": "in_process",
       "sla_hours": 1,
-      "due_at": "2026-11-04T12:21:36.467478Z",
+      "due_at": "2026-11-27T12:45:49.053039Z",
       "is_overdue": false,
       "resolution_remarks": null,
       "closed_at": null,
       "closed_by_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "server_timestamp": "2026-11-04T11:21:36.461595Z",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "server_timestamp": "2026-11-27T11:45:49.038090Z",
       "attachment_ids": [],
       "history": [
        {
-        "id": "66021f1c-e554-4220-8e6a-120ecbe67530",
+        "id": "0b5cd931-9ccc-4496-afd6-09b6399a2044",
         "from_status": null,
         "to_status": "created",
-        "actor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+        "actor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
         "forwarded_to_id": null,
-        "department_id": "25372001-6f45-4810-b83f-138aa2d27bcf",
+        "department_id": "200332d6-eb43-42d3-9564-69f21d881472",
         "remarks": "Created",
-        "created_at": "2026-11-04T11:21:36.461595Z"
+        "created_at": "2026-11-27T11:45:49.038090Z"
        },
        {
-        "id": "08b92f6d-1e89-45f3-9051-a6c2ad89eb1e",
+        "id": "3fa360a5-b8e1-4a11-a04a-a4ba1b8feed7",
         "from_status": "created",
         "to_status": "in_process",
-        "actor_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+        "actor_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
         "forwarded_to_id": null,
         "department_id": null,
         "remarks": null,
-        "created_at": "2026-11-04T11:21:36.512262Z"
+        "created_at": "2026-11-27T11:45:49.102700Z"
        }
       ]
      },
      {
-      "id": "2621d863-369a-415c-b64e-df15f028fbfd",
+      "id": "d2ea1b58-999e-47c6-a8db-6a7cf87db57c",
       "complaint_no": "AAA-2026-000001",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "train_id": "69dd37f2-d6c0-4858-a017-670c70c6ef26",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "train_id": "25eb137d-bd34-460e-9ad4-6e4cc12986d0",
       "coach_code": "B1",
       "coach_class": "AC",
-      "category_id": "3d97b51e-d3d1-4f5a-be34-9a5ad94b4e1a",
+      "category_id": "018fa1ce-5a03-4e81-aaa6-acf555fc87dd",
       "subcategory_id": null,
       "description": "Fan in bay 3 not working",
       "latitude": 23.1,
@@ -1839,24 +2819,24 @@
       "assigned_to_id": null,
       "status": "created",
       "sla_hours": 48,
-      "due_at": "2026-11-06T11:21:36.422051Z",
+      "due_at": "2026-11-29T11:45:49.003096Z",
       "is_overdue": false,
       "resolution_remarks": null,
       "closed_at": null,
       "closed_by_id": null,
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "server_timestamp": "2026-11-04T11:21:36.408075Z",
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "server_timestamp": "2026-11-27T11:45:48.976326Z",
       "attachment_ids": [],
       "history": [
        {
-        "id": "994e84cb-cf69-4c8d-ad46-f5f8534e0dac",
+        "id": "b8a79dc9-bfc2-4a2c-a0e9-711a18b1cbd0",
         "from_status": null,
         "to_status": "created",
-        "actor_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+        "actor_id": "82449957-f7a1-48a2-9352-13a0036522c5",
         "forwarded_to_id": null,
         "department_id": null,
         "remarks": "Created",
-        "created_at": "2026-11-04T11:21:36.408075Z"
+        "created_at": "2026-11-27T11:45:48.976326Z"
        }
       ]
      }
@@ -1872,14 +2852,14 @@
    {
     "items": [
      {
-      "id": "82d02d32-1213-4a7b-825f-047f5bf6afea",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "bank_id": "ffc772f4-e718-4562-8912-1c4413e63819",
+      "id": "e2063616-f3f0-4adb-82a7-24b011058186",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
       "coach_code": "B1",
       "coach_class": "AC",
       "journey_day": 1,
-      "feedback_date": "2026-11-04",
+      "feedback_date": "2026-11-27",
       "passenger_name": "Asha",
       "mobile_masked": "93XXXXXX33",
       "pnr": "3333333333",
@@ -1891,21 +2871,56 @@
       "comments": null,
       "voice_media_id": null,
       "ratings": [],
-      "collected_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "device_timestamp": "2026-11-04T11:21:36.235548Z",
-      "server_timestamp": "2026-11-04T11:21:36.244143Z",
-      "verified_at": "2026-11-04T11:21:36.312941Z",
-      "completed_at": null
+      "collected_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "device_timestamp": "2026-11-27T11:45:48.788660Z",
+      "server_timestamp": "2026-11-27T11:45:48.793446Z",
+      "verified_at": "2026-11-27T11:45:48.874655Z",
+      "completed_at": null,
+      "direction": 1,
+      "train_no": "12001",
+      "coach_source": "selected",
+      "coach_verified": true,
+      "pnr_journey_date": null,
+      "boarding_code": null,
+      "alighting_code": null,
+      "pnr_details": {
+       "to": null,
+       "from": null,
+       "upto": null,
+       "berth": null,
+       "class": null,
+       "found": true,
+       "checks": {
+        "date": "unknown",
+        "coach": "ok",
+        "train": "ok",
+        "stations": "unknown"
+       },
+       "source": null,
+       "status": null,
+       "boarding": null,
+       "coach_ids": [
+        "B1"
+       ],
+       "direction": 1,
+       "passengers": [],
+       "train_name": "Test",
+       "chart_status": null,
+       "journey_date": null,
+       "train_number": "12001",
+       "matched_coach": "B1",
+       "train_cancelled": false
+      }
      },
      {
-      "id": "e514a6b1-8352-4c24-89fb-c6d2efc3ff5d",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "bank_id": "ffc772f4-e718-4562-8912-1c4413e63819",
+      "id": "e25364fd-a998-4ee9-a13a-c472690cc8e3",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
       "coach_code": "B1",
       "coach_class": "AC",
       "journey_day": 1,
-      "feedback_date": "2026-11-04",
+      "feedback_date": "2026-11-27",
       "passenger_name": "Asha",
       "mobile_masked": "92XXXXXX22",
       "pnr": "2222222222",
@@ -1918,29 +2933,64 @@
       "voice_media_id": null,
       "ratings": [
        {
-        "question_id": "b8fbd7c0-d623-41fc-ae42-aca765592cda",
+        "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
         "value": 3
        },
        {
-        "question_id": "44382c8e-5955-40b0-a225-5c20c7c50f19",
+        "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
         "value": 1
        }
       ],
-      "collected_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "device_timestamp": "2026-11-04T11:21:36.131617Z",
-      "server_timestamp": "2026-11-04T11:21:36.136334Z",
-      "verified_at": "2026-11-04T11:21:36.208811Z",
-      "completed_at": "2026-11-04T11:21:36.232938Z"
+      "collected_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "device_timestamp": "2026-11-27T11:45:48.674874Z",
+      "server_timestamp": "2026-11-27T11:45:48.678189Z",
+      "verified_at": "2026-11-27T11:45:48.766100Z",
+      "completed_at": "2026-11-27T11:45:48.783868Z",
+      "direction": 1,
+      "train_no": "12001",
+      "coach_source": "selected",
+      "coach_verified": true,
+      "pnr_journey_date": null,
+      "boarding_code": null,
+      "alighting_code": null,
+      "pnr_details": {
+       "to": null,
+       "from": null,
+       "upto": null,
+       "berth": null,
+       "class": null,
+       "found": true,
+       "checks": {
+        "date": "unknown",
+        "coach": "ok",
+        "train": "ok",
+        "stations": "unknown"
+       },
+       "source": null,
+       "status": null,
+       "boarding": null,
+       "coach_ids": [
+        "B1"
+       ],
+       "direction": 1,
+       "passengers": [],
+       "train_name": "Test",
+       "chart_status": null,
+       "journey_date": null,
+       "train_number": "12001",
+       "matched_coach": "B1",
+       "train_cancelled": false
+      }
      },
      {
-      "id": "83682d13-5368-49b9-85b4-86e4867cccf4",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "bank_id": "ffc772f4-e718-4562-8912-1c4413e63819",
+      "id": "302c7bc4-f3f3-4419-99ad-92653cdb2974",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
       "coach_code": "B1",
       "coach_class": "AC",
       "journey_day": 1,
-      "feedback_date": "2026-11-04",
+      "feedback_date": "2026-11-27",
       "passenger_name": "Asha",
       "mobile_masked": "91XXXXXX11",
       "pnr": "1111111111",
@@ -1953,19 +3003,54 @@
       "voice_media_id": null,
       "ratings": [
        {
-        "question_id": "b8fbd7c0-d623-41fc-ae42-aca765592cda",
+        "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
         "value": 5
        },
        {
-        "question_id": "44382c8e-5955-40b0-a225-5c20c7c50f19",
+        "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
         "value": 3
        }
       ],
-      "collected_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "device_timestamp": "2026-11-04T11:21:35.878807Z",
-      "server_timestamp": "2026-11-04T11:21:35.885331Z",
-      "verified_at": "2026-11-04T11:21:36.006160Z",
-      "completed_at": "2026-11-04T11:21:36.122397Z"
+      "collected_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "device_timestamp": "2026-11-27T11:45:48.503303Z",
+      "server_timestamp": "2026-11-27T11:45:48.514363Z",
+      "verified_at": "2026-11-27T11:45:48.644621Z",
+      "completed_at": "2026-11-27T11:45:48.665967Z",
+      "direction": 1,
+      "train_no": "12001",
+      "coach_source": "selected",
+      "coach_verified": true,
+      "pnr_journey_date": null,
+      "boarding_code": null,
+      "alighting_code": null,
+      "pnr_details": {
+       "to": null,
+       "from": null,
+       "upto": null,
+       "berth": null,
+       "class": null,
+       "found": true,
+       "checks": {
+        "date": "unknown",
+        "coach": "ok",
+        "train": "ok",
+        "stations": "unknown"
+       },
+       "source": null,
+       "status": null,
+       "boarding": null,
+       "coach_ids": [
+        "B1"
+       ],
+       "direction": 1,
+       "passengers": [],
+       "train_name": "Test",
+       "chart_status": null,
+       "journey_date": null,
+       "train_number": "12001",
+       "matched_coach": "B1",
+       "train_cancelled": false
+      }
      }
     ],
     "total": 3,
@@ -1979,10 +3064,10 @@
    {
     "items": [
      {
-      "id": "df7af6e0-c4c7-45b3-837e-15b1a6bc935e",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "bank_id": "9c47e3ba-f1d6-46d7-93a2-01a837917c2b",
+      "id": "8525b15a-1718-451d-8aef-13c38302e8ed",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "bank_id": "426aa6b1-6b6e-4fe0-8249-b8ccc1b98d14",
       "railway_employee_id": "R2",
       "official_name": "Insp. Rao",
       "designation": null,
@@ -1994,23 +3079,23 @@
       "verified_by_id": null,
       "ratings": [
        {
-        "question_id": "33246210-82df-45db-a22a-e7fdf022e6ae",
+        "question_id": "4dbf1cee-77a0-493d-b4ec-a5744ee4bdf2",
         "value": 2
        },
        {
-        "question_id": "3f18dc6a-b6bf-42df-880d-bbea02c0ac38",
+        "question_id": "47c28f90-50bc-445b-9b28-6a9f81a7fa64",
         "value": 2
        }
       ],
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "device_timestamp": "2026-11-04T11:21:36.358818Z",
-      "server_timestamp": "2026-11-04T11:21:36.366120Z"
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "device_timestamp": "2026-11-27T11:45:48.924206Z",
+      "server_timestamp": "2026-11-27T11:45:48.929289Z"
      },
      {
-      "id": "37c8b88a-378b-4073-8b70-f8eeeed041fe",
-      "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-      "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31",
-      "bank_id": "9c47e3ba-f1d6-46d7-93a2-01a837917c2b",
+      "id": "6c9c23fd-0b76-496c-8b3b-baeff8d28f88",
+      "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+      "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b",
+      "bank_id": "426aa6b1-6b6e-4fe0-8249-b8ccc1b98d14",
       "railway_employee_id": "R1",
       "official_name": "Insp. Rao",
       "designation": null,
@@ -2018,21 +3103,21 @@
       "journey_day": 1,
       "comments": null,
       "verification_status": "verified",
-      "verified_at": "2026-11-04T11:21:36.393229Z",
-      "verified_by_id": "01a945b9-901e-4c69-960d-8df8829a1bbc",
+      "verified_at": "2026-11-27T11:45:48.963059Z",
+      "verified_by_id": "1d861cd5-2caa-491c-9560-06bb7c308000",
       "ratings": [
        {
-        "question_id": "33246210-82df-45db-a22a-e7fdf022e6ae",
+        "question_id": "4dbf1cee-77a0-493d-b4ec-a5744ee4bdf2",
         "value": 5
        },
        {
-        "question_id": "3f18dc6a-b6bf-42df-880d-bbea02c0ac38",
+        "question_id": "47c28f90-50bc-445b-9b28-6a9f81a7fa64",
         "value": 5
        }
       ],
-      "created_by_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
-      "device_timestamp": "2026-11-04T11:21:36.322384Z",
-      "server_timestamp": "2026-11-04T11:21:36.327725Z"
+      "created_by_id": "82449957-f7a1-48a2-9352-13a0036522c5",
+      "device_timestamp": "2026-11-27T11:45:48.884455Z",
+      "server_timestamp": "2026-11-27T11:45:48.889377Z"
      }
     ],
     "total": 2,
@@ -2045,13 +3130,13 @@
   {
    "path": "/reports/attendance",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27",
     "group_by": "employee"
    },
    "response": [
     {
-     "key_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+     "key_id": "ed45b779-ff70-416c-9594-d89959fa4982",
      "label": "Jan (AAA-jan)",
      "journeys": 1,
      "records": 3,
@@ -2066,7 +3151,7 @@
      "rejected": 0
     },
     {
-     "key_id": "2c791450-b2c7-4596-89b4-240b003d54bf",
+     "key_id": "6dff8c5c-8908-40f6-a680-48d995ff1d0d",
      "label": "Jan2 (AAA-jan2)",
      "journeys": 1,
      "records": 1,
@@ -2081,7 +3166,7 @@
      "rejected": 1
     },
     {
-     "key_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+     "key_id": "82449957-f7a1-48a2-9352-13a0036522c5",
      "label": "Sup (AAA-sup)",
      "journeys": 1,
      "records": 1,
@@ -2100,14 +3185,14 @@
   {
    "path": "/reports/attendance",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27",
     "group_by": "journey"
    },
    "response": [
     {
-     "key_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-     "label": "12001 / 2026-11-04",
+     "key_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+     "label": "12001 / 2026-11-27",
      "journeys": 1,
      "records": 4,
      "stages": {
@@ -2121,8 +3206,8 @@
      "rejected": 0
     },
     {
-     "key_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-     "label": "12002 / 2026-11-04",
+     "key_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+     "label": "12002 / 2026-11-27",
      "journeys": 1,
      "records": 1,
      "stages": {
@@ -2140,15 +3225,15 @@
   {
    "path": "/reports/inspections",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27",
     "coach_wise": "false"
    },
    "response": [
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": null,
      "required": 16,
      "done": 4,
@@ -2157,9 +3242,9 @@
      "rejected": 1
     },
     {
-     "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
+     "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
      "train_no": "12002",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": null,
      "required": 16,
      "done": 1,
@@ -2172,15 +3257,15 @@
   {
    "path": "/reports/inspections",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27",
     "coach_wise": "true"
    },
    "response": [
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "B1",
      "required": 8,
      "done": 3,
@@ -2189,9 +3274,9 @@
      "rejected": 0
     },
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "S1",
      "required": 8,
      "done": 1,
@@ -2200,9 +3285,9 @@
      "rejected": 1
     },
     {
-     "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
+     "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
      "train_no": "12002",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "B1",
      "required": 8,
      "done": 1,
@@ -2211,9 +3296,9 @@
      "rejected": 0
     },
     {
-     "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
+     "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
      "train_no": "12002",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "S1",
      "required": 8,
      "done": 0,
@@ -2226,12 +3311,12 @@
   {
    "path": "/reports/feedback/passenger",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27"
    },
    "response": {
     "audience": "passenger",
-    "bank_id": "ffc772f4-e718-4562-8912-1c4413e63819",
+    "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
     "scale_min": 1,
     "scale_max": 5,
     "total": 3,
@@ -2244,21 +3329,21 @@
     },
     "questions": [
      {
-      "question_id": "b8fbd7c0-d623-41fc-ae42-aca765592cda",
+      "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
       "position": 1,
       "text_en": "Toilet cleaning",
       "responses": 2,
       "average": 4.0
      },
      {
-      "question_id": "44382c8e-5955-40b0-a225-5c20c7c50f19",
+      "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
       "position": 2,
       "text_en": "Bedroll quality",
       "responses": 2,
       "average": 2.0
      },
      {
-      "question_id": "9ea581c3-22c7-45e6-b8a7-56d02b2b42a0",
+      "question_id": "496f5e74-d229-498e-ae21-ca04045226a8",
       "position": 3,
       "text_en": "Staff behaviour",
       "responses": 0,
@@ -2270,12 +3355,12 @@
   {
    "path": "/reports/feedback/railway",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27"
    },
    "response": {
     "audience": "railway",
-    "bank_id": "9c47e3ba-f1d6-46d7-93a2-01a837917c2b",
+    "bank_id": "426aa6b1-6b6e-4fe0-8249-b8ccc1b98d14",
     "scale_min": 1,
     "scale_max": 5,
     "total": 2,
@@ -2286,21 +3371,21 @@
     "by_coach_class": {},
     "questions": [
      {
-      "question_id": "33246210-82df-45db-a22a-e7fdf022e6ae",
+      "question_id": "4dbf1cee-77a0-493d-b4ec-a5744ee4bdf2",
       "position": 1,
       "text_en": "Toilet cleaning",
       "responses": 2,
       "average": 3.5
      },
      {
-      "question_id": "3f18dc6a-b6bf-42df-880d-bbea02c0ac38",
+      "question_id": "47c28f90-50bc-445b-9b28-6a9f81a7fa64",
       "position": 2,
       "text_en": "Bedroll quality",
       "responses": 2,
       "average": 3.5
      },
      {
-      "question_id": "68bbdf20-74c1-4466-9aea-0be4594f8ca4",
+      "question_id": "a152f1e2-f827-448b-ac03-1f0f53b53075",
       "position": 3,
       "text_en": "Staff behaviour",
       "responses": 0,
@@ -2312,24 +3397,77 @@
   {
    "path": "/reports/psi",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27"
    },
    "response": [
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "responses": 2,
      "psi": 50.0
     }
    ]
   },
   {
+   "path": "/reports/psi/questions",
+   "query": {
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27"
+   },
+   "response": {
+    "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
+    "scale_min": 1,
+    "scale_max": 5,
+    "weighting": "configured",
+    "responses": 2,
+    "psi": 50.0,
+    "questions": [
+     {
+      "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
+      "position": 1,
+      "text_en": "Toilet cleaning",
+      "weight": 2.0,
+      "responses": 2,
+      "average": 4.0,
+      "score": 75.0,
+      "weight_share": 50.0,
+      "contribution": 37.5,
+      "points_lost": 12.5
+     },
+     {
+      "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
+      "position": 2,
+      "text_en": "Bedroll quality",
+      "weight": 2.0,
+      "responses": 2,
+      "average": 2.0,
+      "score": 25.0,
+      "weight_share": 50.0,
+      "contribution": 12.5,
+      "points_lost": 37.5
+     },
+     {
+      "question_id": "496f5e74-d229-498e-ae21-ca04045226a8",
+      "position": 3,
+      "text_en": "Staff behaviour",
+      "weight": 2.0,
+      "responses": 0,
+      "average": null,
+      "score": null,
+      "weight_share": null,
+      "contribution": null,
+      "points_lost": null
+     }
+    ]
+   }
+  },
+  {
    "path": "/reports/complaints",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27"
    },
    "response": {
     "total": 3,
@@ -2341,13 +3479,13 @@
     "overdue": 0,
     "by_category": [
      {
-      "category_id": "2b6ea39c-c852-4da2-a9d4-01e7f7499c47",
+      "category_id": "c2039108-4420-4988-8315-859ad7da775c",
       "category": "Water",
       "total": 2,
       "open": 1
      },
      {
-      "category_id": "3d97b51e-d3d1-4f5a-be34-9a5ad94b4e1a",
+      "category_id": "018fa1ce-5a03-4e81-aaa6-acf555fc87dd",
       "category": "Coach",
       "total": 1,
       "open": 1
@@ -2359,12 +3497,12 @@
   {
    "path": "/reports/inventory",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27"
    },
    "response": [
     {
-     "item_id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
+     "item_id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
      "item_name": "Phenyl",
      "unit": "ltr",
      "issued": 12.5,
@@ -2373,7 +3511,7 @@
      "journeys": 2
     },
     {
-     "item_id": "0efd6193-731f-47cb-9458-b611c5bbf950",
+     "item_id": "0da094fe-fb40-448d-8e83-d2f21a52e98d",
      "item_name": "Soap",
      "unit": "nos",
      "issued": 6.0,
@@ -2386,13 +3524,13 @@
   {
    "path": "/reports/inventory",
    "query": {
-    "date_from": "2026-11-04",
-    "date_to": "2026-11-04",
-    "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31"
+    "date_from": "2026-11-27",
+    "date_to": "2026-11-27",
+    "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b"
    },
    "response": [
     {
-     "item_id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
+     "item_id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
      "item_name": "Phenyl",
      "unit": "ltr",
      "issued": 12.5,
@@ -2401,7 +3539,7 @@
      "journeys": 2
     },
     {
-     "item_id": "0efd6193-731f-47cb-9458-b611c5bbf950",
+     "item_id": "0da094fe-fb40-448d-8e83-d2f21a52e98d",
      "item_name": "Soap",
      "unit": "nos",
      "issued": 6.0,
@@ -2414,13 +3552,13 @@
   {
    "path": "/reports/attendance",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27",
     "group_by": "employee"
    },
    "response": [
     {
-     "key_id": "e3dcf433-f675-4f24-8f64-d73aa16691cf",
+     "key_id": "ed45b779-ff70-416c-9594-d89959fa4982",
      "label": "Jan (AAA-jan)",
      "journeys": 1,
      "records": 3,
@@ -2435,7 +3573,7 @@
      "rejected": 0
     },
     {
-     "key_id": "2c791450-b2c7-4596-89b4-240b003d54bf",
+     "key_id": "6dff8c5c-8908-40f6-a680-48d995ff1d0d",
      "label": "Jan2 (AAA-jan2)",
      "journeys": 1,
      "records": 1,
@@ -2450,7 +3588,7 @@
      "rejected": 1
     },
     {
-     "key_id": "61b67b78-4537-437e-9033-b04b0b16c1f3",
+     "key_id": "82449957-f7a1-48a2-9352-13a0036522c5",
      "label": "Sup (AAA-sup)",
      "journeys": 1,
      "records": 1,
@@ -2469,14 +3607,14 @@
   {
    "path": "/reports/attendance",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27",
     "group_by": "journey"
    },
    "response": [
     {
-     "key_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
-     "label": "12001 / 2026-11-04",
+     "key_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
+     "label": "12001 / 2026-11-27",
      "journeys": 1,
      "records": 4,
      "stages": {
@@ -2490,8 +3628,8 @@
      "rejected": 0
     },
     {
-     "key_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
-     "label": "12002 / 2026-11-04",
+     "key_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
+     "label": "12002 / 2026-11-27",
      "journeys": 1,
      "records": 1,
      "stages": {
@@ -2509,15 +3647,15 @@
   {
    "path": "/reports/inspections",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27",
     "coach_wise": "false"
    },
    "response": [
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": null,
      "required": 16,
      "done": 4,
@@ -2526,9 +3664,9 @@
      "rejected": 1
     },
     {
-     "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
+     "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
      "train_no": "12002",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": null,
      "required": 16,
      "done": 1,
@@ -2541,15 +3679,15 @@
   {
    "path": "/reports/inspections",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04",
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27",
     "coach_wise": "true"
    },
    "response": [
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "B1",
      "required": 8,
      "done": 3,
@@ -2558,9 +3696,9 @@
      "rejected": 0
     },
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "S1",
      "required": 8,
      "done": 1,
@@ -2569,9 +3707,9 @@
      "rejected": 1
     },
     {
-     "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
+     "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
      "train_no": "12002",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "B1",
      "required": 8,
      "done": 1,
@@ -2580,9 +3718,9 @@
      "rejected": 0
     },
     {
-     "journey_id": "46a70b9d-31cf-45a9-b9ac-8c41653dfc24",
+     "journey_id": "f5f5a134-4975-4a42-a224-30a5bacc6fa5",
      "train_no": "12002",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "coach_code": "S1",
      "required": 8,
      "done": 0,
@@ -2595,12 +3733,12 @@
   {
    "path": "/reports/feedback/passenger",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27"
    },
    "response": {
     "audience": "passenger",
-    "bank_id": "ffc772f4-e718-4562-8912-1c4413e63819",
+    "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
     "scale_min": 1,
     "scale_max": 5,
     "total": 3,
@@ -2613,21 +3751,21 @@
     },
     "questions": [
      {
-      "question_id": "b8fbd7c0-d623-41fc-ae42-aca765592cda",
+      "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
       "position": 1,
       "text_en": "Toilet cleaning",
       "responses": 2,
       "average": 4.0
      },
      {
-      "question_id": "44382c8e-5955-40b0-a225-5c20c7c50f19",
+      "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
       "position": 2,
       "text_en": "Bedroll quality",
       "responses": 2,
       "average": 2.0
      },
      {
-      "question_id": "9ea581c3-22c7-45e6-b8a7-56d02b2b42a0",
+      "question_id": "496f5e74-d229-498e-ae21-ca04045226a8",
       "position": 3,
       "text_en": "Staff behaviour",
       "responses": 0,
@@ -2639,12 +3777,12 @@
   {
    "path": "/reports/feedback/railway",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27"
    },
    "response": {
     "audience": "railway",
-    "bank_id": "9c47e3ba-f1d6-46d7-93a2-01a837917c2b",
+    "bank_id": "426aa6b1-6b6e-4fe0-8249-b8ccc1b98d14",
     "scale_min": 1,
     "scale_max": 5,
     "total": 2,
@@ -2655,21 +3793,21 @@
     "by_coach_class": {},
     "questions": [
      {
-      "question_id": "33246210-82df-45db-a22a-e7fdf022e6ae",
+      "question_id": "4dbf1cee-77a0-493d-b4ec-a5744ee4bdf2",
       "position": 1,
       "text_en": "Toilet cleaning",
       "responses": 2,
       "average": 3.5
      },
      {
-      "question_id": "3f18dc6a-b6bf-42df-880d-bbea02c0ac38",
+      "question_id": "47c28f90-50bc-445b-9b28-6a9f81a7fa64",
       "position": 2,
       "text_en": "Bedroll quality",
       "responses": 2,
       "average": 3.5
      },
      {
-      "question_id": "68bbdf20-74c1-4466-9aea-0be4594f8ca4",
+      "question_id": "a152f1e2-f827-448b-ac03-1f0f53b53075",
       "position": 3,
       "text_en": "Staff behaviour",
       "responses": 0,
@@ -2681,24 +3819,77 @@
   {
    "path": "/reports/psi",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27"
    },
    "response": [
     {
-     "journey_id": "a285c38c-e1a2-48f5-8927-d8c5c5c781ea",
+     "journey_id": "f32de101-1dc4-4be2-a1d5-01521900f0ce",
      "train_no": "12001",
-     "journey_date": "2026-11-04",
+     "journey_date": "2026-11-27",
      "responses": 2,
      "psi": 50.0
     }
    ]
   },
   {
+   "path": "/reports/psi/questions",
+   "query": {
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27"
+   },
+   "response": {
+    "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
+    "scale_min": 1,
+    "scale_max": 5,
+    "weighting": "configured",
+    "responses": 2,
+    "psi": 50.0,
+    "questions": [
+     {
+      "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
+      "position": 1,
+      "text_en": "Toilet cleaning",
+      "weight": 2.0,
+      "responses": 2,
+      "average": 4.0,
+      "score": 75.0,
+      "weight_share": 50.0,
+      "contribution": 37.5,
+      "points_lost": 12.5
+     },
+     {
+      "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
+      "position": 2,
+      "text_en": "Bedroll quality",
+      "weight": 2.0,
+      "responses": 2,
+      "average": 2.0,
+      "score": 25.0,
+      "weight_share": 50.0,
+      "contribution": 12.5,
+      "points_lost": 37.5
+     },
+     {
+      "question_id": "496f5e74-d229-498e-ae21-ca04045226a8",
+      "position": 3,
+      "text_en": "Staff behaviour",
+      "weight": 2.0,
+      "responses": 0,
+      "average": null,
+      "score": null,
+      "weight_share": null,
+      "contribution": null,
+      "points_lost": null
+     }
+    ]
+   }
+  },
+  {
    "path": "/reports/complaints",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27"
    },
    "response": {
     "total": 3,
@@ -2710,13 +3901,13 @@
     "overdue": 0,
     "by_category": [
      {
-      "category_id": "2b6ea39c-c852-4da2-a9d4-01e7f7499c47",
+      "category_id": "c2039108-4420-4988-8315-859ad7da775c",
       "category": "Water",
       "total": 2,
       "open": 1
      },
      {
-      "category_id": "3d97b51e-d3d1-4f5a-be34-9a5ad94b4e1a",
+      "category_id": "018fa1ce-5a03-4e81-aaa6-acf555fc87dd",
       "category": "Coach",
       "total": 1,
       "open": 1
@@ -2728,12 +3919,12 @@
   {
    "path": "/reports/inventory",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04"
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27"
    },
    "response": [
     {
-     "item_id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
+     "item_id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
      "item_name": "Phenyl",
      "unit": "ltr",
      "issued": 12.5,
@@ -2742,7 +3933,7 @@
      "journeys": 2
     },
     {
-     "item_id": "0efd6193-731f-47cb-9458-b611c5bbf950",
+     "item_id": "0da094fe-fb40-448d-8e83-d2f21a52e98d",
      "item_name": "Soap",
      "unit": "nos",
      "issued": 6.0,
@@ -2755,13 +3946,13 @@
   {
    "path": "/reports/inventory",
    "query": {
-    "date_from": "2026-10-29",
-    "date_to": "2026-11-04",
-    "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31"
+    "date_from": "2026-11-21",
+    "date_to": "2026-11-27",
+    "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b"
    },
    "response": [
     {
-     "item_id": "a737f2a7-fc4a-4d42-9eca-1c308c1e6a64",
+     "item_id": "093206c7-a6ac-41e6-9108-fca9aa607eae",
      "item_name": "Phenyl",
      "unit": "ltr",
      "issued": 12.5,
@@ -2770,7 +3961,7 @@
      "journeys": 2
     },
     {
-     "item_id": "0efd6193-731f-47cb-9458-b611c5bbf950",
+     "item_id": "0da094fe-fb40-448d-8e83-d2f21a52e98d",
      "item_name": "Soap",
      "unit": "nos",
      "issued": 6.0,
@@ -2783,8 +3974,8 @@
   {
    "path": "/reports/attendance",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11",
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04",
     "group_by": "employee"
    },
    "response": []
@@ -2792,8 +3983,8 @@
   {
    "path": "/reports/attendance",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11",
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04",
     "group_by": "journey"
    },
    "response": []
@@ -2801,8 +3992,8 @@
   {
    "path": "/reports/inspections",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11",
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04",
     "coach_wise": "false"
    },
    "response": []
@@ -2810,8 +4001,8 @@
   {
    "path": "/reports/inspections",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11",
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04",
     "coach_wise": "true"
    },
    "response": []
@@ -2819,12 +4010,12 @@
   {
    "path": "/reports/feedback/passenger",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11"
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04"
    },
    "response": {
     "audience": "passenger",
-    "bank_id": "ffc772f4-e718-4562-8912-1c4413e63819",
+    "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
     "scale_min": 1,
     "scale_max": 5,
     "total": 0,
@@ -2832,21 +4023,21 @@
     "by_coach_class": {},
     "questions": [
      {
-      "question_id": "b8fbd7c0-d623-41fc-ae42-aca765592cda",
+      "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
       "position": 1,
       "text_en": "Toilet cleaning",
       "responses": 0,
       "average": null
      },
      {
-      "question_id": "44382c8e-5955-40b0-a225-5c20c7c50f19",
+      "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
       "position": 2,
       "text_en": "Bedroll quality",
       "responses": 0,
       "average": null
      },
      {
-      "question_id": "9ea581c3-22c7-45e6-b8a7-56d02b2b42a0",
+      "question_id": "496f5e74-d229-498e-ae21-ca04045226a8",
       "position": 3,
       "text_en": "Staff behaviour",
       "responses": 0,
@@ -2858,12 +4049,12 @@
   {
    "path": "/reports/feedback/railway",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11"
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04"
    },
    "response": {
     "audience": "railway",
-    "bank_id": "9c47e3ba-f1d6-46d7-93a2-01a837917c2b",
+    "bank_id": "426aa6b1-6b6e-4fe0-8249-b8ccc1b98d14",
     "scale_min": 1,
     "scale_max": 5,
     "total": 0,
@@ -2871,21 +4062,21 @@
     "by_coach_class": {},
     "questions": [
      {
-      "question_id": "33246210-82df-45db-a22a-e7fdf022e6ae",
+      "question_id": "4dbf1cee-77a0-493d-b4ec-a5744ee4bdf2",
       "position": 1,
       "text_en": "Toilet cleaning",
       "responses": 0,
       "average": null
      },
      {
-      "question_id": "3f18dc6a-b6bf-42df-880d-bbea02c0ac38",
+      "question_id": "47c28f90-50bc-445b-9b28-6a9f81a7fa64",
       "position": 2,
       "text_en": "Bedroll quality",
       "responses": 0,
       "average": null
      },
      {
-      "question_id": "68bbdf20-74c1-4466-9aea-0be4594f8ca4",
+      "question_id": "a152f1e2-f827-448b-ac03-1f0f53b53075",
       "position": 3,
       "text_en": "Staff behaviour",
       "responses": 0,
@@ -2897,16 +4088,69 @@
   {
    "path": "/reports/psi",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11"
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04"
    },
    "response": []
   },
   {
+   "path": "/reports/psi/questions",
+   "query": {
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04"
+   },
+   "response": {
+    "bank_id": "8a566df7-f182-475e-8e17-22af2f1af1c2",
+    "scale_min": 1,
+    "scale_max": 5,
+    "weighting": "configured",
+    "responses": 0,
+    "psi": null,
+    "questions": [
+     {
+      "question_id": "248e9fd6-371a-4295-a514-a0b8b216d3a2",
+      "position": 1,
+      "text_en": "Toilet cleaning",
+      "weight": 2.0,
+      "responses": 0,
+      "average": null,
+      "score": null,
+      "weight_share": null,
+      "contribution": null,
+      "points_lost": null
+     },
+     {
+      "question_id": "0f2fe3a8-f241-4a38-b5c9-67fd9d341401",
+      "position": 2,
+      "text_en": "Bedroll quality",
+      "weight": 2.0,
+      "responses": 0,
+      "average": null,
+      "score": null,
+      "weight_share": null,
+      "contribution": null,
+      "points_lost": null
+     },
+     {
+      "question_id": "496f5e74-d229-498e-ae21-ca04045226a8",
+      "position": 3,
+      "text_en": "Staff behaviour",
+      "weight": 2.0,
+      "responses": 0,
+      "average": null,
+      "score": null,
+      "weight_share": null,
+      "contribution": null,
+      "points_lost": null
+     }
+    ]
+   }
+  },
+  {
    "path": "/reports/complaints",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11"
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04"
    },
    "response": {
     "total": 0,
@@ -2919,17 +4163,17 @@
   {
    "path": "/reports/inventory",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11"
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04"
    },
    "response": []
   },
   {
    "path": "/reports/inventory",
    "query": {
-    "date_from": "2026-11-09",
-    "date_to": "2026-11-11",
-    "division_id": "1282b03d-6867-4cbc-b695-bf35a889cd31"
+    "date_from": "2026-12-02",
+    "date_to": "2026-12-04",
+    "division_id": "fa92b31c-c74d-4d6a-b564-bd72856f2e0b"
    },
    "response": []
   }

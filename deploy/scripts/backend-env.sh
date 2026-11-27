@@ -35,6 +35,7 @@ OTP_PEPPER=$(openssl rand -base64 48 | tr -d '\n')
 CORS_ORIGINS='["${ORIGIN}"]'
 
 SMS_PROVIDER=disabled
+# Off until a RapidAPI key is set: sudo deploy/scripts/enable-pnr.sh --check <PNR> < key.txt
 PNR_PROVIDER=disabled
 EOF
 chgrp swachhsafar "$OUT" 2>/dev/null || true
