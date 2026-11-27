@@ -159,6 +159,10 @@ test('operational screens capture and keep records with the network disconnected
     await page.getByRole('button', { name: action, exact: true }).click();
     dialog = page.getByRole('dialog', { name: `${action} inventory` });
     await dialog.getByRole('combobox', { name: /^Item/ }).selectOption({ label: 'Phenyl (litre)' });
+    // Each coach can be handed to the journey's EHK or one of its janitors; left as the coach itself here.
+    if (action === 'Issue') {
+      await expect(dialog.getByRole('combobox', { name: 'B1 given to' }).locator('option', { hasText: 'Sunita Devi (Janitor)' })).toHaveCount(1);
+    }
     await dialog.getByRole('textbox', { name: 'B1 quantity' }).fill(quantity);
     await dialog.getByRole('button', { name: `${action} ${quantity} litre · 1 coach` }).click();
     await page.getByRole('dialog', { name: `Confirm ${action.toLowerCase()}` }).getByRole('button', { name: `Record ${action.toLowerCase()}` }).click();
